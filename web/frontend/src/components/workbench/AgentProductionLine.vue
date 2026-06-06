@@ -49,6 +49,7 @@ const {
   cancelBatchRun,
   openDialog,
   busy: batchBusy,
+  roundProgress,
 } = useNovelBatchRun()
 
 const pausedBlockId = ref<string | null>(null)
@@ -244,6 +245,9 @@ onUnmounted(() => {
         >
           取消连写
         </el-button>
+        <span v-if="batchBusy && roundProgress.target > 0" class="round-progress-hint">
+          {{ roundProgress.label }}
+        </span>
         <span v-if="!readinessOk" class="action-hint">开书清单红灯，请先补齐</span>
       </div>
       <div v-else-if="activeChapterId" class="head-chapter">
@@ -322,6 +326,12 @@ onUnmounted(() => {
 .action-hint {
   font-size: 12px;
   color: var(--color-text-subtle);
+}
+
+.round-progress-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-weight: 600;
 }
 
 .head-chapter {

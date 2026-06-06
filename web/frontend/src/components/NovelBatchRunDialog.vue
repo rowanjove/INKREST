@@ -15,6 +15,7 @@ const {
   submit,
   cancelBatchRun,
   busy,
+  busyPhaseLabel,
   goMonitorAlerts,
   goChapterRepair,
 } = useNovelBatchRun()
@@ -85,6 +86,7 @@ const {
       <p class="audit-hint">{{ DUAL_AUDIT_HINT }}</p>
     </div>
     <template #footer>
+      <p v-if="busy && busyPhaseLabel" class="busy-phase-hint">{{ busyPhaseLabel }}</p>
       <el-button v-if="busy" type="danger" plain @click="cancelBatchRun">取消连写</el-button>
       <el-button v-else @click="dialogVisible = false">关闭</el-button>
       <el-button type="primary" :loading="running" :disabled="running" @click="submit(false)">
@@ -169,5 +171,13 @@ const {
   font-size: 12px;
   color: var(--color-text-subtle);
   line-height: 1.45;
+}
+
+.busy-phase-hint {
+  margin: 0 0 8px;
+  width: 100%;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  text-align: left;
 }
 </style>

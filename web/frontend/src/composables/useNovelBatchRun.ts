@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
@@ -14,6 +14,15 @@ import {
   listAssets,
   listModels,
 } from '../api'
+import {
+  applyBatchFormDefaults,
+  cancelBatchRunMessage,
+  computeRoundProgress,
+  loadSavedBatchForm,
+  mergeBatchForm,
+  saveBatchForm,
+  type BatchRunPhase,
+} from '../utils/batchRunForm'
 import { buildReadinessItems, readinessAllOk } from '../utils/projectReadiness'
 import { useProjectStore } from '../stores/project'
 import { useTasksStore } from '../stores/tasks'
@@ -38,6 +47,11 @@ const opening = ref(false)
 const running = ref(false)
 let runAbort: AbortController | null = null
 const form = ref({ target_chapters: 5, autopilot: true })
+const runPhase = ref<BatchRunPhase>('idle')
+const continueSubmitted = ref(false)
+const roundStartChapterCount = ref(0)
+const roundTargetChapters = ref(0)
+let chapterCountPollTimer: ReturnType<typeof setInterval> | null = null
 const ctx = ref<NovelBatchRunContext>({
   outline: null,
   assets: [],
@@ -170,20 +184,45 @@ export function useNovelBatchRun() {
   }
 
   function applyFormDefaults() {
-    form.value.autopilot = workScale.value !== 'micro'
-    form.value.target_chapters = Math.min(5, maxAvailableChapters.value)
-    if (workScale.value === 'long') {
-      form.value.target_chapters = Math.min(10, maxAvailableChapters.value)
-    } else if (workScale.value === 'epic' || workScale.value === 'infinite') {
-      form.value.target_chapters = Math.min(10, maxAvailableChapters.value)
-      form.value.autopilot = true
-    } else if (workScale.value === 'micro' || workScale.value === 'short') {
-      form.value.target_chapters = maxAvailableChapters.value
-      form.value.autopilot = false
+    const defaults = applyBatchFormDefaults(workScale.value, maxAvailableChapters.value)
+    const projectId = currentProject.value?.id || ''
+    const saved = loadSavedBatchForm(projectId)
+    form.value = mergeBatchForm(defaults, saved, maxAvailableChapters.value)
+  }
+
+  const roundProgress = computed(() =>
+    computeRoundProgress({
+      roundTarget: roundTargetChapters.value,
+      startChapterCount: roundStartChapterCount.value,
+      currentChapterCount: ctx.value.chapterCountTotal,
+    }),
+  )
+
+  const busyPhaseLabel = computed(() => {
+    if (runPhase.value === 'opening') return '正在加载开书状态…'
+    if (runPhase.value === 'syncing_queue') return '正在同步卷队列（首次约 1～5 分钟）…'
+    if (runPhase.value === 'submitting_continue') return '正在提交连写任务…'
+    return ''
+  })
+
+  function stopChapterCountPoll() {
+    if (chapterCountPollTimer) {
+      clearInterval(chapterCountPollTimer)
+      chapterCountPollTimer = null
     }
-    if (form.value.autopilot && maxAvailableChapters.value > 0) {
-      form.value.target_chapters = maxAvailableChapters.value
-    }
+  }
+
+  function startChapterCountPoll() {
+    stopChapterCountPoll()
+    chapterCountPollTimer = setInterval(() => {
+      getChapterCount(true)
+        .then((res) => {
+          ctx.value.chapterCountTotal = res.data?.total ?? ctx.value.chapterCountTotal
+        })
+        .catch(() => {
+          /* ignore poll errors */
+        })
+    }, 8000)
   }
 
   function warnIfNotReady(): boolean {
@@ -194,12 +233,18 @@ export function useNovelBatchRun() {
   }
 
   function cancelBatchRun() {
-    if (!runAbort) return
-    runAbort.abort()
-    runAbort = null
+    const phase = opening.value ? 'opening' : runPhase.value
+    const submitted = continueSubmitted.value
+    if (runAbort) {
+      runAbort.abort()
+      runAbort = null
+    }
     opening.value = false
     running.value = false
-    ElMessage.info('已取消连写启动')
+    runPhase.value = 'idle'
+    continueSubmitted.value = false
+    stopChapterCountPoll()
+    ElMessage.info(cancelBatchRunMessage(phase, submitted))
   }
 
   /** 不经弹窗直接开跑（程序化入口）；界面按钮应走 openDialog → submit */
@@ -223,6 +268,7 @@ export function useNovelBatchRun() {
   async function openDialog() {
     if (busy.value) return
     opening.value = true
+    runPhase.value = 'opening'
     try {
       await refreshContext()
     } catch (error: any) {
@@ -230,6 +276,7 @@ export function useNovelBatchRun() {
       return
     } finally {
       opening.value = false
+      if (runPhase.value === 'opening') runPhase.value = 'idle'
     }
     if (!warnIfNotReady()) return
     applyFormDefaults()
@@ -282,13 +329,23 @@ export function useNovelBatchRun() {
       }
     }
 
+    const projectId = currentProject.value?.id || ''
+    saveBatchForm(projectId, {
+      target_chapters: form.value.target_chapters,
+      autopilot: form.value.autopilot,
+    })
+    roundStartChapterCount.value = ctx.value.chapterCountTotal
+    roundTargetChapters.value = form.value.target_chapters
+    continueSubmitted.value = false
     running.value = true
     runAbort = new AbortController()
     const signal = runAbort.signal
     tasksStore.startRuntimeLogPolling()
     tasksStore.startPolling()
+    startChapterCountPoll()
     let queueMsg: ReturnType<typeof ElMessage.info> | null = null
     try {
+      runPhase.value = 'syncing_queue'
       queueMsg = ElMessage.info({
         message:
           '正在同步卷队列（首次约 1～5 分钟）。可点「取消连写」，或打开日志中心看任务流水。',
@@ -299,6 +356,7 @@ export function useNovelBatchRun() {
       queueMsg?.close()
       queueMsg = null
       const cap = form.value.target_chapters
+      runPhase.value = 'submitting_continue'
       const { data } = await continueNovel(
         {
           resume: true,
@@ -310,6 +368,7 @@ export function useNovelBatchRun() {
         },
         { signal },
       )
+      continueSubmitted.value = true
       const mode = form.value.autopilot ? '后台自动续轮' : '单轮'
       ElMessage.success(
         `已启动${mode}（上限 ${cap} 章，任务 ${data?.task_id || ''}），请到日志中心查看任务流水。`,
@@ -336,16 +395,29 @@ export function useNovelBatchRun() {
       queueMsg?.close()
       runAbort = null
       running.value = false
+      runPhase.value = 'idle'
+      stopChapterCountPoll()
     }
   }
 
   const busy = computed(() => opening.value || running.value)
+
+  watch(
+    () => currentProject.value?.id,
+    () => {
+      roundStartChapterCount.value = 0
+      roundTargetChapters.value = 0
+    },
+  )
 
   return {
     dialogVisible,
     opening,
     running,
     busy,
+    runPhase,
+    busyPhaseLabel,
+    roundProgress,
     form,
     ctx,
     currentProject,

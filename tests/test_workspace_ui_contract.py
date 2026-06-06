@@ -238,7 +238,20 @@ def test_batch_run_primary_button_opens_dialog_not_split_menu() -> None:
     assert "split-button" not in source
     assert "设置章数与选项" not in source
     assert "await openDialog()" in source
+    assert "roundProgress" in source
     assert "NovelBatchRunDialog" in DASHBOARD.read_text(encoding="utf-8")
+
+
+def test_batch_run_form_persists_per_project() -> None:
+    batch_form = ROOT / "web" / "frontend" / "src" / "utils" / "batchRunForm.ts"
+    composable = ROOT / "web" / "frontend" / "src" / "composables" / "useNovelBatchRun.ts"
+    dialog = ROOT / "web" / "frontend" / "src" / "components" / "NovelBatchRunDialog.vue"
+    form_source = batch_form.read_text(encoding="utf-8")
+    assert "inkrest_batch_form_" in form_source
+    assert "loadSavedBatchForm" in composable.read_text(encoding="utf-8")
+    assert "saveBatchForm" in composable.read_text(encoding="utf-8")
+    assert "cancelBatchRunMessage" in form_source
+    assert "busyPhaseLabel" in dialog.read_text(encoding="utf-8")
 
 
 def test_shanshan_chat_opens_with_compact_editor_welcome_card() -> None:
