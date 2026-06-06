@@ -107,6 +107,26 @@ export function readinessTrafficLight(items: ReadinessItem[]): ReadinessTrafficL
   return readinessHasRed(items) ? 'red' : 'green'
 }
 
+const LONG_FORM_SCALES = ['long', 'epic', 'infinite'] as const
+
+export function isLongFormScale(workScale: string): boolean {
+  return (LONG_FORM_SCALES as readonly string[]).includes(workScale)
+}
+
+/** 长篇且向量未就绪：黄标建议，不阻断连写 */
+export function longFormVectorWarn(opts: {
+  workScale: string
+  vectorEnabled?: boolean
+  semanticSearchEffective?: boolean
+}): boolean {
+  if (!isLongFormScale(opts.workScale)) return false
+  if (opts.vectorEnabled === false) return false
+  return opts.semanticSearchEffective === false
+}
+
+export const LONG_FORM_VECTOR_WARN_TEXT =
+  '长篇连写强烈建议配置 BGE 或云端 Embedding；stub 时跨章去重与伏笔召回不可用。'
+
 /** 创建成功弹窗文案（与清单一致） */
 export function postCreateChecklistLines(preferOutline: boolean): string[] {
   return [

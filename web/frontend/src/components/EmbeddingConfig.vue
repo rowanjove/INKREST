@@ -29,6 +29,8 @@ const envStatus = ref({
   model_path: null as string | null,
   vector_enabled: true,
   semantic_search_effective: false,
+  work_scale: 'medium',
+  long_form_vector_recommended: false,
 })
 
 const setupState = ref({
@@ -116,6 +118,9 @@ const load = async () => {
       activeCloudPresetId.value = matched?.id || provider
     } else {
       activeTab.value = 'stub'
+    }
+    if (data.long_form_vector_recommended) {
+      expanded.value = true
     }
   } catch (e: unknown) {
     console.error(e)

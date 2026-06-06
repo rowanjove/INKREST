@@ -15,6 +15,9 @@ const hookFailFast = ref(false)
 const hookTimeoutSeconds = ref(30)
 const batchSkipPauseMax = ref(3)
 const blockContinueUntilExternal = ref(false)
+const workScale = ref('medium')
+const pipelineTier = ref('standard')
+const auditProfile = ref('standard')
 const chapterConfig = ref<Record<string, unknown>>({})
 const runtimeConfig = ref<Record<string, unknown>>({})
 
@@ -36,6 +39,9 @@ const load = async () => {
     try {
       const emb = await getEmbeddingStatus()
       semanticEffective.value = Boolean(emb.data?.semantic_search_effective)
+      workScale.value = String(emb.data?.work_scale || 'medium')
+      pipelineTier.value = String(emb.data?.pipeline_tier || 'standard')
+      auditProfile.value = String(emb.data?.audit_profile || 'standard')
     } catch {
       semanticEffective.value = false
     }
@@ -103,7 +109,8 @@ onMounted(load)
       </el-alert>
       <p class="hint scale-hint">
         长篇/超长篇的体量请在工作台「体量架构」修改；保存后会自动补全此处空缺的批量保护、persona 自动等项。手改本页后以 pipeline.yaml 为准。
-        epic / infinite 体量下门禁可能降为抽检（见 generation_policy），连写更快但需更勤查「待处理章节」。
+        当前体量 <strong>{{ workScale }}</strong> · 流水线档位 <strong>{{ pipelineTier }}</strong> · 审校配置 <strong>{{ auditProfile }}</strong>
+        （economy 可跳过连续性检查，premium 全审；可在 pipeline.yaml 的 <code>runtime.audit_profile</code> 覆盖）。
       </p>
 
       <el-alert

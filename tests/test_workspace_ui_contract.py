@@ -242,6 +242,21 @@ def test_batch_run_primary_button_opens_dialog_not_split_menu() -> None:
     assert "NovelBatchRunDialog" in DASHBOARD.read_text(encoding="utf-8")
 
 
+def test_longform_vector_warn_surfaces_in_readiness_and_dialog() -> None:
+    readiness = (ROOT / "web" / "frontend" / "src" / "utils" / "projectReadiness.ts").read_text(
+        encoding="utf-8"
+    )
+    card = (ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "ProjectReadinessCard.vue").read_text(
+        encoding="utf-8"
+    )
+    dialog = (ROOT / "web" / "frontend" / "src" / "components" / "NovelBatchRunDialog.vue").read_text(
+        encoding="utf-8"
+    )
+    assert "longFormVectorWarn" in readiness
+    assert "vector-warn-banner" in card
+    assert "长篇向量建议" in dialog
+
+
 def test_batch_run_form_persists_per_project() -> None:
     batch_form = ROOT / "web" / "frontend" / "src" / "utils" / "batchRunForm.ts"
     composable = ROOT / "web" / "frontend" / "src" / "composables" / "useNovelBatchRun.ts"

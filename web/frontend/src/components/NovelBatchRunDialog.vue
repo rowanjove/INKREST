@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { useNovelBatchRun } from '../composables/useNovelBatchRun'
 import { DUAL_AUDIT_HINT } from '../constants/repairWorkflow'
+import {
+  longFormVectorWarn,
+  LONG_FORM_VECTOR_WARN_TEXT,
+} from '../utils/projectReadiness'
+import { computed } from 'vue'
 
 const {
   dialogVisible,
@@ -18,7 +23,16 @@ const {
   busyPhaseLabel,
   goMonitorAlerts,
   goChapterRepair,
+  workScale,
 } = useNovelBatchRun()
+
+const showVectorAlert = computed(() =>
+  longFormVectorWarn({
+    workScale: workScale.value,
+    vectorEnabled: ctx.value.vectorEnabled,
+    semanticSearchEffective: ctx.value.semanticSearchEffective,
+  }),
+)
 </script>
 
 <template>
@@ -33,6 +47,15 @@ const {
       <p class="batch-run-lead">
         按已有卷级队列续跑，不会重新生成全书大纲。队列不足时会按「规划窗口」自动补章目标，再执行单章流水线。
       </p>
+      <el-alert
+        v-if="showVectorAlert"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="长篇向量建议"
+      >
+        {{ LONG_FORM_VECTOR_WARN_TEXT }}
+      </el-alert>
       <el-alert
         v-if="isCircuitPaused"
         type="warning"

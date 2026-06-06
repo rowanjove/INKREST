@@ -616,13 +616,16 @@ def get_embedding_status():
     
     from novel_agent.pipeline import load_pipeline_settings
     from novel_agent.control.scale_profile import is_vector_enabled_for_project
-    from novel_agent.control.runtime_policy import is_semantic_search_effective
+    from novel_agent.control.runtime_policy import is_semantic_search_effective, resolve_runtime_policy
 
     root_dir = ws_server.get_root_dir()
     current = load_pipeline_settings(root_dir)
     provider = current.get("embedding", {}).get("provider", "stub")
     vector_enabled = is_vector_enabled_for_project(root_dir)
     semantic_ok = is_semantic_search_effective(root_dir)
+    policy = resolve_runtime_policy(root_dir)
+    scale = str(policy.scale or "medium")
+    long_form = scale in ("long", "epic", "infinite")
 
     return {
         "has_onnx": has_onnx,
@@ -632,6 +635,10 @@ def get_embedding_status():
         "model_path": str(model_file) if (has_model and has_tokenizer) else None,
         "vector_enabled": vector_enabled,
         "semantic_search_effective": semantic_ok,
+        "work_scale": scale,
+        "pipeline_tier": policy.pipeline_tier,
+        "audit_profile": policy.audit_profile,
+        "long_form_vector_recommended": long_form and vector_enabled and not semantic_ok,
     }
 
 

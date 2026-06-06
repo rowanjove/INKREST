@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import { ArrowDown, CircleCheck, CircleClose, Warning } from '@element-plus/icons-vue'
 import {
   buildReadinessItems,
+  longFormVectorWarn,
+  LONG_FORM_VECTOR_WARN_TEXT,
   readinessAllOk,
   readinessTrafficLight,
   type ReadinessItem,
@@ -40,7 +42,17 @@ const trafficLight = computed(() => readinessTrafficLight(items.value))
 const pendingCount = computed(() => items.value.filter((i) => !i.ok).length)
 const warnCount = computed(() => items.value.filter((i) => i.warn).length)
 
+const showVectorBanner = computed(() =>
+  longFormVectorWarn({
+    workScale: props.workScale || '',
+    vectorEnabled: props.vectorEnabled,
+    semanticSearchEffective: props.semanticSearchEffective,
+  }),
+)
+
 const go = (route: string) => router.push(route)
+
+const openEmbedding = () => router.push('/config')
 </script>
 
 <template>
@@ -60,6 +72,17 @@ const go = (route: string) => router.push(route)
       </span>
       <el-icon class="collapse-chevron" :class="{ open: expanded }"><ArrowDown /></el-icon>
     </button>
+    <el-alert
+      v-if="showVectorBanner"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="vector-warn-banner"
+      title="长篇向量未就绪"
+    >
+      <p>{{ LONG_FORM_VECTOR_WARN_TEXT }}</p>
+      <el-button size="small" type="warning" plain @click.stop="openEmbedding">去配置 Embedding</el-button>
+    </el-alert>
     <div v-show="expanded" class="readiness-cards">
       <button
         v-for="item in items"
@@ -185,6 +208,16 @@ const go = (route: string) => router.push(route)
 
 .collapse-chevron.open {
   transform: rotate(180deg);
+}
+
+.vector-warn-banner {
+  margin: 0 16px 12px;
+}
+
+.vector-warn-banner p {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .readiness-cards {
