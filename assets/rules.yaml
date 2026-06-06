@@ -1,0 +1,36 @@
+commonWords:
+  - content: 愣住
+    description: 高频反应词，同一段内避免重复堆叠。
+  - content: 深吸一口气
+    description: 可用，但一章不宜出现多次。
+commonSentences:
+  - content: 他抬起头
+    description: 常见动作起句，注意与上文衔接，避免机械重复。
+forbiddenWords:
+  - content: 命运的齿轮
+    description: 模板化、宏大化表达，容易产生 AI 腔。
+  - content: 空气仿佛凝固
+    description: 常见套话，除非场景确实需要，否则避免。
+  - content: 从这一刻起
+    description: 容易变成总结式旁白。
+  - content: 无法言说
+    description: 空泛抽象，优先改成具体动作或感官细节。
+  - content: 瞳孔地震
+    description: 网络梗感强，破坏沉浸感。
+forbiddenSentences:
+  - content: 他不知道的是
+    description: 容易提前剧透和制造机械悬念。
+  - content: 一切都悄然改变了
+    description: 总结升华感强，弱化故事现场。
+  - content: 这一刻，他明白了
+    description: 说教式顿悟，宜改为具体事件或对话让读者自己体会。
+writingTechniques: |
+  - 直接承接上一场景，不写前情提要。
+  - 用具体动作、物体、声音、气味、停顿推动画面。
+  - 人物心理尽量通过动作、反应、说话方式体现。
+  - 对话保留潜台词，允许省略、打断、重复和不完整句。
+  - 紧张场景多用短句，舒缓场景可以使用较长句。
+  - 每个句子都应推动情节、展现人物或加强氛围。
+  - 禁止把设定、资料、提示词原样复制进正文。
+  - 新角色出场用一两个可见特征锚定，不要连续贴标签。
+referenceAuthors: []

@@ -1,0 +1,15 @@
+{
+  "id": "male_dushi_yineng",
+  "name": "都市异能",
+  "channel": "male",
+  "category": "都市",
+  "subcategory": "都市异能",
+  "tags": [
+    "异能",
+    "都市",
+    "超能力",
+    "逆袭"
+  ],
+  "description": "超能力、透视、念力、时间停止、读心等都市背景下的超凡能力",
+  "built_in": true
+}

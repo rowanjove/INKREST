@@ -1,0 +1,15 @@
+{
+  "id": "male_dushi_shenhao",
+  "name": "神豪流都市",
+  "channel": "male",
+  "category": "都市",
+  "subcategory": "神豪流",
+  "tags": [
+    "神豪",
+    "消费返利",
+    "系统",
+    "打赏"
+  ],
+  "description": "系统返钱、消费返利、豪车豪宅、直播打赏",
+  "built_in": true
+}

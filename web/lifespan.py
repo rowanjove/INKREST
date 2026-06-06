@@ -1,0 +1,50 @@
+"""FastAPI lifespan event handler for the Novel Agent service."""
+
+import logging
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+import web.context as context
+from web.project_manager import ProjectManager
+from web.helpers import _ensure_dirs, _init_prompt_defaults
+from web.tasks import TaskManager
+
+logger = logging.getLogger("web.lifespan")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for FastAPI app startup and shutdown."""
+    from web.security import enforce_remote_auth_at_startup
+    from novel_agent.logging_config import setup_logging
+
+    enforce_remote_auth_at_startup()
+    setup_logging(context.BASE_DIR / "logs")
+
+    project_manager = ProjectManager(context.BASE_DIR)
+
+    if not (context.BASE_DIR / "projects.json").exists():
+        has_legacy = any((context.BASE_DIR / d).exists() for d in ("state", "data", "config", "workspace"))
+        if has_legacy:
+            context._active_project_id = project_manager.migrate_legacy()
+        else:
+            context._active_project_id = None
+    else:
+        context._active_project_id = project_manager.get_active_id()
+
+    if context._active_project_id:
+        root = context.get_root_dir()
+        _ensure_dirs(root)
+        _init_prompt_defaults(root)
+        context._task_manager = TaskManager(root)
+        from novel_agent.pipeline import llm_config_error
+
+        llm_err = llm_config_error(root)
+        if llm_err:
+            logger.warning("LLM not ready for active project: %s", llm_err)
+
+    _init_prompt_defaults(context.BASE_DIR)
+
+    yield
+
+    logger.info("FastAPI web service shutdown complete")

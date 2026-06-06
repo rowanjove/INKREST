@@ -1,0 +1,722 @@
+"""Background task manager for running chapters asynchronously using asyncio."""
+
+import asyncio
+import threading
+import uuid
+import contextvars
+import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from novel_agent.logging_config import get_logger
+from novel_agent.orchestrator import NovelOrchestrator
+from novel_agent.pipeline import PipelineConfig, assert_llm_ready
+from web.task_batch import run_chapter_batch
+from web.task_progress import handle_progress_message
+from novel_agent.progress import register_progress_callback, register_abort_check
+from novel_agent.state.sqlite_store import SQLiteStateStore, safe_connection
+
+task_id_var = contextvars.ContextVar("task_id", default=None)
+logger = get_logger("tasks")
+
+
+# Delay import to avoid circular imports during startup
+def _get_autopilot_helper():
+    from web.tasks_autopilot import submit_novel_continue_helper
+    return submit_novel_continue_helper
+
+
+
+class TaskManager:
+    def __init__(self, root_dir: Path, max_concurrent: int = 2):
+        self.root_dir = Path(root_dir)
+        self.store = SQLiteStateStore(self.root_dir)
+        self._max_concurrent = max_concurrent
+        self._semaphores_by_loop: Dict[int, asyncio.Semaphore] = {}
+        self._locks_by_loop: Dict[int, asyncio.Lock] = {}
+        self._novel_batch_lock = threading.Lock()
+
+        # In-memory tracking of active asyncio Task objects
+        self._running_tasks: Dict[str, asyncio.Task] = {}
+        # In-memory mapping from chapter_id -> active task_id
+        self._running_chapters: Dict[str, str] = {}
+        
+        # Set of aborted task IDs (speedy synchronous check for progress polling)
+        self._aborted_tasks = set()
+        
+        self._startup_cleanup()
+        register_progress_callback(self._on_progress_emitted)
+
+        def abort_checker() -> bool:
+            tid = task_id_var.get()
+            if not tid:
+                return False
+            return self.is_aborted(tid)
+        register_abort_check(abort_checker)
+
+    def _semaphore_for_loop(self) -> asyncio.Semaphore:
+        """One semaphore per running event loop (TestClient / worker threads)."""
+        loop = asyncio.get_running_loop()
+        key = id(loop)
+        sem = self._semaphores_by_loop.get(key)
+        if sem is None:
+            sem = asyncio.Semaphore(self._max_concurrent)
+            self._semaphores_by_loop[key] = sem
+        return sem
+
+    def _submission_lock_for_loop(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        key = id(loop)
+        lock = self._locks_by_loop.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks_by_loop[key] = lock
+        return lock
+
+    def _startup_cleanup(self) -> None:
+        """Mark tasks left as pending/running on startup as failed."""
+        try:
+            self.store.clean_interrupted_tasks()
+        except Exception as exc:
+            logger.warning("Failed to perform startup task cleanup: %s", exc)
+
+    async def _ensure_llm_ready(self, dry_run: bool) -> None:
+        if dry_run:
+            return
+        await asyncio.get_running_loop().run_in_executor(
+            None, assert_llm_ready, self.root_dir
+        )
+
+    async def _mark_task_failed(
+        self,
+        task_id: str,
+        exc: BaseException,
+        *,
+        resumable_from: Optional[str] = None,
+    ) -> None:
+        from web.task_failures import task_failure_error_string, task_failure_result
+
+        payload = task_failure_result(exc, resumable_from=resumable_from)
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            self.store.update_task_status,
+            task_id,
+            "failed",
+            payload,
+            task_failure_error_string(exc),
+        )
+
+    def _on_progress_emitted(self, msg: Dict[str, Any]) -> None:
+        handle_progress_message(
+            msg,
+            root_exists=self.root_dir.exists,
+            running_chapters=self._running_chapters,
+            running_tasks=self._running_tasks,
+            update_task_progress=self.store.update_task_progress,
+            update_task_chapter_id=self.store.update_task_chapter_id,
+        )
+
+    async def submit_chapter(
+        self,
+        chapter_id: str,
+        goal: str,
+        dry_run: bool = False,
+    ) -> str:
+        task_id = str(uuid.uuid4())[:8]
+        
+        async with self._submission_lock_for_loop():
+            # Check and reserve the chapter atomically across concurrent requests.
+            is_running = False
+            if chapter_id in self._running_chapters:
+                is_running = True
+            else:
+                task_data = await asyncio.get_running_loop().run_in_executor(
+                    None, self._get_active_chapter_tasks, chapter_id
+                )
+                if task_data:
+                    is_running = True
+
+            if is_running:
+                raise ValueError(f"Chapter {chapter_id} is already running")
+
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.save_task,
+                task_id,
+                chapter_id,
+                goal,
+                dry_run,
+                "pending"
+            )
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.delete_old_tasks,
+                50
+            )
+            self._running_chapters[chapter_id] = task_id
+        
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(self._run_chapter(task_id, chapter_id, goal, dry_run))
+        self._running_tasks[task_id] = task
+        return task_id
+
+    async def submit_chapter_gate_only(self, chapter_id: str) -> str:
+        task_id = str(uuid.uuid4())[:8]
+        goal = f"gate_only:{chapter_id}"
+
+        async with self._submission_lock_for_loop():
+            if chapter_id in self._running_chapters:
+                raise ValueError(f"Chapter {chapter_id} is already running")
+            task_data = await asyncio.get_running_loop().run_in_executor(
+                None, self._get_active_chapter_tasks, chapter_id
+            )
+            if task_data:
+                raise ValueError(f"Chapter {chapter_id} is already running")
+
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.save_task,
+                task_id,
+                chapter_id,
+                goal,
+                False,
+                "pending",
+            )
+            self._running_chapters[chapter_id] = task_id
+
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(self._run_chapter_gate_only(task_id, chapter_id))
+        self._running_tasks[task_id] = task
+        return task_id
+
+    async def _run_chapter_gate_only(self, task_id: str, chapter_id: str) -> None:
+        token = task_id_var.set(task_id)
+        try:
+            await asyncio.wait_for(self._semaphore_for_loop().acquire(), timeout=600)
+        except asyncio.TimeoutError:
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                task_id,
+                "failed",
+                None,
+                "Too many concurrent tasks. Please wait and retry.",
+            )
+            self._running_chapters.pop(chapter_id, None)
+            self._running_tasks.pop(task_id, None)
+            task_id_var.reset(token)
+            return
+
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.store.update_task_status, task_id, "running"
+        )
+        try:
+            await self._ensure_llm_ready(False)
+            config = PipelineConfig.from_config(self.root_dir)
+            orchestrator = NovelOrchestrator(config)
+            result = await orchestrator.arun_gate_only(chapter_id)
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                task_id,
+                "completed",
+                {
+                    "chapter_id": result.chapter_id,
+                    "final_path": str(result.final_path),
+                    "gate_only": True,
+                    "warnings": getattr(result, "warnings", []),
+                },
+                None,
+                config.get_call_log(),
+            )
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._sync_task_chapter_version,
+                chapter_id,
+                str(result.final_path),
+            )
+        except Exception as exc:
+            logger.exception("Gate-only task %s failed", task_id)
+            await self._mark_task_failed(task_id, exc)
+        finally:
+            self._semaphore_for_loop().release()
+            self._running_chapters.pop(chapter_id, None)
+            self._running_tasks.pop(task_id, None)
+            task_id_var.reset(token)
+
+    def _get_active_chapter_tasks(self, chapter_id: str) -> Optional[Dict[str, Any]]:
+        """Synchronous query helper run in executor."""
+        with safe_connection(self.store.db_path) as conn:
+            conn.row_factory = sqlite3_row_factory_helper
+            row = conn.execute(
+                "select id from tasks where chapter_id = ? and status in ('pending', 'running')",
+                (chapter_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def is_aborted(self, task_id: str) -> bool:
+        return task_id in self._aborted_tasks
+
+    async def abort_task(self, task_id: str) -> bool:
+        # Check DB status
+        task_data = await asyncio.get_running_loop().run_in_executor(
+            None, self.store.get_task, task_id
+        )
+        if not task_data:
+            return False
+        if task_data["status"] in ("completed", "failed"):
+            return False
+            
+        self._aborted_tasks.add(task_id)
+        
+        async_task = self._running_tasks.pop(task_id, None)
+        if async_task and not async_task.done():
+            async_task.cancel()
+            
+        chapter_id = task_data.get("chapter_id")
+        if chapter_id:
+            self._running_chapters.pop(chapter_id, None)
+            
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            self.store.update_task_status,
+            task_id,
+            "failed",
+            None,
+        )
+        return True
+
+    def _sync_task_chapter_version(self, chapter_id: str, final_path: str) -> None:
+        try:
+            p = Path(final_path)
+            if p.exists():
+                content = p.read_text(encoding="utf-8")
+                plan_path = p.parent / "plan.json"
+                plan_str = "{}"
+                if plan_path.exists():
+                    try:
+                        plan_str = plan_path.read_text(encoding="utf-8")
+                    except Exception:
+                        pass
+                
+                versions = self.store.list_chapter_versions(chapter_id)
+                active_version = next((v for v in versions if v.get("is_active") == 1), None)
+                if active_version:
+                    self.store.save_chapter_version(
+                        chapter_id=chapter_id,
+                        version_name=active_version["version_name"],
+                        content=content,
+                        plan=active_version.get("plan") or plan_str,
+                        is_active=True,
+                        note=active_version.get("note", "") or "AI 写作自动同步",
+                        version_id=active_version["id"]
+                    )
+                else:
+                    self.store.save_chapter_version(
+                        chapter_id=chapter_id,
+                        version_name="版本 A",
+                        content=content,
+                        plan=plan_str,
+                        is_active=True,
+                        note="AI 写作自动同步"
+                    )
+        except Exception as exc:
+            logger.warning("Failed to sync AI chapter content to version DB: %s", exc)
+
+    async def get_task_async(self, task_id: str) -> Optional[Dict[str, Any]]:
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self.store.get_task, task_id
+        )
+
+    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Synchronous get_task for backward compatibility / tests."""
+        return self.store.get_task(task_id)
+
+    async def list_tasks_async(self) -> List[Dict[str, Any]]:
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self.store.list_tasks
+        )
+
+    def list_tasks(self) -> List[Dict[str, Any]]:
+        """Synchronous list_tasks for legacy compatibility."""
+        return self.store.list_tasks()
+
+    def has_active_tasks(self) -> bool:
+        return len(self._running_tasks) > 0
+
+    async def submit_batch(
+        self,
+        chapters: list,
+        dry_run: bool = False,
+    ) -> str:
+        batch_id = str(uuid.uuid4())[:8]
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(self._run_batch(batch_id, chapters, dry_run))
+        self._running_tasks[batch_id] = task
+        return batch_id
+
+    async def _run_batch(self, batch_id: str, chapters: list, dry_run: bool) -> None:
+        await run_chapter_batch(
+            batch_id,
+            chapters,
+            dry_run,
+            submit_chapter=self.submit_chapter,
+            get_task_async=self.get_task_async,
+            is_aborted=self.is_aborted,
+            running_tasks=self._running_tasks,
+        )
+
+    async def _run_chapter(
+        self,
+        task_id: str,
+        chapter_id: str,
+        goal: str,
+        dry_run: bool,
+    ) -> None:
+        token = task_id_var.set(task_id)
+        
+        # Concurrency semaphore acquisition
+        try:
+            await asyncio.wait_for(self._semaphore_for_loop().acquire(), timeout=600)
+        except asyncio.TimeoutError:
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                task_id,
+                "failed",
+                None,
+                "Too many concurrent tasks. Please wait and retry."
+            )
+            self._running_chapters.pop(chapter_id, None)
+            self._running_tasks.pop(task_id, None)
+            task_id_var.reset(token)
+            return
+
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            self.store.update_task_status,
+            task_id,
+            "running"
+        )
+        logger.info("Task %s started", task_id)
+
+        config = None
+        try:
+            await self._ensure_llm_ready(dry_run)
+            if dry_run:
+                config = PipelineConfig.dry_run(self.root_dir)
+            else:
+                config = PipelineConfig.from_config(self.root_dir)
+
+            orchestrator = NovelOrchestrator(config)
+            
+            if hasattr(orchestrator, "arun_chapter"):
+                result = await orchestrator.arun_chapter(chapter_id, goal)
+            else:
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(None, orchestrator.run_chapter, chapter_id, goal)
+
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                task_id,
+                "completed",
+                {
+                    "chapter_id": result.chapter_id,
+                    "final_path": str(result.final_path),
+                    "risk_level": result.audit.get("risk_level", ""),
+                    "warnings": getattr(result, "warnings", []),
+                },
+                None,
+                config.get_call_log()
+            )
+            
+            # Sync generated content to version DB
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._sync_task_chapter_version,
+                chapter_id,
+                str(result.final_path)
+            )
+        except asyncio.CancelledError:
+            logger.info("Task %s cancelled", task_id)
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                task_id,
+                "failed",
+                None,
+                "已中止"
+            )
+        except Exception as exc:
+            logger.error("Task %s failed: %s", task_id, exc)
+            await self._mark_task_failed(task_id, exc)
+        finally:
+            if config is not None:
+                try:
+                    await config.close_llm_clients()
+                except Exception as exc:
+                    logger.warning("Failed to close LLM clients for task %s: %s", task_id, exc)
+            self._semaphore_for_loop().release()
+            self._running_chapters.pop(chapter_id, None)
+            self._running_tasks.pop(task_id, None)
+            task_id_var.reset(token)
+
+    async def submit_novel(
+        self,
+        theme: str,
+        genre: str = "玄幻",
+        target_chapters: int = 20,
+        special_requirements: str = "",
+        dry_run: bool = False,
+    ) -> str:
+        task_id = f"novel-{str(uuid.uuid4())[:8]}"
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            self.store.save_task,
+            task_id,
+            None,
+            f"Novel: {theme}",
+            dry_run,
+            "pending"
+        )
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            self.store.delete_old_tasks,
+            50
+        )
+        
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(
+            self._run_novel(task_id, theme, genre, target_chapters, special_requirements, dry_run)
+        )
+        self._running_tasks[task_id] = task
+        return task_id
+
+    async def submit_arc_run(
+        self,
+        arc_id: str = "",
+        arc_ids: Optional[List[str]] = None,
+        start_arc_id: str = "",
+        resume: bool = True,
+        max_chapters: int = 0,
+        dry_run: bool = False,
+    ) -> str:
+        task_id = f"arc-{str(uuid.uuid4())[:8]}"
+        label = arc_id or start_arc_id or ",".join(arc_ids or []) or "arcs"
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            self.store.save_task,
+            task_id,
+            None,
+            f"Arc batch: {label}",
+            dry_run,
+            "pending",
+        )
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(
+            self._run_arc_batch(
+                task_id, arc_id, arc_ids or [], start_arc_id, resume, max_chapters, dry_run
+            )
+        )
+        self._running_tasks[task_id] = task
+        return task_id
+
+    async def submit_novel_continue(
+        self,
+        resume: bool = True,
+        max_chapters: int = 0,
+        dry_run: bool = False,
+        *,
+        autopilot: bool = False,
+        full_book: bool = True,
+        chapters_per_round: int = 0,
+        max_rounds: int = 0,
+    ) -> str:
+        helper = _get_autopilot_helper()
+        return await helper(
+            self,
+            resume,
+            max_chapters,
+            dry_run,
+            autopilot=autopilot,
+            full_book=full_book,
+            chapters_per_round=chapters_per_round,
+            max_rounds=max_rounds,
+        )
+
+
+    async def _run_arc_batch(
+        self,
+        task_id: str,
+        arc_id: str,
+        arc_ids: List[str],
+        start_arc_id: str,
+        resume: bool,
+        max_chapters: int,
+        dry_run: bool,
+    ) -> None:
+        token = task_id_var.set(task_id)
+        try:
+            await asyncio.wait_for(self._semaphore_for_loop().acquire(), timeout=600)
+        except asyncio.TimeoutError:
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                task_id,
+                "failed",
+                None,
+                "Too many concurrent tasks.",
+            )
+            self._running_tasks.pop(task_id, None)
+            task_id_var.reset(token)
+            return
+
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.store.update_task_status, task_id, "running"
+        )
+        try:
+            await self._ensure_llm_ready(dry_run)
+            config = PipelineConfig.dry_run(self.root_dir) if dry_run else PipelineConfig.from_config(self.root_dir)
+            orchestrator = NovelOrchestrator(config)
+            cap = int(max_chapters) if max_chapters and max_chapters > 0 else None
+            results = await orchestrator.arun_arcs(
+                arc_id=arc_id or None,
+                arc_ids=arc_ids or None,
+                start_arc_id=start_arc_id or None,
+                resume=resume,
+                max_chapters=cap,
+            )
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                task_id,
+                "completed",
+                {
+                    "chapters_completed": len(results),
+                    "chapters": [
+                        {"chapter_id": r.chapter_id, "warnings": getattr(r, "warnings", [])}
+                        for r in results
+                    ],
+                },
+            )
+        except Exception as exc:
+            logger.exception("Arc batch task %s failed: %s", task_id, exc)
+            await self._mark_task_failed(task_id, exc)
+        finally:
+            self._semaphore_for_loop().release()
+            self._running_tasks.pop(task_id, None)
+            task_id_var.reset(token)
+
+
+
+    async def _run_novel(
+        self,
+        task_id: str,
+        theme: str,
+        genre: str,
+        target_chapters: int,
+        special_requirements: str,
+        dry_run: bool,
+    ) -> None:
+        token = task_id_var.set(task_id)
+        
+        try:
+            await asyncio.wait_for(self._semaphore_for_loop().acquire(), timeout=600)
+        except asyncio.TimeoutError:
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                task_id,
+                "failed",
+                None,
+                "Too many concurrent tasks."
+            )
+            self._running_tasks.pop(task_id, None)
+            task_id_var.reset(token)
+            return
+
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            self.store.update_task_status,
+            task_id,
+            "running"
+        )
+
+        config = None
+        try:
+            await self._ensure_llm_ready(dry_run)
+            if dry_run:
+                config = PipelineConfig.dry_run(self.root_dir)
+            else:
+                config = PipelineConfig.from_config(self.root_dir)
+
+            orchestrator = NovelOrchestrator(config)
+            
+            if hasattr(orchestrator, "arun_novel"):
+                results = await orchestrator.arun_novel(
+                    theme=theme,
+                    genre=genre,
+                    target_chapters=target_chapters,
+                    special_requirements=special_requirements,
+                )
+            else:
+                loop = asyncio.get_running_loop()
+                results = await loop.run_in_executor(
+                    None,
+                    orchestrator.run_novel,
+                    theme,
+                    genre,
+                    target_chapters,
+                    special_requirements
+                )
+
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                task_id,
+                "completed",
+                {
+                    "chapters_completed": len(results),
+                    "chapters_requested": target_chapters,
+                    "chapters": [
+                        {
+                            "chapter_id": r.chapter_id,
+                            "risk_level": r.audit.get("risk_level", ""),
+                            "warnings": getattr(r, "warnings", []),
+                        }
+                        for r in results
+                    ],
+                },
+                None,
+                config.get_call_log()
+            )
+        except asyncio.CancelledError:
+            logger.info("Novel task %s cancelled", task_id)
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                task_id,
+                "failed",
+                None,
+                "已中止"
+            )
+        except Exception as exc:
+            logger.error("Novel task %s failed: %s", task_id, exc)
+            await self._mark_task_failed(task_id, exc)
+        finally:
+            if config is not None:
+                try:
+                    await config.close_llm_clients()
+                except Exception as exc:
+                    logger.warning("Failed to close LLM clients for novel task %s: %s", task_id, exc)
+            self._semaphore_for_loop().release()
+            self._running_tasks.pop(task_id, None)
+            task_id_var.reset(token)
+
+
+def sqlite3_row_factory_helper(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d

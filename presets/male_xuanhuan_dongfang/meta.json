@@ -1,0 +1,16 @@
+{
+  "id": "male_xuanhuan_dongfang",
+  "name": "东方玄幻",
+  "channel": "male",
+  "category": "玄幻",
+  "subcategory": "东方玄幻",
+  "tags": [
+    "升级",
+    "宗门",
+    "血脉",
+    "打脸",
+    "等级体系"
+  ],
+  "description": "类中国古代/架空世界，宗门、王朝、武魂、血脉、灵根、帝路",
+  "built_in": true
+}

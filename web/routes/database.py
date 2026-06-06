@@ -1,0 +1,418 @@
+import os
+import tempfile
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Query, HTTPException, Body
+from pydantic import BaseModel, Field
+
+from web.security import ACCESS_TOKEN_ENV, ACCESS_TOKEN_HEADER
+from starlette.background import BackgroundTask
+from fastapi.responses import FileResponse
+
+import web.context as ws_server
+import web.helpers as ws_helpers
+from novel_agent.control.calibration import build_calibration_report
+
+ws_server.get_outline = ws_helpers.get_outline
+ws_server.list_chapters = ws_helpers.list_chapters
+ws_server.build_calibration_report = build_calibration_report
+from web.models import (
+    StateView,
+    TimelineView,
+)
+from novel_agent.state.sqlite_store import SQLiteStateStore
+from novel_agent.control.narrative_debt import classify_debt
+from novel_agent.control.scale_profile import build_upgrade_pressure, resolve_scale_profile
+from novel_agent.dashboard import build_dashboard_html
+
+router = APIRouter()
+
+
+# ---- Database ----
+
+
+class ClearDatabaseRequest(BaseModel):
+    confirm: bool = Field(
+        False,
+        description="Must be true to clear narrative state.",
+    )
+    include_operational: bool = Field(
+        False,
+        description="Also clear tasks, cost logs, and prompt/asset version history.",
+    )
+
+
+@router.post("/api/database/clear")
+def clear_database(
+    body: ClearDatabaseRequest = Body(default_factory=ClearDatabaseRequest),
+) -> Dict[str, Any]:
+    if not body.confirm:
+        raise HTTPException(
+            400,
+            "Destructive operation: set confirm=true in request body.",
+        )
+    store = SQLiteStateStore(ws_server.get_root_dir())
+    cleared = store.clear_narrative_state(include_operational=body.include_operational)
+    return {
+        "status": "cleared",
+        "tables_cleared": cleared,
+        "include_operational": body.include_operational,
+        "access_token_required": bool(os.environ.get(ACCESS_TOKEN_ENV, "")),
+        "access_token_header": ACCESS_TOKEN_HEADER,
+    }
+
+
+def export_markdown_internal(root_dir: Path, output_path: Path, chapter_ids: Optional[List[str]] = None, title: str = "未命名小说"):
+    chapters_dir = root_dir / "workspace" / "chapters"
+    if not chapters_dir.exists():
+        raise FileNotFoundError("Chapters directory not found")
+
+    chapter_dirs = sorted(chapters_dir.glob("chapter_*"))
+    if chapter_ids:
+        chapter_dirs = [
+            d for d in chapter_dirs
+            if any(d.name.endswith(cid) for cid in chapter_ids)
+        ]
+
+    parts = []
+    parts.append(f"# {title}\n")
+    for ch_dir in chapter_dirs:
+        final_path = ch_dir / "chapter_final.txt"
+        if not final_path.exists():
+            continue
+
+        text = final_path.read_text(encoding="utf-8").strip()
+        if not text:
+            continue
+
+        chapter_id = ch_dir.name.replace("chapter_", "")
+        plan_path = ch_dir / "plan.json"
+        ch_title = ""
+        if plan_path.exists():
+            import json
+            try:
+                plan = json.loads(plan_path.read_text(encoding="utf-8"))
+                ch_title = plan.get("chapter_title", "")
+            except Exception:
+                pass
+        
+        header = f"## 第 {int(chapter_id) if chapter_id.isdigit() else chapter_id} 章"
+        if ch_title:
+            header += f" {ch_title}"
+        
+        parts.append(f"{header}\n\n{text}")
+
+    output_path.write_text("\n\n".join(parts), encoding="utf-8")
+
+
+def export_docx_internal(root_dir: Path, output_path: Path, chapter_ids: Optional[List[str]] = None, title: str = "未命名小说"):
+    import docx
+    doc = docx.Document()
+    doc.add_heading(title, 0)
+    
+    chapters_dir = root_dir / "workspace" / "chapters"
+    if not chapters_dir.exists():
+        raise FileNotFoundError("Chapters directory not found")
+
+    chapter_dirs = sorted(chapters_dir.glob("chapter_*"))
+    if chapter_ids:
+        chapter_dirs = [
+            d for d in chapter_dirs
+            if any(d.name.endswith(cid) for cid in chapter_ids)
+        ]
+
+    for ch_dir in chapter_dirs:
+        final_path = ch_dir / "chapter_final.txt"
+        if not final_path.exists():
+            continue
+
+        text = final_path.read_text(encoding="utf-8").strip()
+        if not text:
+            continue
+
+        chapter_id = ch_dir.name.replace("chapter_", "")
+        plan_path = ch_dir / "plan.json"
+        ch_title = ""
+        if plan_path.exists():
+            import json
+            try:
+                plan = json.loads(plan_path.read_text(encoding="utf-8"))
+                ch_title = plan.get("chapter_title", "")
+            except Exception:
+                pass
+        
+        header = f"第 {int(chapter_id) if chapter_id.isdigit() else chapter_id} 章"
+        if ch_title:
+            header += f"  {ch_title}"
+            
+        doc.add_heading(header, level=1)
+        
+        # Add paragraphs
+        for p in text.split("\n"):
+            p_clean = p.strip()
+            if p_clean:
+                doc.add_paragraph(p_clean)
+                
+    doc.save(str(output_path))
+
+
+# ---- Export ----
+
+@router.post("/api/export")
+def export_novel(
+    format: str = Query(..., pattern="^(txt|epub|pdf|markdown|docx|md)$"),
+    chapter_ids: Optional[str] = Query(None, description="Comma-separated chapter IDs, or empty for all"),
+    title: str = Query("未命名小说", description="Book title"),
+    project_id: Optional[str] = Query(None, description="Project ID"),
+) -> FileResponse:
+    """Export chapters in the specified format."""
+    from novel_agent.exporters import export_txt, export_epub, export_pdf
+
+    if project_id:
+        ws_server._validate_id(project_id, "project_id")
+        root_dir = ws_server.BASE_DIR / "projects" / project_id
+        if not root_dir.exists():
+            raise HTTPException(404, f"Project {project_id} not found")
+    else:
+        root_dir = ws_server.get_root_dir()
+
+    ids = [c.strip() for c in chapter_ids.split(",")] if chapter_ids else None
+    
+    # 规范化文件后缀
+    ext = format
+    if format == "markdown":
+        ext = "md"
+    suffix = f".{ext}"
+    
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False, prefix="novel_export_")
+    tmp_path = Path(tmp.name)
+    tmp.close()
+
+    try:
+        if format == "txt":
+            export_txt(root_dir, tmp_path, chapter_ids=ids, include_title=True)
+        elif format == "epub":
+            export_epub(root_dir, tmp_path, chapter_ids=ids, title=title)
+        elif format == "pdf":
+            export_pdf(root_dir, tmp_path, chapter_ids=ids, title=title)
+        elif format in ("markdown", "md"):
+            export_markdown_internal(root_dir, tmp_path, chapter_ids=ids, title=title)
+        elif format == "docx":
+            export_docx_internal(root_dir, tmp_path, chapter_ids=ids, title=title)
+    except ImportError as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(500, f"Export failed: {exc}")
+
+    filename = f"{title}{suffix}"
+    return FileResponse(
+        str(tmp_path),
+        filename=filename,
+        media_type="application/octet-stream",
+        background=BackgroundTask(tmp_path.unlink, missing_ok=True),
+    )
+
+
+# ---- State & Narrative Debt ----
+
+@router.get("/api/state")
+def get_state(sync: bool = False) -> StateView:
+    root = ws_server.get_root_dir()
+    store = SQLiteStateStore(root)
+    if sync:
+        try:
+            from novel_agent.services.chapter_index_sync import sync_chapters_from_disk
+            sync_chapters_from_disk(root, store)
+        except Exception as exc:
+            import logging
+            logging.getLogger("web.server").error("Failed to sync chapters during state query: %s", exc)
+
+    chapters = store.get_chapters()
+    current = chapters[-1]["id"] if chapters else "000"
+    
+    foreshadows = classify_debt(store.list_foreshadows(), current, default_period=10, weight=1.0)
+    hooks = classify_debt(store.list_hooks(), current, default_period=10, weight=1.0)
+    
+    return StateView(
+        characters=store.list_characters(),
+        foreshadows=foreshadows,
+        hooks=hooks,
+        objects=store.list_objects(),
+        events=store.list_events(),
+        threads=store.list_threads(),
+    )
+
+
+@router.get("/api/state/timeline")
+def get_timeline() -> TimelineView:
+    store = SQLiteStateStore(ws_server.get_root_dir())
+    items = store.search_timeline("", limit=500)
+
+    nodes = [i for i in items if i.get("kind") == "node"]
+    edges = [i for i in items if i.get("kind") == "edge"]
+    foreshadows = [i for i in items if i.get("kind") == "foreshadow"]
+    hooks = [i for i in items if i.get("kind") == "hook"]
+
+    return TimelineView(
+        nodes=nodes,
+        edges=edges,
+        foreshadows=foreshadows,
+        hooks=hooks,
+    )
+
+
+@router.get("/api/events")
+def search_events(query: str = "", limit: int = 20) -> List[Dict[str, Any]]:
+    store = SQLiteStateStore(ws_server.get_root_dir())
+    return store.search_events(query, limit)
+
+
+from pydantic import BaseModel
+
+class CollectDebtRequest(BaseModel):
+    debt_type: str
+    debt_id: str
+    priority: int = 3
+
+
+@router.get("/api/control/narrative-debt")
+def get_narrative_debt(current_chapter: str = "") -> Dict[str, Any]:
+    store = SQLiteStateStore(ws_server.get_root_dir())
+    chapter = current_chapter or "000"
+    return {
+        "foreshadows": classify_debt(store.list_foreshadows(), chapter, default_period=10, weight=1.0),
+        "reader_promises": classify_debt(store.list_reader_promises(), chapter, default_period=8, weight=1.2),
+        "secrets": classify_debt(store.list_secrets(), chapter, default_period=12, weight=0.8),
+    }
+
+
+@router.post("/api/control/narrative-debt/collect")
+def collect_debt(req: CollectDebtRequest) -> Dict[str, Any]:
+    store = SQLiteStateStore(ws_server.get_root_dir())
+    table_map = {
+        "foreshadows": "foreshadows",
+        "foreshadow": "foreshadows",
+        "reader_promises": "reader_promises",
+        "reader_promise": "reader_promises",
+        "secrets": "secrets",
+        "secret": "secrets",
+        "hooks": "hooks",
+        "hook": "hooks"
+    }
+    table = table_map.get(req.debt_type.lower())
+    if not table:
+        raise HTTPException(400, f"Unsupported debt type: {req.debt_type}")
+    
+    store.set_debt_priority(table, req.debt_id, req.priority)
+    return {"status": "success", "message": f"Debt {req.debt_id} priority set to {req.priority}"}
+
+
+@router.get("/api/control/calibration")
+def get_calibration_report() -> Dict[str, Any]:
+    outline = ws_server.get_outline()
+    chapters = [item.model_dump() for item in ws_server.list_chapters()]
+    current = chapters[-1]["chapter_id"] if chapters else "000"
+    debt = get_narrative_debt(current_chapter=current)
+    return ws_server.build_calibration_report(outline, chapters, debt)
+
+
+@router.get("/api/control/scale-profile")
+def get_scale_profile() -> Dict[str, Any]:
+    outline = ws_server.get_outline()
+    chapters = ws_server.list_chapters()
+    profile = outline.get("scale_profile") or resolve_scale_profile(
+        target_chapters=outline.get("target_chapters") or len(chapters) or 20
+    )
+    return {
+        "profile": profile,
+        "current_chapter_count": len(chapters),
+        "upgrade_pressure": build_upgrade_pressure(profile, len(chapters)),
+    }
+
+
+@router.get("/api/runtime-logs")
+async def get_runtime_logs(since_id: int = 0, limit: int = 200) -> Dict[str, Any]:
+    """Agent 流水线实时日志（内存环形缓冲），供运行监控与轮询同步。"""
+    from web.runtime_log_buffer import list_runtime_logs
+
+    logs = list_runtime_logs(since_id=since_id, limit=min(max(limit, 1), 500))
+    last_id = logs[-1]["id"] if logs else since_id
+    return {"logs": logs, "last_id": last_id}
+
+
+@router.delete("/api/runtime-logs")
+async def clear_runtime_logs_api() -> Dict[str, str]:
+    from web.runtime_log_buffer import clear_runtime_logs
+
+    clear_runtime_logs()
+    return {"status": "ok"}
+
+
+@router.get("/api/llm-logs")
+async def get_llm_logs() -> Dict[str, Any]:
+    tasks = await ws_server._get_task_manager().list_tasks_async()
+    all_logs = []
+    for task in tasks:
+        logs = task.get("llm_logs", [])
+        if logs:
+            for entry in logs:
+                entry["chapter_id"] = task.get("chapter_id", "")
+            all_logs.extend(logs)
+    all_logs.sort(key=lambda x: x.get("timestamp", 0))
+    total_tokens = sum(entry.get("total_tokens", 0) for entry in all_logs)
+    total_latency = sum(entry.get("latency_ms", 0) for entry in all_logs)
+    return {
+        "logs": all_logs,
+        "summary": {
+            "call_count": len(all_logs),
+            "total_tokens": total_tokens,
+            "total_latency_ms": total_latency,
+            "avg_latency_ms": int(total_latency / len(all_logs)) if all_logs else 0,
+        },
+    }
+
+
+@router.get("/api/dashboard")
+def get_dashboard() -> Dict[str, str]:
+    html = build_dashboard_html(ws_server.get_root_dir())
+    return {"html": html}
+
+
+class SaveRelationRequest(BaseModel):
+    source_char: str
+    target_char: str
+    relation_type: str
+    intensity: float
+    since_chapter: int = 1
+    last_updated: int = 1
+    description: str = ""
+
+
+@router.get("/api/control/character-relations")
+def get_character_relations() -> List[Dict[str, Any]]:
+    store = SQLiteStateStore(ws_server.get_root_dir())
+    return store.list_character_relations()
+
+
+@router.post("/api/control/character-relations")
+def save_character_relation(req: SaveRelationRequest) -> Dict[str, Any]:
+    store = SQLiteStateStore(ws_server.get_root_dir())
+    store.save_character_relation(
+        source_char=req.source_char,
+        target_char=req.target_char,
+        relation_type=req.relation_type,
+        intensity=req.intensity,
+        since_chapter=req.since_chapter,
+        last_updated=req.last_updated,
+        description=req.description
+    )
+    return {"status": "success"}
+
+
+@router.delete("/api/control/character-relations/{relation_id}")
+def delete_character_relation(relation_id: int) -> Dict[str, Any]:
+    store = SQLiteStateStore(ws_server.get_root_dir())
+    store.delete_character_relation(relation_id)
+    return {"status": "success"}

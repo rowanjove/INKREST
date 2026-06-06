@@ -1,0 +1,17 @@
+{
+  "id": "zhibo",
+  "name": "直播",
+  "channels": [
+    "general",
+    "male",
+    "female"
+  ],
+  "tags": [
+    "直播",
+    "弹幕",
+    "打赏",
+    "连麦",
+    "网红"
+  ],
+  "description": "直播互动、弹幕打脸、连麦破案、网红逆袭"
+}

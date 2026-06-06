@@ -1,0 +1,17 @@
+{
+  "id": "xitong",
+  "name": "系统",
+  "channels": [
+    "general",
+    "male",
+    "female"
+  ],
+  "tags": [
+    "系统",
+    "任务",
+    "奖励",
+    "升级",
+    "签到"
+  ],
+  "description": "系统发任务、奖励功法、抽奖、签到、加点"
+}

@@ -1,0 +1,16 @@
+{
+  "id": "quanmou",
+  "name": "权谋",
+  "channels": [
+    "general",
+    "male",
+    "female"
+  ],
+  "tags": [
+    "权谋",
+    "政治",
+    "博弈",
+    "智斗"
+  ],
+  "description": "权力博弈、政治斗争、智谋对决"
+}

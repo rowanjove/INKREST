@@ -1,0 +1,65 @@
+# 密钥和敏感配置
+.env
+.env.local
+config/pipeline.yaml
+config/models.json
+
+# 本地数据、模型与安装包 (体积大，不入库)
+data/py_deps/
+data/models/
+data/novel.sqlite*
+data/.local_access_token
+novel_agent.db
+*.db
+projects.json
+workspace/
+projects/
+logs/
+backups/
+build/
+dist-portable/
+.cursor/
+terminals/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Node & Build Outputs
+node_modules/
+web/frontend/dist/
+web/frontend/dist-electron/
+web/frontend/dist-desktop/
+web/frontend/win-unpacked/
+dist/
+build/
+NovelAgent-Portable/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local dev scratch (debug scripts, temp images)
+scratch/
+dist-portable/
+terminals/
+
+# Dev workspace roots (runtime data, not source)
+state/
+dashboard/
+data/
+test_async_workspace/
+
+# Legacy electron tree (canonical: web/frontend/electron)
+electron_version/
+
+# Duplicate pet asset sources (canonical: web/frontend/src/assets/pet/shanshan)
+山山/

@@ -1,0 +1,16 @@
+{
+  "id": "shengcun",
+  "name": "生存",
+  "channels": [
+    "general",
+    "male",
+    "female"
+  ],
+  "tags": [
+    "生存",
+    "末世",
+    "求生",
+    "资源"
+  ],
+  "description": "极端环境下的生存挑战、资源争夺"
+}

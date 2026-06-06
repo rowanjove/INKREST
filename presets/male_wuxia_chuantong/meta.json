@@ -1,0 +1,15 @@
+{
+  "id": "male_wuxia_chuantong",
+  "name": "传统武侠",
+  "channel": "male",
+  "category": "武侠",
+  "subcategory": "传统武侠",
+  "tags": [
+    "江湖",
+    "门派",
+    "侠义",
+    "武林"
+  ],
+  "description": "江湖、门派、侠义、恩仇、武林大会",
+  "built_in": true
+}

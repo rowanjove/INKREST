@@ -1,0 +1,17 @@
+{
+  "id": "xuanyi",
+  "name": "悬疑",
+  "channels": [
+    "general",
+    "male",
+    "female"
+  ],
+  "tags": [
+    "推理",
+    "刑侦",
+    "灵异",
+    "规则怪谈",
+    "恐怖"
+  ],
+  "description": "推理探案、灵异恐怖、规则怪谈、密室逃生"
+}

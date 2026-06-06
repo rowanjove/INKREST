@@ -1,0 +1,1 @@
+"""Novel Agent MCP server package."""

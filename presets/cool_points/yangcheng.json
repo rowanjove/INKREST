@@ -1,0 +1,16 @@
+{
+  "id": "yangcheng",
+  "name": "养成",
+  "channels": [
+    "general",
+    "male",
+    "female"
+  ],
+  "tags": [
+    "养成",
+    "师徒",
+    "培养",
+    "成长"
+  ],
+  "description": "培养角色/势力成长的成就感"
+}

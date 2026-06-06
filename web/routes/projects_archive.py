@@ -1,0 +1,280 @@
+import json
+import uuid
+import zipfile
+import tempfile
+import shutil
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
+
+import web.context as ws_server
+
+router = APIRouter()
+
+import web.routes.projects as projects_module
+UPLOAD_CHUNK_BYTES = 1024 * 1024
+BLOCKED_PROJECT_ARCHIVE_PARTS = {"plugins", "__pycache__"}
+BLOCKED_PROJECT_ARCHIVE_SUFFIXES = {
+    ".py", ".pyc", ".pyo", ".pyd", ".dll", ".exe", ".bat", ".cmd",
+    ".com", ".msi", ".ps1", ".sh", ".js", ".vbs", ".jar",
+}
+
+
+def _copy_upload_with_limit(source, destination, limit: int) -> None:
+    total = 0
+    while True:
+        chunk = source.read(UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(413, "Project ZIP exceeds the upload size limit")
+        destination.write(chunk)
+
+
+def _reject_executable_archive_member(filename: str) -> None:
+    member = Path(filename.replace("\\", "/"))
+    lowered_parts = {part.lower() for part in member.parts}
+    if lowered_parts & BLOCKED_PROJECT_ARCHIVE_PARTS:
+        raise HTTPException(400, f"Project ZIP contains executable content: {filename}")
+    if member.suffix.lower() in BLOCKED_PROJECT_ARCHIVE_SUFFIXES:
+        raise HTTPException(400, f"Project ZIP contains executable content: {filename}")
+
+
+def _is_executable_archive_member(filename: str) -> bool:
+    try:
+        _reject_executable_archive_member(filename)
+        return False
+    except HTTPException:
+        return True
+
+
+def _extract_and_validate_zip(tmp_path: Path, project_dir: Path) -> None:
+    with zipfile.ZipFile(tmp_path, "r") as zf:
+        infos = zf.infolist()
+        if len(infos) > projects_module.MAX_PROJECT_ZIP_FILES:
+            raise HTTPException(413, "Project ZIP contains too many files")
+        if sum(info.file_size for info in infos) > projects_module.MAX_PROJECT_ZIP_UNCOMPRESSED_BYTES:
+            raise HTTPException(413, "Project ZIP expands beyond the allowed size")
+        
+        resolved_dest = project_dir.resolve()
+        for info in infos:
+            _reject_executable_archive_member(info.filename)
+            member_path = (project_dir / info.filename).resolve()
+            if resolved_dest not in member_path.parents and member_path != resolved_dest:
+                raise HTTPException(400, f"Zip member attempts directory traversal: {info.filename}")
+        zf.extractall(project_dir)
+
+
+def _parse_imported_project_metadata(project_dir: Path) -> Tuple[str, str, bool, str]:
+    info_path = project_dir / "project_info.json"
+    name = "导入的小说"
+    description = "通过项目包导入"
+    import_pinned = False
+    import_pinned_at = ""
+
+    if info_path.exists():
+        try:
+            info = json.loads(info_path.read_text(encoding="utf-8"))
+            name = info.get("name", name)
+            description = info.get("description", description)
+            import_pinned = bool(info.get("pinned"))
+            import_pinned_at = str(info.get("pinned_at") or "")
+            info_path.unlink()
+        except Exception:
+            pass
+    else:
+        outline_path = project_dir / "workspace" / "outline.json"
+        if outline_path.exists():
+            try:
+                outline = json.loads(outline_path.read_text(encoding="utf-8"))
+                name = outline.get("chosen_title") or (outline.get("title_options")[0] if outline.get("title_options") else name)
+            except Exception:
+                pass
+    return name, description, import_pinned, import_pinned_at
+
+
+def _register_imported_project(pid: str, name: str, description: str, import_pinned: bool, import_pinned_at: str) -> None:
+    now = datetime.now().isoformat()
+    registry = ws_server.project_manager._read_registry()
+    if "projects" not in registry:
+        registry["projects"] = {}
+    entry: Dict[str, Any] = {
+        "name": name,
+        "description": description,
+        "created_at": now,
+        "updated_at": now,
+    }
+    if import_pinned:
+        pinned_count = sum(1 for p in registry.get("projects", {}).values() if p.get("pinned"))
+        if pinned_count < ws_server.project_manager.MAX_PINNED_PROJECTS:
+            entry["pinned"] = True
+            entry["pinned_at"] = import_pinned_at or now
+    registry["projects"][pid] = entry
+    ws_server.project_manager._write_registry(registry)
+
+
+# ---- API Endpoints ----
+
+@router.get("/api/projects/{pid}/export-zip")
+def export_project_zip(pid: str) -> FileResponse:
+    ws_server._validate_id(pid, "project_id")
+    project_dir = ws_server.BASE_DIR / "projects" / pid
+    if not project_dir.exists():
+        raise HTTPException(404, f"Project {pid} not found")
+
+    data = ws_server.project_manager._read_registry()
+    info = data.get("projects", {}).get(pid, {})
+    project_name = info.get("name", pid)
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False, prefix="project_export_")
+    tmp_path = Path(tmp.name)
+    tmp.close()
+
+    try:
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            info_data = {
+                "name": info.get("name", pid),
+                "description": info.get("description", ""),
+                "pinned": bool(info.get("pinned")),
+                "pinned_at": info.get("pinned_at") or "",
+                "exported_at": datetime.now().isoformat(),
+            }
+            zf.writestr("project_info.json", json.dumps(info_data, ensure_ascii=False, indent=2))
+
+            for path in project_dir.rglob("*"):
+                if path.is_file():
+                    if path.is_symlink():
+                        continue
+                    try:
+                        path.resolve().relative_to(project_dir.resolve())
+                    except ValueError:
+                        continue
+                    rel_path = path.relative_to(project_dir)
+                    rel_posix = rel_path.as_posix()
+                    if rel_posix == "project_info.json" or _is_executable_archive_member(rel_posix):
+                        continue
+                    zf.write(str(path), rel_posix)
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(500, f"Exporting ZIP failed: {exc}")
+
+    safe_filename = "".join(c for c in project_name if c.isalnum() or c in (" ", "_", "-")).strip()
+    if not safe_filename:
+        safe_filename = pid
+    filename = f"{safe_filename}.zip"
+
+    return FileResponse(
+        str(tmp_path),
+        filename=filename,
+        media_type="application/octet-stream",
+        background=BackgroundTask(tmp_path.unlink, missing_ok=True),
+    )
+
+
+@router.post("/api/projects/import-zip")
+def import_project_zip(file: UploadFile = File(...)) -> Dict[str, Any]:
+    pid = uuid.uuid4().hex[:8]
+    project_dir = ws_server.BASE_DIR / "projects" / pid
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    tmp_path = Path(tmp.name)
+    tmp.close()
+
+    try:
+        with open(tmp_path, "wb") as f:
+            _copy_upload_with_limit(file.file, f, projects_module.MAX_PROJECT_ZIP_BYTES)
+
+        _extract_and_validate_zip(tmp_path, project_dir)
+        name, description, import_pinned, import_pinned_at = _parse_imported_project_metadata(project_dir)
+        _register_imported_project(pid, name, description, import_pinned, import_pinned_at)
+
+        return {"id": pid, "name": name, "description": description, "status": "imported"}
+
+    except HTTPException:
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        raise
+    except Exception as exc:
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        raise HTTPException(500, f"Importing ZIP failed: {exc}")
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+@router.get("/api/projects/{pid}/export-serial")
+def export_serial(pid: str, format: str = "zip") -> Any:
+    ws_server._validate_id(pid, "project_id")
+    project_dir = ws_server.BASE_DIR / "projects" / pid
+    if not project_dir.exists():
+        raise HTTPException(404, "Project not found")
+        
+    chapters = []
+    ws_dir = project_dir / "workspace"
+    chapters_dir = ws_dir / "chapters"
+    if chapters_dir.exists():
+        for ch_dir in sorted(list(chapters_dir.glob("chapter_*")), key=lambda d: d.name):
+            ch_id = ch_dir.name.replace("chapter_", "")
+            txt_path = ch_dir / "chapter_final.txt"
+            plan_path = ch_dir / "plan.json"
+            
+            title = f"第 {ch_id} 章"
+            if plan_path.exists():
+                try:
+                    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+                    title = plan.get("chapter_title", title)
+                except (OSError, json.JSONDecodeError):
+                    pass
+                    
+            if txt_path.exists():
+                try:
+                    text = txt_path.read_text(encoding="utf-8").strip()
+                    if text:
+                        chapters.append((ch_id, title, text))
+                except OSError:
+                    pass
+                    
+    if not chapters:
+        raise HTTPException(400, "当前项目还没有任何已生成的章节")
+        
+    if format == "zip":
+        tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False, prefix="serial_export_")
+        tmp_path = Path(tmp.name)
+        tmp.close()
+        try:
+            with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for ch_id, title, text in chapters:
+                    safe_title = "".join(c for c in title if c.isalnum() or c in (" ", "_", "-")).strip()
+                    zf.writestr(f"chapter_{ch_id}_{safe_title}.txt", text)
+            return FileResponse(
+                str(tmp_path),
+                filename="serial_chapters.zip",
+                media_type="application/octet-stream",
+                background=BackgroundTask(tmp_path.unlink, missing_ok=True)
+            )
+        except Exception as e:
+            tmp_path.unlink(missing_ok=True)
+            raise HTTPException(500, f"Export ZIP failed: {e}")
+            
+    else:
+        txt_lines = []
+        for ch_id, title, text in chapters:
+            txt_lines.append(f"### {title}\n\n{text}\n\n")
+        full_text = "\n".join(txt_lines)
+        
+        tmp = tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8", prefix="serial_txt_")
+        tmp_path = Path(tmp.name)
+        tmp.write(full_text)
+        tmp.close()
+        
+        return FileResponse(
+            str(tmp_path),
+            filename="serial_all_chapters.txt",
+            media_type="text/plain",
+            background=BackgroundTask(tmp_path.unlink, missing_ok=True)
+        )

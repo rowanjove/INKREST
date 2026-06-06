@@ -1,0 +1,132 @@
+/**
+ * 全站表面与 Element 暗色补全（B 延伸）
+ */
+
+html[data-theme='dark'] .el-popover.el-popper {
+  --el-popover-bg-color: var(--color-bg-surface);
+  --el-popover-border-color: var(--color-border);
+}
+
+html[data-theme='dark'] .el-loading-mask {
+  background-color: rgba(12, 17, 24, 0.72);
+}
+
+html[data-theme='dark'] .el-table {
+  --el-table-bg-color: var(--color-bg-surface);
+  --el-table-tr-bg-color: var(--color-bg-surface);
+  --el-table-header-bg-color: var(--color-bg-surface-muted);
+  --el-table-row-hover-bg-color: var(--color-bg-hover);
+  --el-table-border-color: var(--color-border);
+  --el-table-text-color: var(--color-text);
+}
+
+html[data-theme='dark'] .el-collapse {
+  --el-collapse-header-bg-color: var(--color-bg-surface);
+  --el-collapse-content-bg-color: var(--color-bg-surface-muted);
+  --el-collapse-border-color: var(--color-border);
+}
+
+html[data-theme='dark'] .el-drawer {
+  --el-drawer-bg-color: var(--color-bg-surface);
+}
+
+html[data-theme='dark'] .el-dialog {
+  --el-dialog-bg-color: var(--color-bg-surface);
+}
+
+html[data-theme='dark'] .el-segmented {
+  --el-segmented-bg-color: var(--color-bg-surface-muted);
+  --el-segmented-item-selected-bg-color: var(--color-bg-surface);
+}
+
+html[data-theme='dark'] .el-empty__description p {
+  color: var(--color-text-muted);
+}
+
+/* 写作页外层壳：随全局主题，稿纸主题仍由 .theme-* 局部控制 */
+.writing-page-shell {
+  background: var(--color-bg-app);
+  color: var(--color-text);
+}
+
+/* ==========================================================================
+   统一页面头部美学设计 (Unified Page Header Design)
+   ========================================================================== */
+
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  flex-shrink: 0;
+}
+
+/* 兼容部分顶部对齐布局 */
+.page-head.align-start {
+  align-items: flex-start;
+}
+
+.page-title-area {
+  display: flex;
+  flex-direction: column;
+}
+
+.page-head h1,
+.page-title-area h1,
+.page-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 850;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--color-text-strong) 20%, var(--color-primary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-head p,
+.page-title-area p,
+.page-description,
+.page-kicker {
+  margin: 6px 0 0 0 !important;
+  color: var(--color-text-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.head-actions,
+.page-actions,
+.header-actions,
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* 针对带有面包屑或返回按钮的页面头部 */
+.page-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.page-header-nav .breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.page-header-nav .breadcrumbs .active {
+  color: var(--color-text-strong);
+  font-weight: 600;
+}
