@@ -51,6 +51,7 @@ const activeStepId = ref<string | null>(null)
 const copying = ref(false)
 
 const hasAlerts = computed(() => pipelineAlerts.value.length > 0)
+const pendingCount = computed(() => pipelineAlerts.value.length)
 
 const focusLabel = computed(() => {
   if (!focusedChapterId.value) return '点击选择章节'
@@ -188,6 +189,18 @@ const confirmPicker = () => {
 
 <template>
   <section class="pipeline-panel">
+    <el-alert
+      v-if="hasAlerts"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="repair-block-alert"
+      :title="`请先处理 ${pendingCount} 章待改，再续跑连写`"
+    >
+      <el-button size="small" type="warning" plain @click="expandPendingPanel">
+        展开修章队列
+      </el-button>
+    </el-alert>
     <div class="pipeline-panel__head">
       <div class="pipeline-panel__head-copy">
         <h2 class="pipeline-panel__title">半自动修章（外站审核友好）</h2>
@@ -270,6 +283,10 @@ const confirmPicker = () => {
 </template>
 
 <style scoped>
+.repair-block-alert {
+  margin-bottom: 12px;
+}
+
 .picker-hint {
   margin: 0 0 12px;
   font-size: 13px;

@@ -139,10 +139,20 @@ async def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
         pending_lines.append(
             f"- 第 {row.get('chapter_id')} 章 [{row.get('last_stage')}] 需改稿或重试审校"
         )
+    repair_hint = ""
+    if pending.get("gate_blocked"):
+        first = pending["gate_blocked"][0]
+        from novel_agent.services.assistant_snapshot import format_repair_steps_hint
+
+        repair_hint = format_repair_steps_hint(
+            str(first.get("chapter_id") or ""),
+            str(first.get("last_stage") or ""),
+        )
     pending_str = (
         f"共 {pending.get('pending_total', 0)} 项"
         f"（门禁阻断 {pending.get('pending_gate_count', 0)}，批量跳过 {pending.get('pending_retry_count', 0)}）\n"
         + ("\n".join(pending_lines) if pending_lines else "无")
+        + (f"\n排障建议: {repair_hint}" if repair_hint else "")
     )
 
     system_context = f"""

@@ -353,9 +353,13 @@ const resumeAudit = async (chapterId: string) => {
         <Warning />
       </el-icon>
       <div class="pipeline-panel__head-copy">
-        <h2 class="pipeline-panel__title">待处理章节</h2>
+        <h2 class="pipeline-panel__title">修章队列</h2>
         <span class="pipeline-panel__hint">
-          {{ totalCount > 0 ? '门禁阻断 / 批量跳过 / 待外审' : '暂无待处理章节' }}
+          {{
+            totalCount > 0
+              ? '按门禁阻断 → 批量跳过 → 待外审分组处理'
+              : '暂无待处理章节'
+          }}
         </span>
       </div>
       <el-tag

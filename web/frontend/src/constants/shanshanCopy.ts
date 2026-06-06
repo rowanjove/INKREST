@@ -37,6 +37,17 @@ export const SHANSHAN_BATCH_PAUSE_HINT = (batch: {
   return `全书批量已暂停（${reason}，卷 ${arc} / 章 ${ch}${streak}）。续跑请到章节维护操作。`
 }
 
+/** 针对待处理章的三步排障建议（对话 / 上下文注入） */
+export const SHANSHAN_REPAIR_STEPS_HINT = (chapterId: string, stage?: string) => {
+  const stageHint = stage ? `（当前：${stage}）` : ''
+  return [
+    `第 ${chapterId} 章${stageHint}建议顺序：`,
+    '1. 去写作页改稿',
+    '2. 章节详情或修章队列「只重跑门禁」',
+    '3. 通过后回工作台「连写启动」或章节维护「继续写书」',
+  ].join('\n')
+}
+
 export const SHANSHAN_FIX_REPLY = {
   testModelOk: (latencyMs: number, preview: string) =>
     `模型连通正常，延迟约 ${latencyMs} ms。返回预览：「${preview}」`,

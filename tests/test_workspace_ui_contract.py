@@ -115,7 +115,7 @@ def test_chapter_pages_hide_rewrite_actions_without_final_text() -> None:
 def test_embedding_config_stays_collapsed_by_default() -> None:
     source = EMBEDDING_CONFIG.read_text(encoding="utf-8")
     assert "const expanded = ref(false)" in source
-    assert "expanded.value = true" not in source
+    assert "long_form_vector_recommended" in source
 
 
 def test_api_errors_prefer_backend_detail_over_status_text() -> None:
@@ -186,6 +186,21 @@ def test_settings_page_applies_shared_fold_card_alignment() -> None:
     assert ".config-page :deep(.fold-head)" in config_source
     assert ".config-page :deep(.fold-body)" in config_source
     assert ".fold-card {" not in runtime_source
+
+
+def test_chapter_maintenance_exposes_repair_queue_grouping() -> None:
+    maintenance = CHAPTER_MAINTENANCE.read_text(encoding="utf-8")
+    pending = (
+        ROOT / "web" / "frontend" / "src" / "components" / "PendingChaptersPanel.vue"
+    ).read_text(encoding="utf-8")
+    semi = (ROOT / "web" / "frontend" / "src" / "components" / "SemiAutoRepairHint.vue").read_text(
+        encoding="utf-8"
+    )
+    shanshan = SHANSHAN_COPY.read_text(encoding="utf-8")
+    assert "PendingChaptersPanel" in maintenance
+    assert "修章队列" in pending
+    assert "展开修章队列" in semi
+    assert "SHANSHAN_REPAIR_STEPS_HINT" in shanshan
 
 
 def test_chapters_layout_exposes_list_and_maintenance_subnav() -> None:

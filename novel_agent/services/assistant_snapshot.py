@@ -106,6 +106,15 @@ def enrich_task_summaries(root: Path, tasks: List[Dict[str, Any]]) -> List[Dict[
     return out
 
 
+def format_repair_steps_hint(chapter_id: str, stage: str = "") -> str:
+    """Three-step repair guidance aligned with chapter maintenance UI."""
+    stage_part = f"（当前：{stage}）" if stage else ""
+    return (
+        f"第 {chapter_id} 章{stage_part}建议："
+        "1) 写作页改稿 → 2) 修章队列「只重跑门禁」 → 3) 通过后工作台连写启动或章节维护继续写书"
+    )
+
+
 def format_work_snapshot_line(work: Dict[str, Any]) -> str:
     """Human-readable one line for LLM system context."""
     scale = work.get("scale_label") or work.get("scale") or "未设定体量"
