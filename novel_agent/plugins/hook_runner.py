@@ -23,6 +23,26 @@ def resolve_hook_timeout_seconds(root_dir: Any) -> float:
     return max(1.0, timeout)
 
 
+def plugin_sandbox_enabled(root_dir: Any) -> bool:
+    return bool(
+        load_pipeline_settings(root_dir).get("runtime", {}).get("plugin_sandbox", False)
+    )
+
+
+def dispatch_hook(
+    fn: Callable[[], T],
+    root_dir: Any,
+    timeout_seconds: float,
+    default: Optional[T] = None,
+) -> T:
+    """Thread timeout by default; optional subprocess sandbox via runtime.plugin_sandbox."""
+    if plugin_sandbox_enabled(root_dir):
+        from novel_agent.plugins.sandbox import run_callable_in_process
+
+        return run_callable_in_process(fn, timeout_seconds, default)
+    return call_hook_with_timeout(fn, timeout_seconds, default)
+
+
 def call_hook_with_timeout(
     fn: Callable[[], T],
     timeout_seconds: float,

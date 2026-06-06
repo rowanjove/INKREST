@@ -119,6 +119,9 @@ export const getNovelReadiness = () => api.get('/novel/readiness')
 
 export const getNovelProgressSummary = () => api.get('/novel/progress-summary')
 
+export const getAutopilotRounds = (limit = 50, offset = 0) =>
+  api.get('/novel/autopilot-rounds', { params: { limit, offset } })
+
 export const rerunChapterGate = (chapterId: string) =>
   api.post(`/chapters/${chapterId}/rerun-gate`)
 

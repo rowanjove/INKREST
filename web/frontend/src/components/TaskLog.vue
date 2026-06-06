@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { Clock, Refresh } from '@element-plus/icons-vue'
@@ -90,6 +90,21 @@ const formatStatus = (status: string) => {
   }
 }
 
+const failureStats = computed(() => {
+  const recent = tasks.value.slice(0, 50)
+  const counts = new Map<string, number>()
+  for (const task of recent) {
+    if (task.status !== 'failed') continue
+    const meta = task as { failure_kind?: string; error_code?: string; error?: string }
+    const key = String(meta.failure_kind || meta.error_code || meta.error || 'unknown').slice(0, 40)
+    counts.set(key, (counts.get(key) || 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([kind, count]) => ({ kind, count }))
+})
+
 const formatTaskTitle = (task: any) => {
   if (task.task_id?.startsWith('novel-')) return '整本自动生成'
   return `章节 ${task.chapter_id || '-'}`
@@ -159,6 +174,19 @@ const getProgressMessage = (task: any) => {
         </el-button>
       </div>
     </div>
+    <div v-if="failureStats.length" class="failure-stats">
+      <span class="failure-stats-label">近 50 条失败分类：</span>
+      <el-tag
+        v-for="row in failureStats"
+        :key="row.kind"
+        size="small"
+        type="danger"
+        effect="plain"
+        class="failure-tag"
+      >
+        {{ row.kind }} × {{ row.count }}
+      </el-tag>
+    </div>
     <div class="task-timeline-container">
       <div v-if="tasks.length > 0" class="timeline-list">
         <div v-for="task in tasks" :key="task.task_id" class="timeline-item">
@@ -185,12 +213,30 @@ const getProgressMessage = (task: any) => {
       <div v-else class="empty-state-card">
         <el-icon class="empty-icon"><Clock /></el-icon>
         <p>暂无任务流水记录</p>
+        <p class="empty-hint">请在工作台「连写启动」后回到此处查看；修章见章节维护。</p>
       </div>
     </div>
   </section>
 </template>
 
 <style scoped>
+.failure-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px 0;
+}
+.failure-stats-label {
+  font-size: 12px;
+  color: var(--color-text-subtle);
+}
+.failure-tag { margin: 0; }
+.empty-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--color-text-subtle);
+}
 .task-log-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .task-timeline-container { flex: 1; min-height: 0; padding: 24px; overflow-y: auto; }
 .panel-header-actions { display: flex; align-items: center; gap: 10px; }

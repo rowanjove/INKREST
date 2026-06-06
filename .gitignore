@@ -51,6 +51,7 @@ Thumbs.db
 scratch/
 dist-portable/
 terminals/
+agent-tools/
 
 # Dev workspace roots (runtime data, not source)
 state/

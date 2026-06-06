@@ -15,6 +15,7 @@ const hookFailFast = ref(false)
 const hookTimeoutSeconds = ref(30)
 const batchSkipPauseMax = ref(3)
 const blockContinueUntilExternal = ref(false)
+const pluginSandbox = ref(false)
 const workScale = ref('medium')
 const pipelineTier = ref('standard')
 const auditProfile = ref('standard')
@@ -53,6 +54,7 @@ const load = async () => {
     blockContinueUntilExternal.value = Boolean(
       data.runtime?.block_continue_until_external_pass,
     )
+    pluginSandbox.value = Boolean(data.runtime?.plugin_sandbox)
   } finally {
     loading.value = false
   }
@@ -74,6 +76,7 @@ const save = async () => {
         hook_timeout_seconds: hookTimeoutSeconds.value,
         batch_skip_pause_max: batchSkipPauseMax.value,
         block_continue_until_external_pass: blockContinueUntilExternal.value,
+        plugin_sandbox: pluginSandbox.value,
       },
     })
     ElMessage.success('流水线高级设置已保存')
@@ -195,6 +198,18 @@ onMounted(load)
         <p class="hint">
           连续 <code>batch_fail_streak_max</code>（默认 5）章质量阻断/异常将熔断暂停。向量默认回看
           <code>vector_search_window</code> 章。epic/infinite 可能抽检门禁（generation_policy）。
+        </p>
+      </div>
+
+      <div class="field-block">
+        <label>插件钩子子进程沙箱</label>
+        <el-switch
+          v-model="pluginSandbox"
+          active-text="子进程隔离（较慢，更安全）"
+          inactive-text="线程超时（默认）"
+        />
+        <p class="hint">
+          开启后 pipeline hook 在独立进程执行，超时将强制终止，避免拖垮主进程。
         </p>
       </div>
 

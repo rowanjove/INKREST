@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar
 
 from novel_agent.logging_config import get_logger
-from novel_agent.plugins.hook_runner import call_hook_with_timeout, resolve_hook_timeout_seconds
+from novel_agent.plugins.hook_runner import dispatch_hook, resolve_hook_timeout_seconds
 from novel_agent.progress import emit_hook_warning
 
 logger = get_logger("orchestrator.hooks")
@@ -36,8 +36,9 @@ class HookDispatcher:
         default: Optional[T] = None,
     ) -> T:
         try:
-            return call_hook_with_timeout(
+            return dispatch_hook(
                 fn,
+                root_dir=self.root_dir,
                 timeout_seconds=self.timeout_seconds(),
                 default=default,
             )

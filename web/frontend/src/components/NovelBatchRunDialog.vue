@@ -98,7 +98,7 @@ const showVectorAlert = computed(() =>
         />
       </label>
       <p v-if="tokenEstimate.chapters > 0" class="token-estimate-hint">
-        费用粗估（按日常模型计费）：{{ tokenEstimate.label }}
+        费用粗估：{{ tokenEstimate.label }} · {{ tokenEstimate.priceLabel }}
         <span class="muted">（{{ tokenEstimate.chapters }} 章 × 约 1.2 万 tokens/章，含规划、写作与审校）</span>
       </p>
       <p v-if="ctx.arcProgress?.last_arc_id" class="arc-hint">

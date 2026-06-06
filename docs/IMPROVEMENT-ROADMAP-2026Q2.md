@@ -2,6 +2,15 @@
 
 与 [PLAN-全书链路与人机协同.md](./PLAN-全书链路与人机协同.md)（产品车道）互补；本文跟踪工程与可运维项。
 
+## 已完成（2026-06 全量改进）
+
+- [x] Git 基线 + CONTRIBUTING 本地验证清单
+- [x] 连写 UX：记住章数、本轮进度、分阶段取消说明
+- [x] 长篇向量黄条 + audit_profile 设置展示
+- [x] 修章队列命名 + 山山三步排障 + `GET /api/novel/autopilot-rounds`
+- [x] FirstBookGuide 按体量分轨、任务失败聚合条
+- [x] 示例插件 `plugins/examples/hello_guard.py`
+
 ## 已完成（2026-06）
 
 - [x] 结构化错误码 `novel_agent/errors/`
@@ -28,13 +37,13 @@
 ### P2
 
 - [x] Electron 单源：`scripts/sync_electron_canonical.ps1`（canonical：`web/frontend/electron`）
-- [ ] 插件子进程沙箱（hook 隔离）
+- [x] 插件子进程沙箱（hook 隔离，`runtime.plugin_sandbox`）
 - [x] `ProjectSession` 轻量 DI（`web/deps.py`，`/api/system/readiness` 已接入）
 
 ### P3
 
 - [x] 连写弹窗展示 token 费用预估（粗估 1.2 万 tokens/章）
-- [ ] 全量 E2E Playwright（可选）
+- [x] Playwright 脚手架（`npm run test:e2e`，默认 skip，设 `E2E_RUN=1` 执行）
 
 ## 验收指标
 

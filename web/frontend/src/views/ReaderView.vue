@@ -1,7 +1,10 @@
 ﻿<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ArrowLeft, ArrowRight, Menu, Setting, CaretTop, Search } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { ArrowLeft, ArrowRight, Menu, Setting, CaretTop, Search, Edit } from '@element-plus/icons-vue'
 import { getChapter, listChapters } from '../api'
+
+const router = useRouter()
 
 interface ChapterSummary {
   chapter_id: string
@@ -81,6 +84,11 @@ const loadChapters = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const goToWriter = () => {
+  if (!selectedId.value) return
+  router.push({ path: '/writer', query: { chapter: selectedId.value } })
 }
 
 const loadChapter = async (chapterId: string) => {
@@ -245,6 +253,9 @@ onMounted(async () => {
             <div class="chapter-meta-tag">第 {{ selectedId }} 章</div>
             <h1>{{ currentTitle }}</h1>
             <div class="chapter-wordcount-sub">{{ chapter.word_count || 0 }} 汉字 · 沉浸阅读中</div>
+            <el-button size="small" type="primary" plain :icon="Edit" @click="goToWriter">
+              去写作页改稿
+            </el-button>
           </div>
 
           <div class="novel-paragraphs-body">

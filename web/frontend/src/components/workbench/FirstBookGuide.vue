@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { getOutline } from '../../api'
+import { isLongFormScale } from '../../utils/projectReadiness'
 
 const PENDING_KEY = 'inkrest_pending_guide'
 
@@ -50,7 +52,10 @@ const tryOpen = () => {
   clearPendingFlags()
 }
 
-onMounted(tryOpen)
+onMounted(() => {
+  void loadScale()
+  tryOpen()
+})
 
 watch(
   () => [props.projectId, route.query.welcome],
@@ -70,12 +75,40 @@ const dismissForever = () => {
   }
 }
 
-const steps = [
-  { label: '设置模型', route: '/config' },
-  { label: '大纲与卷纲', route: '/outline' },
-  { label: '工作台连写', route: '/workspace' },
-  { label: '章节维护', route: '/chapters/maintenance' },
-]
+const workScale = ref('medium')
+
+const loadScale = async () => {
+  try {
+    const { data } = await getOutline()
+    workScale.value = String(data?.scale_profile?.scale || 'medium')
+  } catch {
+    workScale.value = 'medium'
+  }
+}
+
+const steps = computed(() => {
+  const micro = workScale.value === 'micro'
+  const longForm = isLongFormScale(workScale.value)
+  const base = [
+    { label: '设置模型', route: '/config' },
+    { label: micro ? '大纲与场景' : '大纲与卷纲', route: '/outline' },
+  ]
+  if (longForm) {
+    base.push({ label: '配置 Embedding', route: '/config' })
+  }
+  base.push(
+    { label: '工作台连写', route: '/workspace' },
+    { label: '章节维护', route: '/chapters/maintenance' },
+  )
+  return base
+})
+
+const stepCountLabel = computed(() => {
+  const n = steps.value.length
+  if (workScale.value === 'micro') return `微型作品 · ${n} 步`
+  if (isLongFormScale(workScale.value)) return `长篇作品 · ${n} 步`
+  return `标准流程 · ${n} 步`
+})
 
 const goStep = (path: string) => {
   dialogVisible.value = false
@@ -96,7 +129,7 @@ const goStep = (path: string) => {
       <span class="dialog-title">首次创作向导</span>
     </template>
     <p class="guide-desc">
-      新书已创建。建议按下面顺序完成配置后再点工作台「连写启动」；系统暂停后可在章节维护处理待改章节。
+      新书已创建（{{ stepCountLabel }}）。建议按下面顺序完成配置后再点工作台「连写启动」；系统暂停后可在章节维护处理待改章节。
     </p>
     <ul class="guide-bullets">
       <li>配置模型 → 完善大纲与卷纲 → 开书清单全绿 → 连写启动</li>

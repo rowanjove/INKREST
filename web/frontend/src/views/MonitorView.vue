@@ -9,6 +9,7 @@ import { useTasksStore } from '../stores/tasks'
 import LogStream from '../components/LogStream.vue'
 import LLMLogViewer from '../components/LLMLogViewer.vue'
 import TaskLog from '../components/TaskLog.vue'
+import AutopilotRoundsPanel from '../components/AutopilotRoundsPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -89,6 +90,7 @@ function dismissTaskFailure() {
             </span>
           </template>
           <div class="tab-content-wrapper full-height-pane">
+            <AutopilotRoundsPanel />
             <TaskLog />
           </div>
         </el-tab-pane>

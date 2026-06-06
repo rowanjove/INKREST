@@ -406,6 +406,34 @@ def get_novel_batch_status() -> Dict[str, Any]:
     }
 
 
+@router.get("/api/novel/autopilot-rounds")
+def list_autopilot_rounds(limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+    """Read workspace/autopilot_rounds.jsonl for ops / monitor UI."""
+    root = ws_server.get_root_dir()
+    path = root / "workspace" / "autopilot_rounds.jsonl"
+    rows: List[Dict[str, Any]] = []
+    if path.is_file():
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                    if isinstance(row, dict):
+                        rows.append(row)
+                except json.JSONDecodeError:
+                    continue
+        except OSError:
+            rows = []
+    total = len(rows)
+    start = max(0, int(offset))
+    end = start + max(1, min(int(limit), 200))
+    page = list(reversed(rows))[start:end]
+    return {"total": total, "offset": start, "limit": limit, "rounds": page}
+
+
 @router.get("/api/novel/progress-summary")
 def novel_progress_summary() -> Dict[str, Any]:
     from novel_agent.services.progress_summary import build_progress_summary
