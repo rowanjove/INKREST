@@ -6,6 +6,9 @@ WRITER = ROOT / "web" / "frontend" / "src" / "views" / "WritingWorkspace.vue"
 ASSET_EDITOR = ROOT / "web" / "frontend" / "src" / "views" / "AssetEditor.vue"
 MARKDOWN_EDITOR = ROOT / "web" / "frontend" / "src" / "components" / "MarkdownAssetEditor.vue"
 DASHBOARD = ROOT / "web" / "frontend" / "src" / "views" / "Dashboard.vue"
+DASHBOARD_SERIAL = (
+    ROOT / "web" / "frontend" / "src" / "composables" / "useDashboardSerial.ts"
+)
 APP = ROOT / "web" / "frontend" / "src" / "App.vue"
 PET_BUBBLE = ROOT / "web" / "frontend" / "src" / "views" / "PetBubbleView.vue"
 TASK_LOG = ROOT / "web" / "frontend" / "src" / "components" / "TaskLog.vue"
@@ -71,10 +74,11 @@ def test_asset_source_panels_are_hidden_until_toolbar_toggle() -> None:
 
 
 def test_dashboard_auto_accepts_pending_state_candidates() -> None:
-    source = DASHBOARD.read_text(encoding="utf-8")
-    assert "candidate.status === 'pending'" in source
-    assert "await approveAllProjectCandidates(pid)" in source
-    assert "默认自动通过" in source
+    serial_source = DASHBOARD_SERIAL.read_text(encoding="utf-8")
+    dashboard_source = DASHBOARD.read_text(encoding="utf-8")
+    assert "candidate.status === 'pending'" in serial_source
+    assert "await approveAllProjectCandidates(pid)" in serial_source
+    assert "默认自动通过" in dashboard_source
 
 
 def test_pet_abort_button_uses_short_label() -> None:

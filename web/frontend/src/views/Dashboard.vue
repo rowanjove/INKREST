@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { ElMessage } from 'element-plus'
 import {
   Delete,
   DocumentAdd,
@@ -15,541 +14,102 @@ import {
   Timer,
   WarningFilled,
 } from '@element-plus/icons-vue'
-import {
-  getConfig,
-  getOutline,
-  generateChapterPlan,
-  listAssets,
-  listChapters,
-  listModels,
-  runBatchChapters,
-  getChapterCount,
-  getArcProgress,
-  getSerialStatus,
-  getNovelProgressSummary,
-  getProjectComments,
-  adaptiveRewriteOutline,
-  applyAdaptiveOutline,
-  exportSerial,
-  exportChaptersTrial,
-  getProjectStateCandidates,
-  getCalibrationReport,
-  getNarrativeDebt,
-  getScaleProfile,
-  approveAllProjectCandidates,
-  getEmbeddingStatus,
-} from '../api'
 import DashboardStats from '../components/DashboardStats.vue'
 import ProjectReadinessCard from '../components/workbench/ProjectReadinessCard.vue'
 import AgentProductionLine from '../components/workbench/AgentProductionLine.vue'
 import ScaleArchitecturePanel from '../components/workbench/ScaleArchitecturePanel.vue'
 
 import NovelBatchRunDialog from '../components/NovelBatchRunDialog.vue'
-import { copyPlainTextToClipboard } from '../utils/copyChapterText'
 import { useNovelBatchRun } from '../composables/useNovelBatchRun'
+import { useDashboardWorkbench } from '../composables/useDashboardWorkbench'
+import { useDashboardSerial } from '../composables/useDashboardSerial'
+import { useDashboardBatchDialog } from '../composables/useDashboardBatchDialog'
+import { useDashboardPolling } from '../composables/useDashboardPolling'
 
 import { useChapterStore } from '../stores/chapter'
-import { useProjectStore } from '../stores/project'
-import { useTasksStore } from '../stores/tasks'
-import { shouldPoll } from '../utils/pollingGate'
 
 const router = useRouter()
 const chapterStore = useChapterStore()
-const projectStore = useProjectStore()
-const tasksStore = useTasksStore()
 const { loading } = storeToRefs(chapterStore)
-const { currentProject } = storeToRefs(projectStore)
 
-const assets = ref<any[]>([])
-const outline = ref<Record<string, any> | null>(null)
-const engineStatus = ref({
-  ready: false,
-  label: '未配置可用模型',
-  route: 'default',
+const {
+  assets,
+  outline,
+  engineStatus,
+  semanticSearchEffective,
+  vectorEnabledForProject,
+  form,
+  chapterCountTotal,
+  calibration,
+  scaleProfile,
+  allDebt,
+  outlineTheme,
+  workScale,
+  maxAvailableChapters,
+  loadWorkbench,
+  refreshScaleArchitecture,
+} = useDashboardWorkbench()
+
+const {
+  serialStatus,
+  copyingTrial,
+  virtualComments,
+  rewritingOutline,
+  applyingOutline,
+  outlineDiffDialogVisible,
+  adaptiveOutlineDiff,
+  exportingSerial,
+  loadSerialData,
+  triggerAdaptiveRewrite,
+  applyAdaptive,
+  copyTrialForPlatform,
+  downloadSerial,
+} = useDashboardSerial()
+
+const {
+  addChapterDialogVisible,
+  addChapterTab,
+  batchSubmitting,
+  chapterPlanGenerating,
+  batchInputMode,
+  bulkText,
+  chapterPlanCount,
+  chapterPlanInstructions,
+  batchRows,
+  openAddChapterDialog,
+  addBatchRow,
+  quickAddChapters,
+  clearBatchRows,
+  importFromBulkText,
+  removeBatchRow,
+  submitChapter,
+  submitBatch,
+  fillBatchFromAI,
+} = useDashboardBatchDialog({ outline, outlineTheme, form })
+
+const activeTab = ref('workbench')
+const { restartDashboardTimer, stopDashboardPolling, tasksStore } = useDashboardPolling({
+  activeTab,
+  loadSerialData,
 })
-const semanticSearchEffective = ref(true)
-const vectorEnabledForProject = ref(true)
-const form = ref({
-  chapter_id: '',
-  goal: '推进主线冲突，制造清晰的章节钩子，并同步人物状态。',
-})
-const outlineForm = ref({
-  theme: '',
-  genre: '',
-  target_chapters: 20,
-  special_requirements: '',
-})
-const addChapterDialogVisible = ref(false)
-const addChapterTab = ref('single')
-const chaptersList = ref<any[]>([])
-const chapterCountTotal = ref(0)
-const arcProgress = ref<Record<string, any> | null>(null)
+
 const { busy: autoRunBusy, dialogVisible: autoRunDialogVisible } = useNovelBatchRun()
 
 watch(autoRunBusy, async (now, prev) => {
   if (prev && !now && !autoRunDialogVisible.value) {
-    await loadWorkbench()
+    await loadWorkbench(loadSerialData)
   }
 })
-const batchSubmitting = ref(false)
-const chapterPlanGenerating = ref(false)
-const batchInputMode = ref('list')
-const bulkText = ref('')
-const chapterPlanCount = ref(10)
-const chapterPlanInstructions = ref('')
-const batchRows = ref([
-  { chapter_id: '001', goal: '' },
-])
-
-// 长篇控制相关的响应式状态
-const debt = ref<Record<string, any[]>>({
-  foreshadows: [],
-  secrets: [],
-  reader_promises: [],
-})
-const calibration = ref<Record<string, any>>({})
-const scaleProfile = ref<Record<string, any>>({})
-
-// 计算属性
-const allDebt = computed(() => [
-  ...(debt.value.foreshadows || []).map((item) => ({ ...item, kind: '伏笔' })),
-  ...(debt.value.secrets || []).map((item) => ({ ...item, kind: '秘密' })),
-  ...(debt.value.reader_promises || []).map((item) => ({ ...item, kind: '读者承诺' })),
-])
-
-
-let timer: number | undefined
-
-const inferNextChapterId = (existing: any[]) => {
-  if (!existing.length) return '001'
-  const maxNum = existing.reduce((max, ch) => {
-    const n = parseInt(ch.chapter_id, 10)
-    return Number.isNaN(n) ? max : Math.max(max, n)
-  }, 0)
-  return String(maxNum + 1).padStart(3, '0')
-}
-
-const formatModelLabel = (model: any) => {
-  if (!model) return ''
-  return `${model.name || model.id}${model.model ? ` (${model.model})` : ''}`
-}
-
-const resolveEngine = (config: any, models: any[]) => {
-  const llm = config?.llm || {}
-  const modelsById = new Map(models.map((model: any) => [model.id, model]))
-  const defaultId = llm.daily_model_id || llm.default_model_id || llm.default?.model_ref
-  const defaultModel = defaultId ? modelsById.get(defaultId) : null
-  if (defaultModel) {
-    return { ready: true, label: formatModelLabel(defaultModel), route: 'daily_model_id' }
-  }
-  if (llm.default?.provider && llm.default.provider !== 'static') {
-    return { ready: true, label: llm.default.model || llm.default.provider, route: 'llm.default' }
-  }
-  if (llm.provider && llm.provider !== 'static') {
-    return { ready: true, label: llm.model || llm.provider, route: 'llm' }
-  }
-  return { ready: false, label: '未配置可用模型', route: 'static' }
-}
-
-const outlineTheme = computed(() => outline.value?.core_theme || currentProject.value?.description || '')
-const outlineGenre = computed(() => outline.value?.genre_positioning || currentProject.value?.genre || '')
-const targetChapters = computed(() => currentProject.value?.target_chapters || outlineForm.value.target_chapters || 20)
-
-const loadWorkbench = async () => {
-  await Promise.all([chapterStore.refreshAll(), projectStore.fetchCurrent()])
-  try {
-    const [
-      { data: assetData },
-      { data: chapters },
-      { data: countData },
-      { data: outlineData },
-      { data: models },
-      { data: config },
-      embRes,
-    ] = await Promise.all([
-      listAssets(),
-      listChapters({ offset: 0, limit: 50, sync: true, include_gaps: false }),
-      getChapterCount(true),
-      getOutline(),
-      listModels(),
-      getConfig(),
-      getEmbeddingStatus().catch(() => ({ data: {} })),
-    ])
-    assets.value = assetData
-    const chapterRows = chapters.items ?? chapters
-    chaptersList.value = chapterRows
-    chapterCountTotal.value = countData?.total ?? chapterRows.length
-    form.value.chapter_id = inferNextChapterId(chapterRows)
-    outline.value = outlineData && Object.keys(outlineData).length > 0 ? outlineData : null
-    engineStatus.value = resolveEngine(config, models)
-    semanticSearchEffective.value = Boolean(embRes?.data?.semantic_search_effective)
-    vectorEnabledForProject.value = embRes?.data?.vector_enabled !== false
-  } catch {
-    assets.value = []
-    chaptersList.value = []
-  }
-
-  outlineForm.value.theme = outlineTheme.value || currentProject.value?.name || ''
-  outlineForm.value.genre = outlineGenre.value || '玄幻'
-  outlineForm.value.target_chapters = targetChapters.value
-  await loadSerialData()
-  await loadControlData()
-  try {
-    const { data } = await getArcProgress()
-    arcProgress.value = data.progress || null
-  } catch {
-    arcProgress.value = null
-  }
-}
-
-const loadControlData = async () => {
-  try {
-    const [debtResp, calibrationResp, scaleResp] = await Promise.all([
-      getNarrativeDebt().catch(() => ({ data: { foreshadows: [], secrets: [], reader_promises: [] } })),
-      getCalibrationReport().catch(() => ({ data: {} })),
-      getScaleProfile().catch(() => ({ data: {} })),
-    ])
-    debt.value = debtResp.data || { foreshadows: [], secrets: [], reader_promises: [] }
-    calibration.value = calibrationResp.data || {}
-    scaleProfile.value = scaleResp.data || {}
-  } catch (e) {
-    console.error('加载长篇控制数据失败:', e)
-  }
-}
-
-const refreshScaleArchitecture = async () => {
-  try {
-    const [{ data: outlineData }, scaleResp] = await Promise.all([
-      getOutline(),
-      getScaleProfile().catch(() => ({ data: {} })),
-    ])
-    outline.value = outlineData && Object.keys(outlineData).length > 0 ? outlineData : null
-    scaleProfile.value = scaleResp.data || {}
-  } catch {
-    /* ignore */
-  }
-}
-
-const addBatchRow = () => {
-  const lastId = batchRows.value.at(-1)?.chapter_id || '000'
-  const nextNum = Number.parseInt(lastId, 10) + 1
-  batchRows.value.push({ chapter_id: String(nextNum).padStart(3, '0'), goal: '' })
-}
-
-const chapterGoalTemplate = (chapterId: string) => {
-  const protagonist = outline.value?.protagonist?.name || '主角'
-  const theme = outlineTheme.value || currentProject.value?.description || currentProject.value?.name || '主线'
-  const conflict = outline.value?.conflict || outline.value?.core_theme || theme
-  const numericId = Number.parseInt(chapterId, 10)
-  const chapterLabel = Number.isNaN(numericId) ? chapterId : `第 ${numericId} 章`
-  return `${chapterLabel}：围绕「${theme}」推进主线，让${protagonist}面对「${conflict}」中的关键阻力，制造清晰冲突、人物变化和结尾钩子。`
-}
-
-const openAddChapterDialog = () => {
-  if (!outline.value) {
-    ElMessage.warning('请先在大纲页生成作品大纲')
-    return
-  }
-  if (!outline.value.chosen_title) {
-    ElMessage.warning('生成章节要求在大纲中确定小说最终名称')
-    return
-  }
-  batchRows.value = [{ chapter_id: form.value.chapter_id || '001', goal: '' }]
-  addChapterDialogVisible.value = true
-  addChapterTab.value = 'single'
-}
-
-const quickAddChapters = (count: number) => {
-  if (
-    batchRows.value.length === 1 &&
-    batchRows.value[0].chapter_id.trim() &&
-    !batchRows.value[0].goal.trim()
-  ) {
-    batchRows.value[0].goal = chapterGoalTemplate(batchRows.value[0].chapter_id)
-    count -= 1
-  }
-  for (let i = 0; i < count; i++) {
-    const lastId = batchRows.value.at(-1)?.chapter_id || '000'
-    const nextNum = Number.parseInt(lastId, 10) + 1
-    const chapter_id = String(nextNum).padStart(3, '0')
-    batchRows.value.push({ chapter_id, goal: chapterGoalTemplate(chapter_id) })
-  }
-}
-
-const clearBatchRows = () => {
-  batchRows.value = [{ chapter_id: '001', goal: '' }]
-}
-
-const importFromBulkText = () => {
-  const lines = bulkText.value.split('\n').map(l => l.trim()).filter(Boolean)
-  if (!lines.length) {
-    ElMessage.warning('请输入有效的文本')
-    return
-  }
-  
-  let nextNum = 1
-  if (batchRows.value.length) {
-    const lastId = batchRows.value.at(-1)?.chapter_id || '000'
-    nextNum = Number.parseInt(lastId, 10) + 1
-  }
-  
-  let isFirstEmpty = batchRows.value.length === 1 && batchRows.value[0].goal.trim() === ''
-  
-  for (const line of lines) {
-    if (isFirstEmpty) {
-      batchRows.value[0].goal = line
-      nextNum = Number.parseInt(batchRows.value[0].chapter_id, 10) + 1
-      isFirstEmpty = false
-    } else {
-      batchRows.value.push({
-        chapter_id: String(nextNum).padStart(3, '0'),
-        goal: line
-      })
-      nextNum++
-    }
-  }
-  
-  bulkText.value = ''
-  batchInputMode.value = 'list'
-  ElMessage.success(`成功解析并导入了 ${lines.length} 个章节目标`)
-}
-
-const removeBatchRow = (index: number) => {
-  batchRows.value.splice(index, 1)
-}
-
-const submitChapter = async () => {
-  if (!form.value.chapter_id.trim() || !form.value.goal.trim()) {
-    ElMessage.warning('章节编号和章节目标都要填写')
-    return
-  }
-  try {
-    await chapterStore.submitChapter({ ...form.value, dry_run: false })
-    ElMessage.success('章节任务已进入队列')
-    addChapterDialogVisible.value = false
-  } catch (error: any) {
-    ElMessage.error(error.message || '任务提交失败')
-  }
-}
-
-const submitBatch = async () => {
-  const validRows = batchRows.value.filter((row) => row.chapter_id.trim() && row.goal.trim())
-  if (validRows.length === 0) {
-    ElMessage.warning('至少需要一个完整章节')
-    return
-  }
-  batchSubmitting.value = true
-  try {
-    await runBatchChapters({ chapters: validRows, dry_run: false })
-    ElMessage.success(`已提交 ${validRows.length} 个章节任务`)
-    addChapterDialogVisible.value = false
-    await chapterStore.fetchTasks()
-  } catch (error: any) {
-    ElMessage.error(error.message || '批量提交失败')
-  } finally {
-    batchSubmitting.value = false
-  }
-}
-
-const fillBatchFromAI = async () => {
-  if (!outline.value) {
-    ElMessage.warning('请先在大纲页生成或保存作品大纲')
-    return
-  }
-  chapterPlanGenerating.value = true
-  try {
-    const start = Number.parseInt(batchRows.value[0]?.chapter_id || form.value.chapter_id || '001', 10) || 1
-    const { data } = await generateChapterPlan({
-      start_chapter: start,
-      count: chapterPlanCount.value,
-      instructions: chapterPlanInstructions.value,
-    })
-    batchRows.value = (data.chapters || []).map((chapter: any) => ({
-      chapter_id: chapter.chapter_id,
-      goal: chapter.title ? `${chapter.title}：${chapter.goal}` : chapter.goal,
-    }))
-    const arcLabel = data.macro_arc_name || data.macro_arc_id
-    const arcHint = arcLabel ? `（宏观卷：${arcLabel}）` : ''
-    ElMessage.success(`已根据大纲生成 ${batchRows.value.length} 个章节目标${arcHint}`)
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail || error.message || 'AI 拆章失败')
-  } finally {
-    chapterPlanGenerating.value = false
-  }
-}
-
-const workScale = computed(() => String(outline.value?.scale_profile?.scale || ''))
-const maxAvailableChapters = computed(() => {
-  const profile = outline.value?.scale_profile || {}
-  const scale = profile.scale || ''
-  const hardMax = Number(profile.max_chapters) || 0
-  const limit = outline.value?.target_chapters || currentProject.value?.target_chapters || hardMax || 20
-  const cap = hardMax >= 999999 || scale === 'infinite' ? limit : Math.min(limit, hardMax || limit)
-  const currentCount = chapterCountTotal.value || 0
-  return Math.max(0, cap - currentCount)
-})
-
-// ---- Serialization Workbench OS States ----
-const activeTab = ref('workbench')
-const serialStatus = ref({
-  today_word_count: 0,
-  total_generated_chapters: 0,
-  authoritative_completed: 0,
-  library_indexed: 0,
-  disk_chapters_with_final: 0,
-  pending_total: 0,
-  progress_note: '',
-  pending_candidates_count: 0,
-  avg_bounce_rate: 0,
-  crisis_level: '正常',
-})
-const copyingTrial = ref(false)
-const virtualComments = ref<any[]>([])
-const loadingSerial = ref(false)
-const rewritingOutline = ref(false)
-const applyingOutline = ref(false)
-const outlineDiffDialogVisible = ref(false)
-const adaptiveOutlineDiff = ref({
-  old_chapters: [] as any[],
-  new_chapters: [] as any[]
-})
-const exportingSerial = ref(false)
-
-const loadSerialData = async () => {
-  if (!currentProject.value?.id) return
-  loadingSerial.value = true
-  try {
-    const pid = currentProject.value.id
-    const [statusRes, commentsRes, candidatesRes, progressRes] = await Promise.all([
-      getSerialStatus(pid),
-      getProjectComments(pid),
-      getProjectStateCandidates(pid),
-      getNovelProgressSummary().catch(() => ({ data: {} })),
-    ])
-    serialStatus.value = statusRes.data
-    const progress = progressRes.data || {}
-    if (progress.authoritative_completed != null) {
-      serialStatus.value.authoritative_completed = progress.authoritative_completed
-    }
-    if (progress.library_indexed != null) {
-      serialStatus.value.library_indexed = progress.library_indexed
-    }
-    if (progress.progress_note) {
-      serialStatus.value.progress_note = progress.progress_note
-    }
-    virtualComments.value = commentsRes.data
-    const candidates = candidatesRes.data || []
-    if (candidates.some((candidate: any) => candidate.status === 'pending')) {
-      await approveAllProjectCandidates(pid)
-    }
-  } catch (error: any) {
-    console.error('Failed to load serialization data', error)
-  } finally {
-    loadingSerial.value = false
-  }
-}
-
-// 自动纠偏大纲逻辑
-const triggerAdaptiveRewrite = async () => {
-  if (!currentProject.value?.id) return
-  rewritingOutline.value = true
-  try {
-    const pid = currentProject.value.id
-    const { data } = await adaptiveRewriteOutline(pid)
-    adaptiveOutlineDiff.value = {
-      old_chapters: data.old_chapters || [],
-      new_chapters: data.new_chapters || []
-    }
-    if (adaptiveOutlineDiff.value.new_chapters.length === 0) {
-      ElMessage.info('当前数据良好，无可调整章节。')
-    } else {
-      outlineDiffDialogVisible.value = true
-    }
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail || error.message || '大纲纠偏计算失败')
-  } finally {
-    rewritingOutline.value = false
-  }
-}
-
-const applyAdaptive = async () => {
-  if (!currentProject.value?.id) return
-  applyingOutline.value = true
-  try {
-    const pid = currentProject.value.id
-    await applyAdaptiveOutline(pid, { new_chapters: adaptiveOutlineDiff.value.new_chapters })
-    ElMessage.success('智能纠偏大纲已成功应用到后续章节！')
-    outlineDiffDialogVisible.value = false
-    await loadSerialData()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail || error.message || '应用新大纲失败')
-  } finally {
-    applyingOutline.value = false
-  }
-}
-
-// 打包下载
-const copyTrialForPlatform = async () => {
-  copyingTrial.value = true
-  try {
-    const { data } = await exportChaptersTrial({ include_titles: true })
-    await copyPlainTextToClipboard(data.text || '')
-    ElMessage.success(`已复制 ${(data.chapter_ids || []).length} 章试发文本`)
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail || error.message || '复制失败')
-  } finally {
-    copyingTrial.value = false
-  }
-}
-
-const downloadSerial = async (format: string) => {
-  if (!currentProject.value?.id) return
-  exportingSerial.value = true
-  try {
-    const pid = currentProject.value.id
-    const response = await exportSerial(pid, format)
-    const blob = new Blob([response.data], { type: format === 'zip' ? 'application/zip' : 'text/plain;charset=utf-8' })
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = format === 'zip' ? `${currentProject.value.name}_已更新章节.zip` : `${currentProject.value.name}_连载全文.txt`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-    ElMessage.success('导出成功！')
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail || error.message || '打包导出失败，可能暂无已生成章节')
-  } finally {
-    exportingSerial.value = false
-  }
-}
-
-
-
-const restartDashboardTimer = () => {
-  if (timer) window.clearInterval(timer)
-  const intervalMs = tasksStore.isRunning ? 3000 : 15000
-  timer = window.setInterval(() => {
-    if (!shouldPoll()) return
-    if (tasksStore.isRunning) {
-      chapterStore.refreshAll()
-    }
-    if (activeTab.value === 'serialization') {
-      loadSerialData()
-    }
-  }, intervalMs)
-}
 
 onMounted(async () => {
-  await loadWorkbench()
+  await loadWorkbench(loadSerialData)
   restartDashboardTimer()
   watch(() => tasksStore.isRunning, restartDashboardTimer)
   tasksStore.startPolling()
 })
 
 onUnmounted(() => {
-  if (timer) window.clearInterval(timer)
+  stopDashboardPolling()
   tasksStore.stopPolling()
 })
 </script>
