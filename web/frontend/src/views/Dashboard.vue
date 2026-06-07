@@ -80,9 +80,10 @@ const { restartDashboardTimer, stopDashboardPolling, tasksStore } = useDashboard
   loadSerialData,
 })
 
-const { busy: autoRunBusy, dialogVisible: autoRunDialogVisible } = useNovelBatchRun()
+const { running: autoRunRunning, dialogVisible: autoRunDialogVisible } = useNovelBatchRun()
 
-watch(autoRunBusy, async (now, prev) => {
+// 仅在实际连写任务结束时刷新工作台；勿监听 busy/opening，否则开弹窗时会误触发 loadWorkbench
+watch(autoRunRunning, async (now, prev) => {
   if (prev && !now && !autoRunDialogVisible.value) {
     await loadWorkbench(loadSerialData)
   }

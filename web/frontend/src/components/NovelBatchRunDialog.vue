@@ -45,7 +45,6 @@ const showVectorAlert = computed(() =>
     v-model="dialogVisible"
     :title="dialogTitle"
     width="500px"
-    destroy-on-close
     append-to-body
   >
     <div class="batch-run-body">

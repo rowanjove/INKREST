@@ -294,22 +294,21 @@ export function useNovelBatchRun() {
     runPhase.value = 'opening'
     try {
       await refreshContext()
+      applyFormDefaults()
+      dialogVisible.value = true
+      if (!canRun.value) {
+        const pending = readinessItems.value.filter((i) => !i.ok).map((i) => i.label)
+        ElMessage.warning(
+          pending.length
+            ? `开书清单尚有未就绪项：${pending.join('、')}。可在弹窗内查看详情后再启动。`
+            : '开书清单未全绿，请补齐后再确认连写。',
+        )
+      }
     } catch (error: any) {
       ElMessage.error(error?.message || '无法加载开书状态，请稍后重试')
-      return
     } finally {
       opening.value = false
       if (runPhase.value === 'opening') runPhase.value = 'idle'
-    }
-    applyFormDefaults()
-    dialogVisible.value = true
-    if (!canRun.value) {
-      const pending = readinessItems.value.filter((i) => !i.ok).map((i) => i.label)
-      ElMessage.warning(
-        pending.length
-          ? `开书清单尚有未就绪项：${pending.join('、')}。可在弹窗内查看详情后再启动。`
-          : '开书清单未全绿，请补齐后再确认连写。',
-      )
     }
   }
 

@@ -15,4 +15,16 @@ test.describe('batch run dialog', () => {
       timeout: 15_000,
     })
   })
+
+  test('batch start opens dialog and keeps it visible', async ({ page, request }) => {
+    await ensureActiveProject(page, request)
+    const batchBtn = page.getByRole('button', { name: '连写启动' })
+    await expect(batchBtn).toBeVisible({ timeout: 15_000 })
+    await batchBtn.click()
+    const dialog = page.getByRole('dialog', { name: /连写启动|继续写书/ })
+    await expect(dialog).toBeVisible({ timeout: 15_000 })
+    await page.waitForTimeout(800)
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '确认连写' })).toBeVisible()
+  })
 })

@@ -526,7 +526,7 @@ const loadEngineStatus = async () => {
       :project-id="projectStore.currentProject.id"
     />
 
-    <NovelBatchRunDialog v-if="isInProject" />
+    <NovelBatchRunDialog />
   </div>
 </template>
 

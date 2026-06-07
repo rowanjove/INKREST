@@ -50,7 +50,10 @@ export const useProjectStore = defineStore('project', () => {
         currentProject.value = null
       }
     } catch {
-      currentProject.value = null
+      // 网络抖动时保留当前项目，避免 App 层 v-if 卸载连写弹窗
+      if (!currentProject.value?.id) {
+        currentProject.value = null
+      }
     }
   }
 
