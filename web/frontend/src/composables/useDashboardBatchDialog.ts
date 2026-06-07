@@ -2,6 +2,7 @@ import { ref, type ComputedRef, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { generateChapterPlan, runBatchChapters } from '../api'
+import { buildChapterGoalTemplate } from '../utils/dashboardChapterGoal'
 import { useChapterStore } from '../stores/chapter'
 import { useProjectStore } from '../stores/project'
 
@@ -28,13 +29,13 @@ export function useDashboardBatchDialog(options: {
   const batchRows = ref<BatchRow[]>([{ chapter_id: '001', goal: '' }])
 
   function chapterGoalTemplate(chapterId: string) {
-    const protagonist = outline.value?.protagonist?.name || '主角'
-    const theme =
-      outlineTheme.value || currentProject.value?.description || currentProject.value?.name || '主线'
-    const conflict = outline.value?.conflict || outline.value?.core_theme || theme
-    const numericId = Number.parseInt(chapterId, 10)
-    const chapterLabel = Number.isNaN(numericId) ? chapterId : `第 ${numericId} 章`
-    return `${chapterLabel}：围绕「${theme}」推进主线，让${protagonist}面对「${conflict}」中的关键阻力，制造清晰冲突、人物变化和结尾钩子。`
+    return buildChapterGoalTemplate({
+      chapterId,
+      outline: outline.value,
+      outlineTheme: outlineTheme.value,
+      projectName: currentProject.value?.name,
+      projectDescription: currentProject.value?.description,
+    })
   }
 
   function openAddChapterDialog() {

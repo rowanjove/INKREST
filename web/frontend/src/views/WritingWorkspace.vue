@@ -14,6 +14,7 @@ import { Fold, Expand, Document, Plus, Delete, Check } from '@element-plus/icons
 import AssetSidebar from '../components/AssetSidebar.vue'
 import AiBubbleMenu from '../components/AiBubbleMenu.vue'
 import { useTasksStore } from '../stores/tasks'
+import { useWritingVisualSettings } from '../composables/useWritingVisualSettings'
 
 const tasksStore = useTasksStore()
 
@@ -528,47 +529,15 @@ const handleAcceptExpand = () => {
   ElMessage.success('续写内容已插入！')
 }
 
-// ---- Typography and Eye-Protection Themes ----
-const writeTheme = ref<'white' | 'parchment' | 'green' | 'dark'>('white')
-const writeFontSize = ref(16)
-const writeLineHeight = ref(2.0)
-const writeIndent = ref(false)
-const writeTitleCenter = ref(false)
-
-const adjustTextareaHeight = () => {
-  const textarea = editorRef.value
-  if (!textarea) return
-  textarea.style.height = 'auto'
-  textarea.style.height = `${textarea.scrollHeight}px`
-}
-
-watch(editorText, () => {
-  nextTick(adjustTextareaHeight)
-})
-
-const loadVisualSettings = () => {
-  try {
-    writeTheme.value = (localStorage.getItem('write_theme') as any) || 'white'
-    writeFontSize.value = parseInt(localStorage.getItem('write_font_size') || '16', 10)
-    writeLineHeight.value = parseFloat(localStorage.getItem('write_line_height') || '2.0')
-    writeIndent.value = localStorage.getItem('write_indent') === 'true'
-    writeTitleCenter.value = localStorage.getItem('write_title_center') === 'true'
-  } catch (e) {
-    // localstorage disabled
-  }
-}
-
-watch([writeTheme, writeFontSize, writeLineHeight, writeIndent, writeTitleCenter], () => {
-  try {
-    localStorage.setItem('write_theme', writeTheme.value)
-    localStorage.setItem('write_font_size', String(writeFontSize.value))
-    localStorage.setItem('write_line_height', String(writeLineHeight.value))
-    localStorage.setItem('write_indent', String(writeIndent.value))
-    localStorage.setItem('write_title_center', String(writeTitleCenter.value))
-  } catch (e) {
-    // localstorage error
-  }
-})
+const {
+  writeTheme,
+  writeFontSize,
+  writeLineHeight,
+  writeIndent,
+  writeTitleCenter,
+  adjustTextareaHeight,
+  loadVisualSettings,
+} = useWritingVisualSettings({ editorRef, editorText })
 
 // ---- AI Writing & Automatic Formatting ----
 const writing = ref(false)

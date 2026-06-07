@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased — Performance (Phase 0–4)
+## Unreleased
+
+### Refactor
+
+- Dashboard：composable 拆分（workbench / serial / batch / polling）+ 5 个子组件（Workbench / Metrics / Serialization / 两个 Dialog）
+- Dashboard 纯函数抽至 `dashboardEngine` / `dashboardChapterGoal` 并补 Vitest
+- WritingWorkspace：抽出 `useWritingVisualSettings`（排版主题与 localStorage 持久化）
+
+### Performance (Phase 0–4)
 
 ### Backend
 
