@@ -3,6 +3,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WRITER = ROOT / "web" / "frontend" / "src" / "views" / "WritingWorkspace.vue"
+WRITER_CHAPTER = (
+    ROOT / "web" / "frontend" / "src" / "composables" / "useWritingChapterEditor.ts"
+)
+WRITER_AI_WRITE = ROOT / "web" / "frontend" / "src" / "composables" / "useWritingAiWrite.ts"
 ASSET_EDITOR = ROOT / "web" / "frontend" / "src" / "views" / "AssetEditor.vue"
 MARKDOWN_EDITOR = ROOT / "web" / "frontend" / "src" / "components" / "MarkdownAssetEditor.vue"
 DASHBOARD = ROOT / "web" / "frontend" / "src" / "views" / "Dashboard.vue"
@@ -42,13 +46,15 @@ FRONTEND_API = ROOT / "web" / "frontend" / "src" / "api.ts"
 
 
 def test_writer_supports_chapter_delete_right_sidebar_collapse_and_ai_reload() -> None:
-    source = WRITER.read_text(encoding="utf-8")
+    writer_source = WRITER.read_text(encoding="utf-8")
+    chapter_source = WRITER_CHAPTER.read_text(encoding="utf-8")
+    ai_write_source = WRITER_AI_WRITE.read_text(encoding="utf-8")
 
-    assert "deleteChapter" in source
-    assert "handleDeleteChapter" in source
-    assert "rightSidebarCollapsed" in source
-    assert "pollAiWriteResult" in source
-    assert "await loadChapter(chapterId)" in source
+    assert "deleteChapter" in chapter_source
+    assert "handleDeleteChapter" in writer_source
+    assert "rightSidebarCollapsed" in writer_source
+    assert "pollAiWriteResult" in ai_write_source
+    assert "await loadChapter(chapterId)" in ai_write_source
 
 
 def test_writer_save_button_uses_toolbar_style_instead_of_green_block() -> None:
@@ -228,7 +234,7 @@ def test_api_errors_prefer_backend_detail_over_status_text() -> None:
     api_source = FRONTEND_API.read_text(encoding="utf-8")
     library_source = LIBRARY_VIEW.read_text(encoding="utf-8")
     chapter_list_source = CHAPTER_LIST.read_text(encoding="utf-8")
-    writer_source = WRITER.read_text(encoding="utf-8")
+    writer_chapter_source = WRITER_CHAPTER.read_text(encoding="utf-8")
 
     assert "export const apiErrorMessage" in api_source
     assert "error?.response?.data?.detail" in api_source
@@ -237,7 +243,7 @@ def test_api_errors_prefer_backend_detail_over_status_text() -> None:
     assert "error.message = message" in api_source
     assert "apiErrorMessage(error" in library_source
     assert "apiErrorMessage(error" in chapter_list_source
-    assert "apiErrorMessage(e" in writer_source
+    assert "apiErrorMessage(e" in writer_chapter_source
 
 
 def test_task_log_uses_tasks_store_with_manual_refresh() -> None:

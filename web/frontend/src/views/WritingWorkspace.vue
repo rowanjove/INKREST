@@ -1,533 +1,57 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import {
-  apiErrorMessage,
-  listChapters, getChapter, updateChapter, extractSyncAssets, inlineExpand,
-  createChapter, listSnapshots, createSnapshot, rollbackSnapshot,
-  listVersions, createVersion, updateVersion, deleteVersion, activateVersion, compareVersions, getScrapbook,
-  getCurrentProject, listPlatforms, getProjectPlatform, updateProjectPlatform, saveReaderFeedback, listReaderFeedback, getGoldenCheck,
-  runChapter, getTask, deleteChapter, suggestChapterGoal
-} from '../api'
-import { ElMessage, ElNotification, ElMessageBox } from 'element-plus'
 import { Fold, Expand, Document, Plus, Delete, Check } from '@element-plus/icons-vue'
 import AssetSidebar from '../components/AssetSidebar.vue'
 import AiBubbleMenu from '../components/AiBubbleMenu.vue'
 import { useTasksStore } from '../stores/tasks'
 import { useWritingVisualSettings } from '../composables/useWritingVisualSettings'
+import { useWritingChapterEditor } from '../composables/useWritingChapterEditor'
+import { useWritingVersions } from '../composables/useWritingVersions'
+import { useWritingScrapbook } from '../composables/useWritingScrapbook'
+import { useWritingEditorAssist } from '../composables/useWritingEditorAssist'
+import { useWritingAiWrite } from '../composables/useWritingAiWrite'
+import { useWritingSnapshots } from '../composables/useWritingSnapshots'
+import { useWritingPlatformFeedback } from '../composables/useWritingPlatformFeedback'
 
 const tasksStore = useTasksStore()
-
-
 const route = useRoute()
 
-// Chapter state
-const chaptersList = ref<any[]>([])
-const activeChapterId = ref('')
-const currentChapter = ref<any>(null)
-const editorText = ref('')
-const loadingEditor = ref(false)
-const saving = ref(false)
+const editorRef = ref<HTMLTextAreaElement | null>(null)
+const assetSidebarRef = ref<{ refreshAssets?: () => void } | null>(null)
+const rightTab = ref<'assets' | 'scrapbook' | 'feedback' | 'golden'>('assets')
 const sidebarCollapsed = ref(false)
 const rightSidebarCollapsed = ref(false)
 
-// Versions / Scrapbook states
-const versionsList = ref<any[]>([])
-const activeVersionId = ref('')
-const activeVersion = computed(() => versionsList.value.find(v => v.id === activeVersionId.value))
+let fetchScrapbookImpl: () => Promise<void> = async () => {}
+let resetAssistImpl: () => void = () => {}
+let adjustTextareaHeightImpl: () => void = () => {}
 
-const rightTab = ref<'assets' | 'scrapbook' | 'feedback' | 'golden'>('assets')
-const scrapbookList = ref<any[]>([])
-const scrapbookQuery = ref('')
-const loadingScrapbook = ref(false)
-
-// Platform & Feedback states
-const activeProjectId = ref('')
-const activePlatform = ref('qidian')
-const activePlatformLabel = ref('起点中文网')
-const platformsList = ref<any[]>([])
-const feedbackList = ref<any[]>([])
-const loadingFeedback = ref(false)
-const loadingGolden = ref(false)
-
-const feedbackForm = ref({
-  chapter_id: '',
-  bounce_rate: 0.15,
-  retention_rate: 0.85,
-  active_readers: 5000
+const {
+  chaptersList,
+  activeChapterId,
+  currentChapter,
+  editorText,
+  loadingEditor,
+  saving,
+  versionsList,
+  activeVersionId,
+  activeVersion,
+  fetchChapters,
+  loadChapter,
+  handleSave,
+  handleOpenCreateChapter,
+  handleDeleteChapter,
+  openChapterFromQuery,
+  handleForceRefresh,
+} = useWritingChapterEditor({
+  editorRef,
+  assetSidebarRef,
+  rightTab,
+  adjustTextareaHeight: () => adjustTextareaHeightImpl(),
+  onChapterLoadStart: () => resetAssistImpl(),
+  fetchScrapbook: () => fetchScrapbookImpl(),
 })
-
-const goldenCheckResult = ref<any>(null)
-
-const compareDialogOpen = ref(false)
-const diffChunks = ref<any[]>([])
-const loadingDiff = ref(false)
-const compareVersionId = ref('')
-
-// Adjacent panel / Sidebar reference
-const assetSidebarRef = ref<any>(null)
-
-// Selection & AI Bubble Menu state
-const showBubble = ref(false)
-const bubbleX = ref(0)
-const bubbleY = ref(0)
-const selectedText = ref('')
-const editorRef = ref<HTMLTextAreaElement | null>(null)
-
-// AI Expansion State
-const expanding = ref(false)
-const expandResult = ref('')
-const showExpandDialog = ref(false)
-
-// Load all chapters
-const fetchChapters = async () => {
-  try {
-    const { data } = await listChapters({ offset: 0, limit: 500, sync: true })
-    const chapterRows = data.items ?? data
-    // Filter out missing chapters or handle them
-    chaptersList.value = chapterRows || []
-    
-    if (chaptersList.value.length > 0 && !activeChapterId.value) {
-      // Load first chapter by default
-      await loadChapter(chaptersList.value[0].chapter_id)
-    }
-  } catch (e: any) {
-    ElMessage.error('获取章节列表失败: ' + apiErrorMessage(e, '获取章节列表失败'))
-  }
-}
-
-// Load a specific chapter's final text
-const loadChapter = async (cid: string) => {
-  loadingEditor.value = true
-  activeChapterId.value = cid
-  showBubble.value = false
-  expandResult.value = ''
-  showExpandDialog.value = false
-  
-  try {
-    const { data } = await getChapter(cid)
-    currentChapter.value = data
-    
-    // 获取版本列表并默认加载 active 版本
-    const { data: vData } = await listVersions(cid)
-    versionsList.value = vData || []
-    
-    const activeV = versionsList.value.find((v: any) => v.is_active === 1)
-    if (activeV) {
-      activeVersionId.value = activeV.id
-      editorText.value = activeV.content || ''
-    } else if (versionsList.value.length > 0) {
-      activeVersionId.value = versionsList.value[0].id
-      editorText.value = versionsList.value[0].content || ''
-    } else {
-      activeVersionId.value = ''
-      editorText.value = data.final_text || ''
-    }
-    
-    if (rightTab.value === 'scrapbook') {
-      await fetchScrapbook()
-    }
-    
-    nextTick(adjustTextareaHeight)
-  } catch (e: any) {
-    ElMessage.error('加载章节内容失败: ' + apiErrorMessage(e, '加载章节内容失败'))
-    editorText.value = ''
-    currentChapter.value = null
-  } finally {
-    loadingEditor.value = false
-  }
-}
-
-// Save chapter and trigger asset extraction
-const handleSave = async (silent = false) => {
-  if (!activeChapterId.value || saving.value) return
-  saving.value = true
-  
-  try {
-    const curVer = activeVersion.value
-    if (curVer && curVer.is_active === 0) {
-      // 如果当前是分支草稿，仅保存分支内容
-      await updateVersion(activeVersionId.value, {
-        content: editorText.value
-      })
-      if (!silent) {
-        ElMessage.success('分支剧情草稿已保存！')
-      }
-    } else {
-      // 否则，正常保存为正文稿件
-      await updateChapter(activeChapterId.value, {
-        title: currentChapter.value?.title || '',
-        final_text: editorText.value
-      })
-      if (!silent) {
-        ElMessage.success('章节内容已保存！')
-      }
-    }
-    
-    await fetchChapters()
-    const { data: vData } = await listVersions(activeChapterId.value)
-    versionsList.value = vData || []
-    
-    // 2. Trigger entity extraction and asset sync only when manually saved
-    if (!silent) {
-      const { data } = await extractSyncAssets({ chapter_text: editorText.value })
-      if (data.success && data.synced && data.synced.length > 0) {
-        // Show notification on what assets were updated/created
-        const created = data.synced.filter((s: any) => s.status === 'created').map((s: any) => s.label)
-        const updated = data.synced.filter((s: any) => s.status === 'updated').map((s: any) => s.label)
-        
-        let message = ''
-        if (created.length) message += `✨ <strong>新增设定</strong>: ${created.join('，')}<br />`
-        if (updated.length) message += `🔄 <strong>更新设定</strong>: ${updated.join('，')}<br />`
-        
-        ElNotification({
-          title: '资产库自动同步成功',
-          message: message,
-          type: 'success',
-          duration: 5000,
-          dangerouslyUseHTMLString: true
-        })
-        
-        // Refresh sidebar assets list
-        if (assetSidebarRef.value) {
-          assetSidebarRef.value.refreshAssets()
-        }
-      }
-    }
-  } catch (e: any) {
-    if (!silent) {
-      ElMessage.error('保存失败: ' + apiErrorMessage(e, '保存失败'))
-    }
-  } finally {
-    saving.value = false
-  }
-}
-
-// ---- Versions & Scrapbook Operations ----
-const handleVersionChange = (vid: string) => {
-  const ver = versionsList.value.find(v => v.id === vid)
-  if (ver) {
-    activeVersionId.value = vid
-    editorText.value = ver.content || ''
-    nextTick(adjustTextareaHeight)
-  }
-}
-
-const handleCreateVersion = () => {
-  ElMessageBox.prompt('请输入分支版本名称（如：版本 B）', '新建分支试写', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    inputValue: `版本 ${String.fromCharCode(65 + versionsList.value.length)}`,
-    inputPattern: /.+/,
-    inputErrorMessage: '名称不能为空'
-  }).then(({ value: name }) => {
-    ElMessageBox.prompt('请输入该分支的剧情走向备注说明（选填）', '分支走向备注', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputValue: '',
-    }).then(async ({ value: note }) => {
-      try {
-        await createVersion(activeChapterId.value, {
-          version_name: name.trim(),
-          note: note ? note.trim() : '',
-          copy_from_active: true
-        })
-        ElMessage.success('新建剧情分支成功！')
-        const { data: vData } = await listVersions(activeChapterId.value)
-        versionsList.value = vData || []
-        if (versionsList.value.length > 0) {
-          const newV = versionsList.value[versionsList.value.length - 1]
-          handleVersionChange(newV.id)
-        }
-      } catch (e: any) {
-        ElMessage.error('新建分支失败: ' + apiErrorMessage(e, '新建分支失败'))
-      }
-    }).catch(() => {})
-  }).catch(() => {})
-}
-
-const handleActivateVersion = async () => {
-  if (!activeChapterId.value || !activeVersionId.value) return
-  const curVer = activeVersion.value
-  if (!curVer || curVer.is_active === 1) return
-  
-  ElMessageBox.confirm(
-    `确定要将 [${curVer.version_name}] 设为正史活跃版本吗？这会用当前内容覆写正文 final 稿件并自动产生备份。`,
-    '设为正史确认',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  ).then(async () => {
-    try {
-      await activateVersion(activeChapterId.value, activeVersionId.value)
-      ElMessage.success(`[${curVer.version_name}] 已设为本章正史！`)
-      await loadChapter(activeChapterId.value)
-      await fetchChapters()
-    } catch (e: any) {
-      ElMessage.error('激活版本失败: ' + apiErrorMessage(e, '激活版本失败'))
-    }
-  }).catch(() => {})
-}
-
-const handleDeleteVersion = async (vid: string) => {
-  const ver = versionsList.value.find(v => v.id === vid)
-  if (!ver) return
-  if (ver.is_active === 1) {
-    ElMessage.warning('无法删除当前正史活跃版本分支')
-    return
-  }
-  
-  ElMessageBox.confirm(
-    `确定要删除剧情分支 [${ver.version_name}] 吗？删除后此分支内容将彻底丢失。`,
-    '删除分支确认',
-    {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  ).then(async () => {
-    try {
-      await deleteVersion(vid)
-      ElMessage.success('剧情分支删除成功！')
-      
-      const { data: vData } = await listVersions(activeChapterId.value)
-      versionsList.value = vData || []
-      
-      if (activeVersionId.value === vid) {
-        const activeV = versionsList.value.find((v: any) => v.is_active === 1)
-        if (activeV) handleVersionChange(activeV.id)
-      }
-      
-      await fetchScrapbook()
-    } catch (e: any) {
-      ElMessage.error('删除分支失败: ' + apiErrorMessage(e, '删除分支失败'))
-    }
-  }).catch(() => {})
-}
-
-const handleOpenCompare = async (targetVid: string) => {
-  const activeV = versionsList.value.find((v: any) => v.is_active === 1)
-  if (!activeV) {
-    ElMessage.warning('未找到正史活跃版本，无法进行 Diff 对比')
-    return
-  }
-  compareVersionId.value = targetVid
-  compareDialogOpen.value = true
-  loadingDiff.value = true
-  try {
-    const { data } = await compareVersions(activeChapterId.value, {
-      version_id_a: activeV.id,
-      version_id_b: targetVid
-    })
-    diffChunks.value = data || []
-  } catch (e: any) {
-    ElMessage.error('计算剧情分支差异失败: ' + apiErrorMessage(e, '计算剧情分支差异失败'))
-    diffChunks.value = []
-  } finally {
-    loadingDiff.value = false
-  }
-}
-
-const fetchScrapbook = async () => {
-  loadingScrapbook.value = true
-  try {
-    const { data } = await getScrapbook({
-      query: scrapbookQuery.value,
-      chapter_id: activeChapterId.value
-    })
-    scrapbookList.value = data || []
-  } catch (e: any) {
-    ElMessage.error('获取废稿段落失败: ' + apiErrorMessage(e, '获取废稿段落失败'))
-  } finally {
-    loadingScrapbook.value = false
-  }
-}
-
-const copyScrapbookText = (text: string) => {
-  navigator.clipboard.writeText(text)
-  ElMessage.success('已复制废稿段落到剪贴板')
-}
-
-const insertScrapbookText = (text: string) => {
-  if (!editorRef.value) return
-  const start = editorRef.value.selectionStart
-  const originVal = editorText.value
-  editorText.value = originVal.substring(0, start) + text + originVal.substring(start)
-  nextTick(() => {
-    if (editorRef.value) {
-      editorRef.value.focus()
-      editorRef.value.setSelectionRange(start + text.length, start + text.length)
-      adjustTextareaHeight()
-    }
-  })
-  ElMessage.success('废稿段落已成功插入编辑器！')
-}
-
-watch(rightTab, (val) => {
-  if (val === 'scrapbook') {
-    fetchScrapbook()
-  }
-})
-
-const handleOpenCreateChapter = () => {
-  let nextIdNum = 1
-  if (chaptersList.value && chaptersList.value.length > 0) {
-    const ids = chaptersList.value
-      .map(ch => parseInt(ch.chapter_id, 10))
-      .filter(num => !isNaN(num))
-    if (ids.length > 0) {
-      nextIdNum = Math.max(...ids) + 1
-    }
-  }
-  const nextIdStr = nextIdNum.toString().padStart(3, '0')
-  
-  ElMessageBox.prompt('请输入新建章节的标题', '新建章节', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    inputValue: `第 ${nextIdNum} 章`,
-    inputPattern: /.+/,
-    inputErrorMessage: '标题不能为空'
-  }).then(async ({ value }) => {
-    try {
-      await createChapter({
-        chapter_id: nextIdStr,
-        title: value.trim()
-      })
-      ElMessage.success('章节创建成功！')
-      await fetchChapters()
-      await loadChapter(nextIdStr)
-    } catch (e: any) {
-      ElMessage.error('创建章节失败: ' + apiErrorMessage(e, '创建章节失败'))
-    }
-  }).catch(() => {})
-}
-
-const handleDeleteChapter = async (chapterId: string) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定删除章节 ${chapterId}？正文、计划、报告、历史版本，以及状态库中该章同步的事件/人物/伏笔等数据都会一并移除。`,
-      '删除章节',
-      {
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-    await deleteChapter(chapterId)
-    if (activeChapterId.value === chapterId) {
-      activeChapterId.value = ''
-      currentChapter.value = null
-      editorText.value = ''
-      versionsList.value = []
-      activeVersionId.value = ''
-    }
-    await fetchChapters()
-    ElMessage.success(`章节 ${chapterId} 已删除`)
-  } catch (error: any) {
-    if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error('删除章节失败: ' + apiErrorMessage(error, '删除章节失败'))
-    }
-  }
-}
-
-// Handle Editor Keyboard Shortcuts (Ctrl + S / Tab autocomplete)
-const handleKeyDown = (event: KeyboardEvent) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === 's') {
-    event.preventDefault()
-    handleSave()
-  }
-}
-
-// Handle Text Selection for AI Bubble Menu
-const handleTextSelection = (event: any) => {
-  if (!editorRef.value) return
-  
-  const selectionStart = editorRef.value.selectionStart
-  const selectionEnd = editorRef.value.selectionEnd
-  
-  if (selectionStart !== selectionEnd) {
-    const rawText = editorText.value.substring(selectionStart, selectionEnd)
-    if (rawText.trim().length > 0) {
-      selectedText.value = rawText
-      // Position the bubble at mouse click coordinates safely
-      bubbleX.value = event.clientX || bubbleX.value || 300
-      bubbleY.value = event.clientY || bubbleY.value || 200
-      showBubble.value = true
-      return
-    }
-  }
-  showBubble.value = false
-}
-
-// Accept rewritten text replacement
-const handleAcceptRewrite = (newText: string) => {
-  if (!editorRef.value) return
-  const start = editorRef.value.selectionStart
-  const end = editorRef.value.selectionEnd
-  
-  const originVal = editorText.value
-  editorText.value = originVal.substring(0, start) + newText + originVal.substring(end)
-  
-  // Auto-focus back to editor and select the new block
-  nextTick(() => {
-    if (editorRef.value) {
-      editorRef.value.focus()
-      editorRef.value.setSelectionRange(start, start + newText.length)
-    }
-  })
-  
-  ElMessage.success('已替换原段落！')
-  showBubble.value = false
-}
-
-// Trigger AI inline expansion (continue writing)
-const handleTriggerExpand = async () => {
-  if (!editorRef.value || expanding.value) return
-  expanding.value = true
-  expandResult.value = ''
-  
-  const cursorPosition = editorRef.value.selectionStart
-  const beforeText = editorText.value.substring(0, cursorPosition)
-  
-  try {
-    const { data } = await inlineExpand({
-      before_text: beforeText,
-      chapter_id: activeChapterId.value,
-      goal: currentChapter.value?.plan?.chapter_goal || ''
-    })
-    expandResult.value = data.expanded_text
-    showExpandDialog.value = true
-  } catch (e: any) {
-    ElMessage.error('续写失败: ' + apiErrorMessage(e, '续写失败'))
-  } finally {
-    expanding.value = false
-  }
-}
-
-// Accept AI expansion
-const handleAcceptExpand = () => {
-  if (!editorRef.value || !expandResult.value) return
-  const cursorPosition = editorRef.value.selectionStart
-  const originVal = editorText.value
-  
-  // Insert at cursor
-  editorText.value = originVal.substring(0, cursorPosition) + expandResult.value + originVal.substring(cursorPosition)
-  
-  // Close dialog and focus back
-  showExpandDialog.value = false
-  const insertedLen = expandResult.value.length
-  expandResult.value = ''
-  
-  nextTick(() => {
-    if (editorRef.value) {
-      editorRef.value.focus()
-      editorRef.value.setSelectionRange(cursorPosition + insertedLen, cursorPosition + insertedLen)
-    }
-  })
-  ElMessage.success('续写内容已插入！')
-}
 
 const {
   writeTheme,
@@ -538,358 +62,125 @@ const {
   adjustTextareaHeight,
   loadVisualSettings,
 } = useWritingVisualSettings({ editorRef, editorText })
+adjustTextareaHeightImpl = adjustTextareaHeight
 
-// ---- AI Writing & Automatic Formatting ----
-const writing = ref(false)
-const writeDialogOpen = ref(false)
-const chapterGoalForWrite = ref('')
-let aiWritePollTimer: number | null = null
+const {
+  scrapbookList,
+  scrapbookQuery,
+  loadingScrapbook,
+  fetchScrapbook,
+  copyScrapbookText,
+  insertScrapbookText,
+} = useWritingScrapbook({
+  activeChapterId,
+  editorText,
+  editorRef,
+  adjustTextareaHeight,
+  rightTab,
+})
+fetchScrapbookImpl = fetchScrapbook
 
-const stopAiWritePolling = () => {
-  if (aiWritePollTimer) {
-    window.clearInterval(aiWritePollTimer)
-    aiWritePollTimer = null
-  }
-}
+const {
+  compareDialogOpen,
+  diffChunks,
+  loadingDiff,
+  compareVersionId,
+  handleVersionChange,
+  handleCreateVersion,
+  handleActivateVersion,
+  handleDeleteVersion,
+  handleOpenCompare,
+} = useWritingVersions({
+  activeChapterId,
+  editorText,
+  versionsList,
+  activeVersionId,
+  activeVersion,
+  adjustTextareaHeight,
+  loadChapter,
+  fetchChapters,
+  fetchScrapbook,
+})
 
-const pollAiWriteResult = (taskId: string, chapterId: string) => {
-  stopAiWritePolling()
-  aiWritePollTimer = window.setInterval(async () => {
-    try {
-      const { data } = await getTask(taskId)
-      if (data.status === 'completed') {
-        stopAiWritePolling()
-        await loadChapter(chapterId)
-        await fetchChapters()
-        ElMessage.success('AI 写作已完成，正文已自动载入写作页。')
-      } else if (data.status === 'failed') {
-        stopAiWritePolling()
-        ElMessage.error(data.error || 'AI 写作任务失败')
-      }
-    } catch {
-      stopAiWritePolling()
-    }
-  }, 2000)
-}
+const {
+  showBubble,
+  bubbleX,
+  bubbleY,
+  selectedText,
+  expandResult,
+  showExpandDialog,
+  resetAssistState,
+  handleKeyDown,
+  handleTextSelection,
+  handleAcceptRewrite,
+  handleTriggerExpand,
+  handleAcceptExpand,
+} = useWritingEditorAssist({
+  editorRef,
+  editorText,
+  activeChapterId,
+  currentChapter,
+  handleSave,
+})
+resetAssistImpl = resetAssistState
 
-const handleTriggerWrite = async () => {
-  if (!activeChapterId.value) return
-  
-  if (editorText.value.trim().length > 0) {
-    try {
-      await ElMessageBox.confirm(
-        '该章节目前已有正文内容。触发 [AI 写作] 将重新生成整章并覆盖当前编辑内容（覆盖前系统会自动备份快照）。是否继续？',
-        'AI 写作警告',
-        {
-          confirmButtonText: '继续',
-          cancelButtonText: '取消',
-          type: 'warning'
-        }
-      )
-      await createSnapshot(activeChapterId.value, { title: `AI写作前自动备份（原正文）` })
-    } catch {
-      return
-    }
-  }
+const {
+  writing,
+  writeDialogOpen,
+  chapterGoalForWrite,
+  stopAiWritePolling,
+  handleTriggerWrite,
+  handleStartAiWrite,
+  handleAutoFormat,
+} = useWritingAiWrite({
+  activeChapterId,
+  editorText,
+  loadingEditor,
+  loadChapter,
+  fetchChapters,
+  adjustTextareaHeight,
+  writeTitleCenter,
+  writeIndent,
+})
 
-  loadingEditor.value = true
-  try {
-    const { data } = await suggestChapterGoal(activeChapterId.value)
-    chapterGoalForWrite.value = data.goal || ''
-    writeDialogOpen.value = true
-  } catch (e: any) {
-    ElMessage.error('获取章节大纲目标失败: ' + apiErrorMessage(e, '获取章节大纲目标失败'))
-  } finally {
-    loadingEditor.value = false
-  }
-}
+const {
+  timeMachineOpen,
+  snapshotsList,
+  loadingSnapshots,
+  previewingSnapshot,
+  showPreviewDialog,
+  handleOpenTimeMachine,
+  handleManualSnapshot,
+  handlePreviewSnapshot,
+  handleRollback,
+} = useWritingSnapshots({
+  activeChapterId,
+  currentChapter,
+  loadChapter,
+  fetchChapters,
+  handleSave,
+})
 
-const handleStartAiWrite = async () => {
-  if (!chapterGoalForWrite.value.trim()) {
-    ElMessage.warning('章节写作目标不能为空')
-    return
-  }
-  writing.value = true
-  try {
-    const { data } = await runChapter({
-      chapter_id: activeChapterId.value,
-      goal: chapterGoalForWrite.value,
-      dry_run: false
-    })
-    pollAiWriteResult(data.id, activeChapterId.value)
-    ElMessage.success('AI 写作任务已提交，完成后正文会自动载入当前写作页。')
-    writeDialogOpen.value = false
-  } catch (e: any) {
-    ElMessage.error('启动 AI 写作失败: ' + apiErrorMessage(e, '启动 AI 写作失败'))
-  } finally {
-    writing.value = false
-  }
-}
+const {
+  activePlatform,
+  activePlatformLabel,
+  platformsList,
+  feedbackList,
+  loadingFeedback,
+  loadingGolden,
+  feedbackForm,
+  goldenCheckResult,
+  initProjectPlatformAndFeedback,
+  handlePlatformChange,
+  submitFeedback,
+  runGoldenCheck,
+  handleGoldenRewrite,
+} = useWritingPlatformFeedback({
+  activeChapterId,
+  loadingEditor,
+})
 
-const handleAutoFormat = () => {
-  writeTitleCenter.value = true
-  writeIndent.value = true
-
-  if (editorText.value) {
-    const lines = editorText.value.split('\n')
-    const formattedLines = lines.map(line => {
-      let trimmed = line.trim()
-      trimmed = trimmed.replace(/^[ 　]+/g, '')
-      return trimmed
-    })
-    
-    let resultText = formattedLines.join('\n')
-    resultText = resultText.replace(/\n{3,}/g, '\n\n')
-    
-    editorText.value = resultText
-    nextTick(() => {
-      adjustTextareaHeight()
-    })
-  }
-  ElMessage.success('一键排版完成！已自动将标题居中并启用首行缩进。')
-}
-
-// ---- Snapshots / Time Machine State & Operations ----
-const timeMachineOpen = ref(false)
-const snapshotsList = ref<any[]>([])
-const loadingSnapshots = ref(false)
-const previewingSnapshot = ref<any>(null)
-const showPreviewDialog = ref(false)
-
-const handleOpenTimeMachine = async () => {
-  if (!activeChapterId.value) return
-  timeMachineOpen.value = true
-  await fetchSnapshots()
-}
-
-const fetchSnapshots = async () => {
-  if (!activeChapterId.value) return
-  loadingSnapshots.value = true
-  try {
-    const { data } = await listSnapshots(activeChapterId.value)
-    snapshotsList.value = data || []
-  } catch (e: any) {
-    ElMessage.error('获取备份列表失败: ' + e.message)
-  } finally {
-    loadingSnapshots.value = false
-  }
-}
-
-const handleManualSnapshot = () => {
-  if (!activeChapterId.value) return
-  ElMessageBox.prompt('请输入本次备份的描述备注', '保存手动快照', {
-    confirmButtonText: '备份',
-    cancelButtonText: '取消',
-    inputValue: `手动备份于 ${new Date().toLocaleTimeString()}`,
-    inputPattern: /.+/,
-    inputErrorMessage: '备注不能为空'
-  }).then(async ({ value }) => {
-    try {
-      await handleSave(true)
-      await createSnapshot(activeChapterId.value, { title: value.trim() })
-      ElMessage.success('手动备份快照成功！')
-      if (timeMachineOpen.value) {
-        await fetchSnapshots()
-      }
-    } catch (e: any) {
-      ElMessage.error('备份失败: ' + e.message)
-    }
-  }).catch(() => {})
-}
-
-const handlePreviewSnapshot = (snap: any) => {
-  previewingSnapshot.value = snap
-  showPreviewDialog.value = true
-}
-
-const handleRollback = (snap: any) => {
-  ElMessageBox.confirm(
-    `确认将当前章节内容回滚到 [${snap.title || snap.datetime}] 版本吗？这会覆盖编辑器当前的正文内容（回滚前系统会自动备份当前版本）。`,
-    '版本回滚二次确认',
-    {
-      confirmButtonText: '确认回滚',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  ).then(async () => {
-    try {
-      const currentTitle = currentChapter.value?.title || `第 ${activeChapterId.value} 章`
-      await createSnapshot(activeChapterId.value, { title: `系统自动备份（回滚前：${currentTitle}）` })
-      
-      await rollbackSnapshot(activeChapterId.value, snap.timestamp)
-      ElMessage.success('成功回滚到历史版本！')
-      
-      await loadChapter(activeChapterId.value)
-      await fetchChapters()
-      timeMachineOpen.value = false
-      showPreviewDialog.value = false
-    } catch (e: any) {
-      ElMessage.error('回滚失败: ' + e.message)
-    }
-  }).catch(() => {})
-}
-
-const initProjectPlatformAndFeedback = async () => {
-  try {
-    const { data: proj } = await getCurrentProject()
-    if (proj && proj.id) {
-      activeProjectId.value = proj.id
-      
-      const { data: plist } = await listPlatforms()
-      platformsList.value = plist || []
-      
-      const { data: p } = await getProjectPlatform(proj.id)
-      if (p) {
-        activePlatform.value = p.platform || 'qidian'
-        activePlatformLabel.value = p.label || '起点中文网'
-      }
-      
-      fetchFeedback()
-    }
-  } catch (e: any) {
-    console.error('Failed to init project platform/feedback:', e)
-  }
-}
-
-const fetchFeedback = async () => {
-  if (!activeProjectId.value) return
-  loadingFeedback.value = true
-  try {
-    const { data } = await listReaderFeedback(activeProjectId.value)
-    feedbackList.value = data || []
-  } catch (e: any) {
-    console.error('Failed to fetch feedback:', e)
-  } finally {
-    loadingFeedback.value = false
-  }
-}
-
-const handlePlatformChange = async (platformName: string) => {
-  if (!activeProjectId.value) return
-  try {
-    const { data } = await updateProjectPlatform(activeProjectId.value, platformName)
-    activePlatform.value = data.platform
-    const found = platformsList.value.find(p => p.name === platformName)
-    if (found) {
-      activePlatformLabel.value = found.label
-    }
-    ElMessage.success(`目标平台成功切换为 [${activePlatformLabel.value}]，大纲与生成约束已同步重载！`)
-  } catch (e: any) {
-    ElMessage.error('切换平台失败: ' + e.message)
-  }
-}
-
-const submitFeedback = async () => {
-  if (!activeProjectId.value) return
-  if (!feedbackForm.value.chapter_id) {
-    ElMessage.warning('请选择要模拟录入反馈的章节')
-    return
-  }
-  try {
-    await saveReaderFeedback(activeProjectId.value, {
-      chapter_id: feedbackForm.value.chapter_id,
-      bounce_rate: feedbackForm.value.bounce_rate,
-      retention_rate: feedbackForm.value.retention_rate,
-      active_readers: feedbackForm.value.active_readers
-    })
-    ElMessage.success('读者反馈模拟数据录入成功！')
-    fetchFeedback()
-  } catch (e: any) {
-    ElMessage.error('录入失败: ' + e.message)
-  }
-}
-
-const runGoldenCheck = async () => {
-  if (!activeProjectId.value) return
-  loadingGolden.value = true
-  goldenCheckResult.value = null
-  try {
-    const { data } = await getGoldenCheck(activeProjectId.value)
-    goldenCheckResult.value = data
-    if (data.status === 'pending') {
-      ElMessage.warning(data.message)
-    } else if (data.status === 'success') {
-      ElMessage.success('黄金三章签约质检评估完成！')
-    } else {
-      ElMessage.error(data.message || '诊断失败')
-    }
-  } catch (e: any) {
-    ElMessage.error('签约质检失败: ' + e.message)
-  } finally {
-    loadingGolden.value = false
-  }
-}
-
-const handleForceRefresh = async () => {
-  if (!activeChapterId.value) return
-  try {
-    await loadChapter(activeChapterId.value)
-    ElMessage.success('当前章节内容已重新载入！')
-  } catch (error: any) {
-    ElMessage.error('刷新失败：' + error.message)
-  }
-}
-
-const handleGoldenRewrite = async () => {
-  if (!activeChapterId.value) return
-  if (!goldenCheckResult.value?.suggestions || goldenCheckResult.value.suggestions.length === 0) {
-    ElMessage.warning('没有诊断整改建议，无法优化重写')
-    return
-  }
-
-  try {
-    await ElMessageBox.confirm(
-      '确定要根据黄金三章诊断建议一键优化重写吗？这将自动为当前章节创建快照备份并提交重写任务。',
-      '提示',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-  } catch {
-    return
-  }
-
-  loadingEditor.value = true
-  try {
-    // 1. 创建备份快照
-    const snapshotTitle = `【黄金三章重写前备份】推荐分：${goldenCheckResult.value.overall_score}`
-    await createSnapshot(activeChapterId.value, { title: snapshotTitle })
-    
-    // 2. 拼接目标建议
-    const suggestionsStr = goldenCheckResult.value.suggestions.join('；')
-    const rewriteGoal = `【黄金三章整改优化】：${suggestionsStr}`
-    
-    // 3. 提交重写任务
-    await runChapter({
-      chapter_id: activeChapterId.value,
-      goal: rewriteGoal,
-      dry_run: false
-    })
-    
-    ElNotification({
-      title: '任务提交成功',
-      message: `第 ${activeChapterId.value} 章的黄金三章整改重写任务已提交！请前往日志中心查看任务流水。`,
-      type: 'success',
-      duration: 5000
-    })
-  } catch (error: any) {
-    ElMessage.error('优化重写失败: ' + error.message)
-  } finally {
-    loadingEditor.value = false
-  }
-}
-
-// Auto-save timer
 let autoSaveTimer: number | null = null
-const openChapterFromQuery = async (raw: unknown) => {
-  if (typeof raw !== 'string' || !raw.trim()) return
-  const cid = raw.trim()
-  if (chaptersList.value.some((ch) => ch.chapter_id === cid)) {
-    await loadChapter(cid)
-  }
-}
 
 watch(
   () => route.query.chapter,
@@ -902,10 +193,10 @@ onMounted(async () => {
   loadVisualSettings()
   await fetchChapters()
   await openChapterFromQuery(route.query.chapter)
-  initProjectPlatformAndFeedback()
+  void initProjectPlatformAndFeedback()
   autoSaveTimer = window.setInterval(() => {
-    handleSave(true)
-  }, 60000) // Auto save every 60s
+    void handleSave(true)
+  }, 60000)
 })
 
 onBeforeUnmount(() => {
@@ -915,7 +206,6 @@ onBeforeUnmount(() => {
   }
 })
 </script>
-
 <template>
   <div class="workspace-page-container writing-page-shell">
     <!-- 左侧章节目录侧边栏 (可隐藏) -->
