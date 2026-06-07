@@ -5,7 +5,8 @@ import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument, Delete, Edit, Plus, Search } from '@element-plus/icons-vue'
 import { usePipelineAlertsStore } from '../stores/pipelineAlerts'
-import { apiErrorMessage, deleteChapter, getArcProgress, getChapter, listChapters, runChapter, suggestChapterGoal } from '../api'
+import { apiErrorMessage, deleteChapter, getArcProgress, getChapter, listChapters, rerunChapterGate, runChapter, suggestChapterGoal } from '../api'
+import { isQualityBlocked } from '../utils/pipelineAlertFilters'
 import { copyChapterTitleOnly, copyChapterBodyOnly } from '../utils/copyChapterText'
 import { useTasksStore } from '../stores/tasks'
 
@@ -18,6 +19,7 @@ const arcs = ref<any[]>([])
 const arcProgress = ref<Record<string, any> | null>(null)
 const deletingId = ref('')
 const copyingId = ref('')
+const gateRerunId = ref('')
 
 const searchQuery = ref('')
 const selectedStatus = ref('')
@@ -49,6 +51,27 @@ const handleSuggestGoal = async () => {
 
 const goWriter = (chapterId: string) => {
   router.push({ path: '/writer', query: { chapter: chapterId } })
+}
+
+const pipelineAlertFor = (chapterId: string) =>
+  pipelineAlerts.value.find((item) => item.chapter_id === chapterId)
+
+const isGateBlockedChapter = (chapterId: string) => {
+  const item = pipelineAlertFor(chapterId)
+  return item ? isQualityBlocked(item) : false
+}
+
+const rerunGateOnly = async (chapterId: string) => {
+  gateRerunId.value = chapterId
+  try {
+    await rerunChapterGate(chapterId)
+    ElMessage.success(`第 ${chapterId} 章已提交重跑门禁`)
+    await alertsStore.fetchAlerts()
+  } catch (error: any) {
+    ElMessage.error(apiErrorMessage(error, '提交失败'))
+  } finally {
+    gateRerunId.value = ''
+  }
 }
 
 const loadChapters = async () => {
@@ -181,7 +204,7 @@ const getRiskTagType = (chapter: any) => {
 }
 
 onMounted(async () => {
-  await loadChapters()
+  await Promise.all([loadChapters(), alertsStore.fetchAlerts()])
 })
 </script>
 
@@ -291,6 +314,16 @@ onMounted(async () => {
           <template #default="{ row }">
             <div class="action-buttons-wrap">
               <template v-if="!row.is_missing">
+                <el-button
+                  v-if="isGateBlockedChapter(row.chapter_id)"
+                  size="small"
+                  type="warning"
+                  plain
+                  :loading="gateRerunId === row.chapter_id"
+                  @click="rerunGateOnly(row.chapter_id)"
+                >
+                  只重跑门禁
+                </el-button>
                 <el-button
                   class="chapter-edit-btn"
                   size="small"

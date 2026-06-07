@@ -434,6 +434,14 @@ def list_autopilot_rounds(limit: int = 50, offset: int = 0) -> Dict[str, Any]:
     return {"total": total, "offset": start, "limit": limit, "rounds": page}
 
 
+@router.get("/api/novel/cost-summary")
+def novel_cost_summary() -> Dict[str, Any]:
+    """SQLite llm_cost_log totals plus recent autopilot round token usage."""
+    from novel_agent.services.cost_summary import build_cost_summary
+
+    return build_cost_summary(ws_server.get_root_dir())
+
+
 @router.get("/api/novel/progress-summary")
 def novel_progress_summary() -> Dict[str, Any]:
     from novel_agent.services.progress_summary import build_progress_summary

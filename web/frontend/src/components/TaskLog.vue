@@ -2,7 +2,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { Clock, Refresh } from '@element-plus/icons-vue'
+import { Clock, DataLine, Refresh } from '@element-plus/icons-vue'
+import EmptyStatePanel from './EmptyStatePanel.vue'
 import { useChapterStore } from '../stores/chapter'
 
 const store = useChapterStore()
@@ -210,11 +211,16 @@ const getProgressMessage = (task: any) => {
           </div>
         </div>
       </div>
-      <div v-else class="empty-state-card">
-        <el-icon class="empty-icon"><Clock /></el-icon>
-        <p>暂无任务流水记录</p>
-        <p class="empty-hint">请在工作台「连写启动」后回到此处查看；修章见章节维护。</p>
-      </div>
+      <EmptyStatePanel
+        v-else
+        :icon="Clock"
+        title="暂无任务流水记录"
+        description="请在工作台「连写启动」后回到此处查看；修章见章节维护。"
+        :actions="[
+          { label: '去工作台连写', type: 'primary', icon: DataLine, onClick: () => router.push('/workspace') },
+          { label: '刷新', plain: true, icon: Refresh, onClick: handleRefresh },
+        ]"
+      />
     </div>
   </section>
 </template>

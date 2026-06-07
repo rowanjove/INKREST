@@ -304,6 +304,17 @@ const getTypeLabel = (typeVal: string) => {
     </header>
 
     <el-alert
+      type="info"
+      :closable="false"
+      show-icon
+      title="新手可从官方示例插件开始"
+      style="margin-bottom: 16px"
+    >
+      复制 <code>plugins/examples/</code> 下的 <code>hello_guard.py</code> 到 <code>plugins/</code> 后启用。
+      详见仓库 <code>plugins/examples/README.md</code>。
+    </el-alert>
+
+    <el-alert
       v-if="untrustedPlugins.length"
       title="发现尚未信任的本地插件"
       type="warning"

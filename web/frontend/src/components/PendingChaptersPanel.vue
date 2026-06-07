@@ -30,6 +30,7 @@ import {
 } from '../utils/pipelineAlertFilters'
 import { DUAL_AUDIT_HINT } from '../constants/repairWorkflow'
 import { useRepairChapterFocus } from '../composables/useRepairChapterFocus'
+import EmptyStatePanel from './EmptyStatePanel.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -67,8 +68,21 @@ const gateRerunId = ref<string | null>(null)
 const dismissingId = ref<string | null>(null)
 const copyingId = ref<string | null>(null)
 const activeCardId = ref<string | null>(null)
+const activeFilterId = ref<string>('all')
 
 const totalCount = computed(() => pipelineAlerts.value.length)
+
+const filteredAlerts = computed(() => {
+  if (activeFilterId.value === 'all') return pipelineAlerts.value
+  const card = PENDING_STEP_CARDS.find((c) => c.id === activeFilterId.value)
+  if (!card) return pipelineAlerts.value
+  return pipelineAlerts.value.filter((item) => card.filter(item))
+})
+
+const selectFilter = (cardId: string) => {
+  activeFilterId.value = activeFilterId.value === cardId ? 'all' : cardId
+  expanded.value = true
+}
 
 const stepViews = computed(() =>
   PENDING_STEP_CARDS.map((card) => ({
@@ -385,8 +399,9 @@ const resumeAudit = async (chapterId: string) => {
         class="pipeline-stage-card"
         :class="{
           'pipeline-stage-card--has-count': card.count > 0,
-          'pipeline-stage-card--active': activeCardId === card.id,
+          'pipeline-stage-card--active': activeCardId === card.id || activeFilterId === card.id,
         }"
+        @click="card.id !== 'all' ? selectFilter(card.id) : undefined"
       >
         <div class="pipeline-stage-top">
           <span class="pipeline-stage-index">S{{ card.index }}</span>
@@ -417,6 +432,22 @@ const resumeAudit = async (chapterId: string) => {
     <p v-if="!hideFootnote" class="pipeline-panel__footnote">{{ DUAL_AUDIT_HINT }}</p>
 
     <div v-show="expanded" class="pipeline-panel__body">
+      <el-radio-group
+        v-if="totalCount > 0"
+        v-model="activeFilterId"
+        size="small"
+        class="pending-filter-tabs"
+      >
+        <el-radio-button
+          v-for="card in stepViews.filter((c) => c.id !== 'all')"
+          :key="card.id"
+          :label="card.id"
+        >
+          {{ card.label }} ({{ card.count }})
+        </el-radio-button>
+        <el-radio-button label="all">全部 ({{ totalCount }})</el-radio-button>
+      </el-radio-group>
+
       <div v-if="selectedIds.length > 0" class="bulk-bar">
         <span>已选 {{ selectedIds.length }} 章</span>
         <div class="bulk-bar-actions">
@@ -451,12 +482,19 @@ const resumeAudit = async (chapterId: string) => {
         处理中… {{ bulkProgress.current }} / {{ bulkProgress.total }}
       </div>
 
-      <div v-if="totalCount === 0" class="empty-list">
-        当前没有待处理章节。连写正常时此处各步骤计数为 0。
-      </div>
+      <EmptyStatePanel
+        v-if="totalCount === 0"
+        :icon="Warning"
+        title="暂无待处理章节"
+        description="连写正常时此处各步骤计数为 0。若刚提交修章任务，请稍候刷新。"
+        :actions="[
+          { label: '去工作台连写', type: 'primary', onClick: () => router.push('/workspace') },
+          { label: '看任务日志', plain: true, onClick: () => router.push('/monitor') },
+        ]"
+      />
 
-      <ul v-else class="chapter-list">
-        <li v-for="item in pipelineAlerts" :key="item.chapter_id" class="chapter-row">
+      <ul v-else-if="filteredAlerts.length > 0" class="chapter-list">
+        <li v-for="item in filteredAlerts" :key="item.chapter_id" class="chapter-row">
           <div class="row-main">
             <el-checkbox
               :model-value="selectedIds.includes(item.chapter_id)"
@@ -537,8 +575,9 @@ const resumeAudit = async (chapterId: string) => {
           </div>
         </li>
       </ul>
+      <p v-else-if="totalCount > 0" class="filter-empty-hint">当前筛选下没有章节，请切换上方标签。</p>
 
-      <div v-if="totalCount > 0" class="list-toolbar">
+      <div v-if="filteredAlerts.length > 0" class="list-toolbar">
         <el-checkbox
           :model-value="isAllSelected"
           :indeterminate="isIndeterminate"
@@ -552,6 +591,18 @@ const resumeAudit = async (chapterId: string) => {
 </template>
 
 <style scoped>
+.pending-filter-tabs {
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-empty-hint {
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--color-text-subtle);
+  text-align: center;
+}
+
 .bulk-bar {
   display: flex;
   align-items: center;

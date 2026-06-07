@@ -1,0 +1,154 @@
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { getCostSummary } from '../api'
+
+type CostSummary = {
+  project_id?: string
+  persisted?: {
+    call_count: number
+    total_tokens: number
+    total_cost_cny: number
+    today_tokens: number
+    today_cost_cny: number
+  }
+  recent_rounds?: Array<{ round?: number; tokens_used?: number; chapters_completed?: number }>
+  disclaimer?: string
+}
+
+const loading = ref(false)
+const summary = ref<CostSummary | null>(null)
+
+const formatCny = (value?: number) => {
+  const n = Number(value || 0)
+  if (n <= 0) return '—'
+  if (n >= 1) return `¥${n.toFixed(2)}`
+  return `¥${(n * 100).toFixed(1)} 分`
+}
+
+const load = async () => {
+  loading.value = true
+  try {
+    const { data } = await getCostSummary()
+    summary.value = data
+  } catch {
+    summary.value = null
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(load)
+</script>
+
+<template>
+  <section class="cost-summary-panel panel" v-loading="loading">
+    <div class="cost-head">
+      <div>
+        <h3>费用摘要</h3>
+        <p class="cost-hint">落库实耗（SQLite llm_cost_log）与最近连写轮 tokens</p>
+      </div>
+      <el-button size="small" text @click="load">刷新</el-button>
+    </div>
+    <div v-if="summary" class="cost-grid">
+      <div class="cost-stat">
+        <span class="label">今日 tokens</span>
+        <strong>{{ summary.persisted?.today_tokens ?? 0 }}</strong>
+        <small>{{ formatCny(summary.persisted?.today_cost_cny) }}</small>
+      </div>
+      <div class="cost-stat">
+        <span class="label">本书累计 tokens</span>
+        <strong>{{ summary.persisted?.total_tokens ?? 0 }}</strong>
+        <small>{{ formatCny(summary.persisted?.total_cost_cny) }}</small>
+      </div>
+      <div class="cost-stat">
+        <span class="label">落库调用次数</span>
+        <strong>{{ summary.persisted?.call_count ?? 0 }}</strong>
+        <small>按章持久化</small>
+      </div>
+    </div>
+    <ul v-if="summary?.recent_rounds?.length" class="round-list">
+      <li v-for="(row, idx) in summary.recent_rounds" :key="idx">
+        第 {{ row.round ?? '—' }} 轮 · {{ row.tokens_used ?? 0 }} tokens
+        <template v-if="row.chapters_completed"> · {{ row.chapters_completed }} 章</template>
+      </li>
+    </ul>
+    <p v-if="summary?.disclaimer" class="cost-disclaimer">{{ summary.disclaimer }}</p>
+  </section>
+</template>
+
+<style scoped>
+.cost-summary-panel {
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.cost-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cost-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.cost-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-text-subtle);
+}
+
+.cost-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cost-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-bg-surface-muted);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.cost-stat .label {
+  font-size: 11px;
+  color: var(--color-text-subtle);
+}
+
+.cost-stat strong {
+  font-size: 18px;
+  color: var(--color-text-strong);
+}
+
+.cost-stat small {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.round-list {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.cost-disclaimer {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: var(--color-text-subtle);
+}
+
+@media (max-width: 900px) {
+  .cost-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

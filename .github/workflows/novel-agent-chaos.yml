@@ -1,0 +1,30 @@
+name: Novel Agent Chaos Long Run
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+jobs:
+  chaos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run chaos long run (non-PR gate)
+        run: python scripts/chaos_long_run.py --chapters 2
+      - name: Upload summary artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-long-run-log
+          path: |
+            scratch/
+            **/chaos*.json
+          if-no-files-found: ignore

@@ -26,6 +26,7 @@ import {
   getChapterCount,
   getArcProgress,
   getSerialStatus,
+  getNovelProgressSummary,
   getProjectComments,
   adaptiveRewriteOutline,
   applyAdaptiveOutline,
@@ -418,12 +419,23 @@ const loadSerialData = async () => {
   loadingSerial.value = true
   try {
     const pid = currentProject.value.id
-    const [statusRes, commentsRes, candidatesRes] = await Promise.all([
+    const [statusRes, commentsRes, candidatesRes, progressRes] = await Promise.all([
       getSerialStatus(pid),
       getProjectComments(pid),
-      getProjectStateCandidates(pid)
+      getProjectStateCandidates(pid),
+      getNovelProgressSummary().catch(() => ({ data: {} })),
     ])
     serialStatus.value = statusRes.data
+    const progress = progressRes.data || {}
+    if (progress.authoritative_completed != null) {
+      serialStatus.value.authoritative_completed = progress.authoritative_completed
+    }
+    if (progress.library_indexed != null) {
+      serialStatus.value.library_indexed = progress.library_indexed
+    }
+    if (progress.progress_note) {
+      serialStatus.value.progress_note = progress.progress_note
+    }
     virtualComments.value = commentsRes.data
     const candidates = candidatesRes.data || []
     if (candidates.some((candidate: any) => candidate.status === 'pending')) {

@@ -104,6 +104,10 @@ export const getArcProgress = () =>
 export const getNovelBatchStatus = () =>
   api.get('/novel/batch-status')
 
+export const getCostSummary = () => api.get('/novel/cost-summary')
+
+export const getNovelProgressSummary = () => api.get('/novel/progress-summary')
+
 /** @deprecated 调试/CLI 用。用户连写请用 ensureNovelQueue + continueNovel。 */
 export const runNovelArc = (data: {
   arc_id?: string
@@ -116,8 +120,6 @@ export const runNovelArc = (data: {
   api.post('/novel/run-arc', data)
 
 export const getNovelReadiness = () => api.get('/novel/readiness')
-
-export const getNovelProgressSummary = () => api.get('/novel/progress-summary')
 
 export const getAutopilotRounds = (limit = 50, offset = 0) =>
   api.get('/novel/autopilot-rounds', { params: { limit, offset } })

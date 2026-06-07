@@ -17,6 +17,11 @@ CHAPTER_MAINTENANCE = ROOT / "web" / "frontend" / "src" / "views" / "ChapterMain
 OUTLINE_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "OutlineView.vue"
 CONFIG_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "ConfigView.vue"
 LIBRARY_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "LibraryView.vue"
+EMPTY_STATE = ROOT / "web" / "frontend" / "src" / "components" / "EmptyStatePanel.vue"
+READINESS_CARD = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "ProjectReadinessCard.vue"
+)
+COST_PANEL = ROOT / "web" / "frontend" / "src" / "components" / "CostSummaryPanel.vue"
 CHAPTER_LIST = ROOT / "web" / "frontend" / "src" / "views" / "ChapterList.vue"
 NOVEL_PROGRESS_HELP = ROOT / "web" / "frontend" / "src" / "components" / "NovelProgressHelp.vue"
 BATCH_BANNER = ROOT / "web" / "frontend" / "src" / "components" / "BatchRunStatusBanner.vue"
@@ -111,6 +116,51 @@ def test_library_cards_show_pending_alert_badge() -> None:
     assert "pending_alert_count" in source
     assert 'class="pending-badge"' in source
     assert "待处理" in source
+    assert "openPendingMaintenance" in source
+    assert "expand=alerts" in source
+
+
+def test_empty_state_panel_used_in_key_views() -> None:
+    library = LIBRARY_VIEW.read_text(encoding="utf-8")
+    task_log = TASK_LOG.read_text(encoding="utf-8")
+    pending = (
+        ROOT / "web" / "frontend" / "src" / "components" / "PendingChaptersPanel.vue"
+    ).read_text(encoding="utf-8")
+    assert "EmptyStatePanel" in library
+    assert "EmptyStatePanel" in task_log
+    assert "EmptyStatePanel" in pending
+    assert "empty-state-panel" in EMPTY_STATE.read_text(encoding="utf-8")
+
+
+def test_readiness_card_exposes_progress_bar() -> None:
+    source = READINESS_CARD.read_text(encoding="utf-8")
+    assert "readiness-progress" in source
+    assert "progressPercent" in source
+
+
+def test_chapter_list_exposes_gate_only_rerun() -> None:
+    source = CHAPTER_LIST.read_text(encoding="utf-8")
+    assert "只重跑门禁" in source
+    assert "rerunGateOnly" in source
+
+
+def test_monitor_includes_cost_summary_panel() -> None:
+    source = MONITOR.read_text(encoding="utf-8")
+    assert "CostSummaryPanel" in source
+
+
+def test_pending_panel_has_filter_tabs() -> None:
+    source = (
+        ROOT / "web" / "frontend" / "src" / "components" / "PendingChaptersPanel.vue"
+    ).read_text(encoding="utf-8")
+    assert "pending-filter-tabs" in source
+    assert "activeFilterId" in source
+
+
+def test_app_shows_backend_offline_alert() -> None:
+    source = APP.read_text(encoding="utf-8")
+    assert "backend-offline-alert" in source
+    assert "栖墨后台未响应" in source
 
 
 def test_chapter_pages_hide_rewrite_actions_without_final_text() -> None:

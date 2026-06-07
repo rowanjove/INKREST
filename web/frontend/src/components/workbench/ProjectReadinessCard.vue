@@ -41,6 +41,13 @@ const trafficLight = computed(() => readinessTrafficLight(items.value))
 
 const pendingCount = computed(() => items.value.filter((i) => !i.ok).length)
 const warnCount = computed(() => items.value.filter((i) => i.warn).length)
+const progressTotal = computed(() => items.value.length)
+const progressOk = computed(() => items.value.filter((i) => i.ok).length)
+const progressPercent = computed(() => {
+  const total = progressTotal.value
+  if (!total) return 0
+  return Math.round((progressOk.value / total) * 100)
+})
 
 const showVectorBanner = computed(() =>
   longFormVectorWarn({
@@ -65,6 +72,15 @@ const openEmbedding = () => router.push('/config')
           {{ allOk ? '全部就绪，可连写启动' : `${pendingCount} 项待完成` }}
           <template v-if="warnCount > 0 && allOk"> · {{ warnCount }} 项建议优化</template>
         </p>
+        <div v-if="!expanded && progressTotal > 0" class="readiness-progress" aria-label="开书清单进度">
+          <el-progress
+            :percentage="progressPercent"
+            :stroke-width="6"
+            :show-text="false"
+            :status="allOk ? 'success' : undefined"
+          />
+          <span class="readiness-progress-label">{{ progressOk }}/{{ progressTotal }} 项就绪</span>
+        </div>
         <p v-else class="readiness-desc">全绿后在下方生产线点「连写启动」</p>
       </div>
       <span :class="['readiness-badge', allOk ? 'ok' : 'pending']">
@@ -180,6 +196,24 @@ const openEmbedding = () => router.push('/config')
   margin: 4px 0 0;
   font-size: 12px;
   color: var(--color-text-muted);
+}
+
+.readiness-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  max-width: 220px;
+}
+
+.readiness-progress :deep(.el-progress) {
+  flex: 1;
+}
+
+.readiness-progress-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-text-subtle);
 }
 
 .readiness-badge {

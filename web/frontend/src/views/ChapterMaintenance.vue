@@ -1,8 +1,30 @@
 <script setup lang="ts">
+import { onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import PendingChaptersPanel from '../components/PendingChaptersPanel.vue'
 import SemiAutoRepairHint from '../components/SemiAutoRepairHint.vue'
 import BatchRunStatusBanner from '../components/BatchRunStatusBanner.vue'
 import NovelBatchRunDialog from '../components/NovelBatchRunDialog.vue'
+import { expandPendingPanel } from '../composables/usePendingPanelExpand'
+
+const route = useRoute()
+
+const maybeExpandAlerts = async () => {
+  if (route.query.expand === 'alerts') {
+    await expandPendingPanel(true)
+  }
+}
+
+onMounted(() => {
+  void maybeExpandAlerts()
+})
+
+watch(
+  () => route.query.expand,
+  () => {
+    void maybeExpandAlerts()
+  },
+)
 </script>
 
 <template>

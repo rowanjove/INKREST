@@ -30,7 +30,28 @@
 - [x] autopilot `workspace/autopilot_rounds.jsonl`
 - [x] `.gitignore` 排除 `scratch/`、`dist-portable/`
 
-## 待办（按优先级）
+## 待办（Batch2 · 一次搞完）
+
+详见 [PLAN-UPGRADE-2026Q2-BATCH2.md](./PLAN-UPGRADE-2026Q2-BATCH2.md)（15 工作包：QA×3、UX×4、车道 A×3、车道 B×3、扩展×2）。
+
+- [x] QA-1 E2E 进 CI
+- [x] QA-2 Vitest（batchRunForm / tokenCostEstimate）
+- [x] QA-3 chaos workflow_dispatch
+- [x] UX-1 开书清单进度条
+- [x] UX-2 三处空状态统一
+- [x] UX-3 Electron 断线 toast
+- [x] UX-4 书库角标 → 修章维护深链
+- [x] A-1 真实费用看板
+- [x] A-2 体量门禁设置可感知
+- [x] A-3 长篇向量可修复流程
+- [x] B-1 修章队列筛选（门禁/跳过/外审）
+- [x] B-2 章节列表「只重跑门禁」
+- [x] B-3 外审续跑策略 UI
+- [x] E-1 插件 examples README + 入口
+- [x] E-2 打包版本与 manifest 发布清单
+- [x] E-3 连载 Tab 弱耦合增强
+
+## 待办（按优先级 · Batch1 已完成）
 
 ### P1
 

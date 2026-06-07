@@ -113,8 +113,12 @@ onMounted(load)
       <p class="hint scale-hint">
         长篇/超长篇的体量请在工作台「体量架构」修改；保存后会自动补全此处空缺的批量保护、persona 自动等项。手改本页后以 pipeline.yaml 为准。
         当前体量 <strong>{{ workScale }}</strong> · 流水线档位 <strong>{{ pipelineTier }}</strong> · 审校配置 <strong>{{ auditProfile }}</strong>
-        （economy 可跳过连续性检查，premium 全审；可在 pipeline.yaml 的 <code>runtime.audit_profile</code> 覆盖）。
+        （economy 抽检省 token，standard 均衡，premium 全审；可在 pipeline.yaml 的 <code>runtime.audit_profile</code> 覆盖）。
       </p>
+      <el-alert type="info" :closable="false" show-icon class="scale-gate-alert" title="体量与门禁关系">
+        <p>短篇/中篇默认全审；长篇起逐步抽检，超长篇更偏 economy 以控制成本。</p>
+        <p>修改体量后审校档位会联动，此处开关只影响「失败是否阻断」「外审是否拦续跑」等行为。</p>
+      </el-alert>
 
       <el-alert
         v-if="embeddingDegraded"

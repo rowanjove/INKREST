@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Document, Plus, Reading, Download, Upload } from '@element-plus/icons-vue'
+import EmptyStatePanel from '../components/EmptyStatePanel.vue'
 import { useProjectStore } from '../stores/project'
 import {
   exportNovel,
@@ -83,6 +84,16 @@ const togglePin = async (project: Project, event: Event) => {
     ElMessage.error(apiErrorMessage(error, '操作失败'))
   } finally {
     pinningId.value = null
+  }
+}
+
+const openPendingMaintenance = async (project: Project, event: Event) => {
+  event.stopPropagation()
+  try {
+    await projectStore.switchProject(project.id)
+    await router.push('/chapters/maintenance?expand=alerts')
+  } catch (error: any) {
+    ElMessage.error(apiErrorMessage(error, '打开修章维护失败'))
   }
 }
 
@@ -552,15 +563,17 @@ const handleSaveCover = async () => {
       </div>
     </header>
 
-    <div v-if="projectStore.projects.length === 0" class="empty-library">
-      <el-icon :size="52"><Document /></el-icon>
-      <h2>还没有小说项目</h2>
-      <p>创建项目后即可进入多 Agent 工作台。</p>
-      <div class="empty-actions">
-        <el-button type="warning" plain :icon="Upload" @click="triggerUpload">导入项目包</el-button>
-        <el-button type="primary" :icon="Plus" @click="goCreate">新建小说</el-button>
-      </div>
-    </div>
+    <EmptyStatePanel
+      v-if="projectStore.projects.length === 0"
+      class="empty-library"
+      :icon="Document"
+      title="还没有小说项目"
+      description="创建项目后即可进入多 Agent 工作台。"
+      :actions="[
+        { label: '导入项目包', type: 'warning', plain: true, icon: Upload, onClick: triggerUpload },
+        { label: '新建小说', type: 'primary', icon: Plus, onClick: goCreate },
+      ]"
+    />
 
     <p
       v-if="projectStore.projects.length > 0 && searchQuery.trim()"
@@ -600,14 +613,15 @@ const handleSaveCover = async () => {
           <!-- 封面内容设计 -->
           <div class="cover-design">
             <span class="genre-badge" v-if="project.genre">{{ project.genre }}</span>
-            <span
+            <button
               v-if="(project.pending_alert_count || 0) > 0"
+              type="button"
               class="pending-badge"
-              :title="`有 ${project.pending_alert_count} 章待处理，请到章节维护修稿`"
-              @click.stop
+              :title="`有 ${project.pending_alert_count} 章待处理，点击直达修章维护`"
+              @click="openPendingMaintenance(project, $event)"
             >
               待处理 {{ project.pending_alert_count }} 章
-            </span>
+            </button>
             <h2 class="book-title" @click.stop="openDetails(project)">{{ project.name }}</h2>
           </div>
           
@@ -1217,6 +1231,8 @@ const handleSaveCover = async () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 .genre-badge {

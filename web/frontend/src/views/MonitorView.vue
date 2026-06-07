@@ -10,6 +10,7 @@ import LogStream from '../components/LogStream.vue'
 import LLMLogViewer from '../components/LLMLogViewer.vue'
 import TaskLog from '../components/TaskLog.vue'
 import AutopilotRoundsPanel from '../components/AutopilotRoundsPanel.vue'
+import CostSummaryPanel from '../components/CostSummaryPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -90,6 +91,7 @@ function dismissTaskFailure() {
             </span>
           </template>
           <div class="tab-content-wrapper full-height-pane">
+            <CostSummaryPanel />
             <AutopilotRoundsPanel />
             <TaskLog />
           </div>

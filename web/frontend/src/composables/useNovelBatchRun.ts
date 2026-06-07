@@ -10,6 +10,7 @@ import {
   getConfig,
   getEmbeddingStatus,
   getNovelBatchStatus,
+  getPipelineAlerts,
   getOutline,
   listAssets,
   listModels,
@@ -24,6 +25,7 @@ import {
   type BatchRunPhase,
 } from '../utils/batchRunForm'
 import { buildReadinessItems, readinessAllOk } from '../utils/projectReadiness'
+import { isExternalPending } from '../utils/pipelineAlertFilters'
 import {
   estimateBatchTokenCost,
   resolveDailyModelPricePer1k,
@@ -42,6 +44,8 @@ export type NovelBatchRunContext = {
   batchPaused: boolean
   pauseReason: string
   lastChapterId: string
+  externalPendingCount: number
+  blockContinueUntilExternal: boolean
 }
 
 const dialogVisible = ref(false)
@@ -70,6 +74,8 @@ const ctx = ref<NovelBatchRunContext>({
   batchPaused: false,
   pauseReason: '',
   lastChapterId: '',
+  externalPendingCount: 0,
+  blockContinueUntilExternal: false,
 })
 
 function resolveEngine(config: any, models: any[]) {
@@ -154,7 +160,7 @@ export function useNovelBatchRun() {
   }
 
   async function refreshContext() {
-    const [assetRes, countRes, outlineRes, modelsRes, configRes, embRes, arcRes, batchRes] =
+    const [assetRes, countRes, outlineRes, modelsRes, configRes, embRes, arcRes, batchRes, alertsRes] =
       await withRefreshTimeout(
         Promise.all([
           listAssets().catch(() => ({ data: [] })),
@@ -165,6 +171,7 @@ export function useNovelBatchRun() {
           getEmbeddingStatus().catch(() => ({ data: {} })),
           getArcProgress().catch(() => ({ data: { progress: null } })),
           getNovelBatchStatus().catch(() => ({ data: {} })),
+          getPipelineAlerts().catch(() => ({ data: [] })),
         ]),
         '加载开书状态',
       )
@@ -184,6 +191,12 @@ export function useNovelBatchRun() {
       batchPaused: progress?.status === 'paused',
       pauseReason: String(progress?.pause_reason || ''),
       lastChapterId: String(progress?.last_chapter_id || ''),
+      externalPendingCount: (alertsRes.data || []).filter((item: { last_stage?: string }) =>
+        isExternalPending(item),
+      ).length,
+      blockContinueUntilExternal: Boolean(
+        configRes.data?.runtime?.block_continue_until_external_pass,
+      ),
     }
   }
 

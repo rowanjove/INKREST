@@ -53,7 +53,28 @@ const engineStages = ref<EngineStage[]>([])
 
 let unlistenNavigate: (() => void) | null = null
 const backendStatus = ref('online')
+const backendUnreachable = ref(false)
 let unlistenBackendStatus: (() => void) | null = null
+let healthPollTimer: number | null = null
+const getHealthUrl = () => {
+  const origin = window.location.origin
+  if (origin.includes('tauri') || origin.startsWith('file:')) {
+    return 'http://127.0.0.1:8000/api/health'
+  }
+  return `${origin}/api/health`
+}
+
+const checkBackendHealth = async () => {
+  try {
+    const res = await fetch(getHealthUrl(), { signal: AbortSignal.timeout(8000) })
+    if (!res.ok) throw new Error('health not ok')
+    backendUnreachable.value = false
+    if (backendStatus.value === 'offline') backendStatus.value = 'online'
+  } catch {
+    backendUnreachable.value = true
+    if (!window.electronAPI) backendStatus.value = 'offline'
+  }
+}
 
 onMounted(async () => {
   await projectStore.fetchCurrent()
@@ -68,10 +89,17 @@ onMounted(async () => {
   if (window.electronAPI?.onBackendStatus) {
     unlistenBackendStatus = window.electronAPI.onBackendStatus((status: string) => {
       backendStatus.value = status
+      backendUnreachable.value = status === 'offline'
     })
     window.electronAPI.getBackendStatus().then((status) => {
       backendStatus.value = status
+      backendUnreachable.value = status === 'offline'
     })
+  } else {
+    void checkBackendHealth()
+    healthPollTimer = window.setInterval(() => {
+      void checkBackendHealth()
+    }, 10_000)
   }
 })
 
@@ -94,6 +122,10 @@ onBeforeUnmount(() => {
   }
   if (unlistenBackendStatus) {
     unlistenBackendStatus()
+  }
+  if (healthPollTimer) {
+    window.clearInterval(healthPollTimer)
+    healthPollTimer = null
   }
 })
 
@@ -361,6 +393,15 @@ const loadEngineStatus = async () => {
 <template>
   <router-view v-if="isPetRoute" />
   <div v-else class="app-shell" v-loading="backendStatus === 'restarting'" element-loading-text="后台服务异常中断，正在自动重启中，请稍候...">
+    <el-alert
+      v-if="backendStatus === 'offline' || backendUnreachable"
+      class="backend-offline-alert"
+      type="error"
+      :closable="false"
+      show-icon
+      title="栖墨后台未响应"
+      description="请重启应用或检查本地服务端口（默认 8000）。恢复连接后提示将自动消失。"
+    />
     <aside class="sidebar">
       <button class="brand" @click="router.push('/')">
         <img src="/favicon.svg" alt="" class="brand-logo" />
@@ -498,6 +539,16 @@ button, input, textarea, select { font-family: inherit; }
 ::-webkit-scrollbar-thumb {
   background: var(--color-text-subtle);
   border-radius: 999px;
+}
+
+.backend-offline-alert {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3000;
+  width: min(560px, calc(100vw - 24px));
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
 }
 
 .app-shell {

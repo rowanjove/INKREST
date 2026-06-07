@@ -8,9 +8,18 @@
 
 ```powershell
 cd web/frontend
+npm run test:unit
 npm run build
 cd ../..
 python -m pytest tests/test_workspace_ui_contract.py -q
+```
+
+### E2E（需本地后台）
+
+```powershell
+cd web/frontend
+$env:E2E_RUN="1"
+npm run test:e2e
 ```
 
 ### 只改后端（`novel_agent/`、`web/` Python）
@@ -49,6 +58,14 @@ python -m pytest tests/test_full_chain_chaos.py tests/api/test_novel_smoke_chain
 ```powershell
 .\scripts\sync_electron_canonical.ps1
 ```
+
+## 发布清单（portable / Electron）
+
+1. 确认 `pytest tests/ --ignore=tests/smoke` 与 `npm run build`、`npm run test:unit` 全绿
+2. 对齐 `web/frontend/package.json` 的 `version` 与发版说明
+3. 更新 `CHANGELOG`（如有）与用户可见文案
+4. 运行 `python scripts/verify_bundle_manifest.py dist-portable/<产物目录>`
+5. 打包后冒烟：开书 → 连写 1 章 dry_run → 日志中心费用摘要有数据
 
 ## 长跑与混沌测试（可选）
 

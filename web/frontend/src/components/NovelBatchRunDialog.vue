@@ -57,6 +57,26 @@ const showVectorAlert = computed(() =>
         {{ LONG_FORM_VECTOR_WARN_TEXT }}
       </el-alert>
       <el-alert
+        v-if="ctx.externalPendingCount > 0 && ctx.blockContinueUntilExternal"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="有待外审章节"
+        class="external-alert"
+      >
+        {{ ctx.externalPendingCount }} 章待外审通过后再续跑。可在设置 → 流水线高级关闭「外审未过禁止续跑」，或到章节维护标记通过。
+      </el-alert>
+      <el-alert
+        v-else-if="ctx.externalPendingCount > 0"
+        type="info"
+        :closable="false"
+        show-icon
+        title="有待外审章节"
+        class="external-alert"
+      >
+        {{ ctx.externalPendingCount }} 章待平台试审；续跑不会自动跳过外审队列。
+      </el-alert>
+      <el-alert
         v-if="isCircuitPaused"
         type="warning"
         :closable="false"
