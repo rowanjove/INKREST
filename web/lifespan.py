@@ -45,6 +45,11 @@ async def lifespan(app: FastAPI):
 
     _init_prompt_defaults(context.BASE_DIR)
 
+    from web.task_ws_hub import start_task_broadcast_loop
+
+    broadcast_task = start_task_broadcast_loop()
+
     yield
 
+    broadcast_task.cancel()
     logger.info("FastAPI web service shutdown complete")

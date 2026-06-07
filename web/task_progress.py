@@ -60,16 +60,29 @@ def handle_progress_message(
     if not task_id:
         return
 
+    wrote = False
     try:
         loop = asyncio.get_running_loop()
         if msg_type == "progress":
             if _should_write_progress(task_id, msg):
                 loop.run_in_executor(None, update_task_progress, task_id, msg)
+                wrote = True
         elif msg_type == "complete" and task_id.startswith("novel-") and chapter_id:
             loop.run_in_executor(None, update_task_chapter_id, task_id, chapter_id)
+            wrote = True
     except RuntimeError:
         if msg_type == "progress":
             if _should_write_progress(task_id, msg):
                 update_task_progress(task_id, msg)
+                wrote = True
         elif msg_type == "complete" and task_id.startswith("novel-") and chapter_id:
             update_task_chapter_id(task_id, chapter_id)
+            wrote = True
+
+    if wrote:
+        try:
+            from web.task_ws_hub import notify_tasks_changed
+
+            notify_tasks_changed()
+        except Exception:
+            pass

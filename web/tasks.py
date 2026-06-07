@@ -45,6 +45,7 @@ class TaskManager:
         self._aborted_tasks = set()
         
         self._startup_cleanup()
+        self._wrap_store_ws_notify()
         register_progress_callback(self._on_progress_emitted)
 
         def abort_checker() -> bool:
@@ -79,6 +80,19 @@ class TaskManager:
             self.store.clean_interrupted_tasks()
         except Exception as exc:
             logger.warning("Failed to perform startup task cleanup: %s", exc)
+
+    def _wrap_store_ws_notify(self) -> None:
+        from web.task_ws_hub import notify_tasks_changed
+
+        for attr in ("update_task_progress", "update_task_status", "update_task_chapter_id"):
+            original = getattr(self.store, attr)
+
+            def _wrapped(*args, _orig=original, **kwargs):
+                result = _orig(*args, **kwargs)
+                notify_tasks_changed()
+                return result
+
+            setattr(self.store, attr, _wrapped)
 
     async def _ensure_llm_ready(self, dry_run: bool) -> None:
         if dry_run:

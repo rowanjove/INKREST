@@ -47,6 +47,9 @@ class ContextBuilderAgent:
         self.vector_store = vector_store or create_vector_store({"provider": "stub"}, self.root_dir)
         self.store = SQLiteStateStore(self.root_dir)
         self.max_context_chars = max_context_chars
+        self._prev_summary_cache: Dict[str, str] = {}
+        self._prev_tail_cache: Dict[str, str] = {}
+        self._prev_chars_cache: Dict[str, List[str]] = {}
         
         # Load max_context_tokens from pipeline settings, default to 16000
         self.max_context_tokens = 16000
@@ -343,6 +346,10 @@ class ContextBuilderAgent:
         return "\n\n".join(assembled).strip() + "\n"
 
     def _get_prev_chapter_characters(self, prev_id: str) -> List[str]:
+        cached = self._prev_chars_cache.get(prev_id)
+        if cached is not None:
+            return list(cached)
+
         # 1. 尝试从上一章的 plan.json 中读取最后一个场景的人物
         plan_path = self.root_dir / "workspace" / "chapters" / f"chapter_{prev_id}" / "plan.json"
         if plan_path.exists():
@@ -355,7 +362,9 @@ class ContextBuilderAgent:
                     chars = last_scene.get("characters", [])
                     if isinstance(chars, str):
                         chars = [chars]
-                    return [str(c).strip() for c in chars if str(c).strip()]
+                    found = [str(c).strip() for c in chars if str(c).strip()]
+                    self._prev_chars_cache[prev_id] = found
+                    return found
             except Exception:
                 pass
 
@@ -384,14 +393,20 @@ class ContextBuilderAgent:
                 for name in known_names:
                     if name in tail_text:
                         found_chars.append(name)
+                self._prev_chars_cache[prev_id] = found_chars
                 return found_chars
             except Exception:
                 pass
 
+        self._prev_chars_cache[prev_id] = []
         return []
 
     def _get_previous_chapter_summary(self, prev_id: str) -> str:
         """Query SQLite or markdown file for the summary of the previous chapter."""
+        cached = self._prev_summary_cache.get(prev_id)
+        if cached is not None:
+            return cached
+
         try:
             import sqlite3
             conn = sqlite3.connect(self.store.db_path, timeout=10.0)
@@ -402,7 +417,9 @@ class ContextBuilderAgent:
                     (prev_id,)
                 ).fetchone()
                 if row and row["summary"]:
-                    return str(row["summary"]).strip()
+                    summary = str(row["summary"]).strip()
+                    self._prev_summary_cache[prev_id] = summary
+                    return summary
             finally:
                 conn.close()
         except Exception as e:
@@ -418,9 +435,12 @@ class ContextBuilderAgent:
         )
         if summary_path.exists():
             try:
-                return summary_path.read_text(encoding="utf-8").strip()
+                summary = summary_path.read_text(encoding="utf-8").strip()
+                self._prev_summary_cache[prev_id] = summary
+                return summary
             except Exception:
                 pass
+        self._prev_summary_cache[prev_id] = ""
         return ""
 
     def _scene_cast_set(self, scene: Dict[str, Any]) -> set:
@@ -461,6 +481,11 @@ class ContextBuilderAgent:
         scene_id = scene.get("scene_id", "")
         if not scene_id:
             return ""
+
+        cache_key = str(scene_id)
+        cached = self._prev_tail_cache.get(cache_key)
+        if cached is not None:
+            return cached
 
         # 只在新章节的第一个场景才需要衔接前一章
         scene_str = str(scene_id)
@@ -519,7 +544,10 @@ class ContextBuilderAgent:
                     pass
 
         if parts_info:
-            return "\n\n".join(parts_info)
+            result = "\n\n".join(parts_info)
+            self._prev_tail_cache[cache_key] = result
+            return result
+        self._prev_tail_cache[cache_key] = ""
         return ""
 
     def _read_optional(self, relative_path: str) -> str:

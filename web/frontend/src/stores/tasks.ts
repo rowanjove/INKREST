@@ -304,7 +304,9 @@ export const useTasksStore = defineStore('tasks', () => {
   let pollingTimer: number | null = null
   let wsSocket: WebSocket | null = null
   let wsFallbackTimer: number | null = null
+  let wsHeartbeatTimer: number | null = null
   let wsUsePollingFallback = false
+
 
   const isTauriClient =
     typeof window !== 'undefined' &&
@@ -402,6 +404,22 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
+  function startWsHeartbeat() {
+    if (wsHeartbeatTimer) return
+    wsHeartbeatTimer = window.setInterval(() => {
+      if (wsSocket?.readyState === WebSocket.OPEN) {
+        wsSocket.send('ping')
+      }
+    }, 45000)
+  }
+
+  function stopWsHeartbeat() {
+    if (wsHeartbeatTimer) {
+      window.clearInterval(wsHeartbeatTimer)
+      wsHeartbeatTimer = null
+    }
+  }
+
   function connectTaskWebSocket() {
     if (wsSocket || wsUsePollingFallback) return
     try {
@@ -411,6 +429,11 @@ export const useTasksStore = defineStore('tasks', () => {
         const token = window.localStorage.getItem('novel-agent-access-token')
         if (token) socket.send(JSON.stringify({ type: 'auth', token }))
         socket.send('ping')
+        startWsHeartbeat()
+        if (pollingTimer) {
+          window.clearInterval(pollingTimer)
+          pollingTimer = null
+        }
       }
       socket.onmessage = (ev) => {
         try {
@@ -422,20 +445,28 @@ export const useTasksStore = defineStore('tasks', () => {
       }
       socket.onerror = () => {
         wsUsePollingFallback = true
+        stopWsHeartbeat()
         socket.close()
         wsSocket = null
-        startPolling()
+        startPollingFallback()
       }
       socket.onclose = () => {
         wsSocket = null
+        stopWsHeartbeat()
         if (!wsUsePollingFallback) {
           wsFallbackTimer = window.setTimeout(connectTaskWebSocket, 5000)
         }
       }
     } catch {
       wsUsePollingFallback = true
-      startPolling()
+      startPollingFallback()
     }
+  }
+
+  function startPollingFallback() {
+    if (pollingTimer) return
+    pollTasks()
+    pollingTimer = window.setInterval(pollTasks, 2000)
   }
 
   function disconnectTaskWebSocket() {
@@ -443,6 +474,7 @@ export const useTasksStore = defineStore('tasks', () => {
       window.clearTimeout(wsFallbackTimer)
       wsFallbackTimer = null
     }
+    stopWsHeartbeat()
     if (wsSocket) {
       wsSocket.close()
       wsSocket = null
@@ -451,9 +483,8 @@ export const useTasksStore = defineStore('tasks', () => {
 
   function startPolling() {
     connectTaskWebSocket()
-    if (wsUsePollingFallback && !pollingTimer) {
-      pollTasks()
-      pollingTimer = window.setInterval(pollTasks, 2000)
+    if (wsUsePollingFallback) {
+      startPollingFallback()
     }
   }
 
