@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getConfig, listModels, updateConfig } from '../api'
@@ -33,8 +33,13 @@ const agentRoles = [
 ]
 
 const loadConfig = async () => {
-  const { data } = await getConfig()
-  config.value = data
+  try {
+    const { data } = await getConfig()
+    config.value = data
+  } catch (error: any) {
+    config.value = {}
+    ElMessage.error(error.message || '获取配置失败')
+  }
 }
 
 const loadModels = async () => {

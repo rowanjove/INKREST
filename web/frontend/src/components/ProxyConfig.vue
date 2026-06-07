@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Connection } from '@element-plus/icons-vue'
@@ -15,6 +15,8 @@ const load = async () => {
     const { data } = await getConfig()
     config.value = data
     proxy.value = data?.llm?.default?.proxy || data?.llm?.proxy || ''
+  } catch (error: any) {
+    ElMessage.error(error.message || '获取代理设置失败')
   } finally {
     loading.value = false
   }

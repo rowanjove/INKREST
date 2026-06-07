@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getConfig, getEmbeddingStatus, updateConfig } from '../api'
@@ -55,6 +55,8 @@ const load = async () => {
       data.runtime?.block_continue_until_external_pass,
     )
     pluginSandbox.value = Boolean(data.runtime?.plugin_sandbox)
+  } catch (error: any) {
+    ElMessage.error(error.message || '获取配置失败')
   } finally {
     loading.value = false
   }

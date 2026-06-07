@@ -202,7 +202,7 @@ export function useNovelBatchRun() {
           getEmbeddingStatus().catch(() => ({ data: {} })),
           getArcProgress().catch(() => ({ data: { progress: null } })),
           getNovelBatchStatus().catch(() => ({ data: {} })),
-          getPipelineAlerts().catch(() => ({ data: [] })),
+          getPipelineAlerts().catch(() => ({ data: { alerts: [] } })),
         ]),
         '加载开书状态',
       )
@@ -223,7 +223,7 @@ export function useNovelBatchRun() {
       batchPaused: progress?.status === 'paused',
       pauseReason: String(progress?.pause_reason || ''),
       lastChapterId: String(progress?.last_chapter_id || ''),
-      externalPendingCount: (alertsRes.data || []).filter((item: { last_stage?: string }) =>
+      externalPendingCount: (alertsRes.data?.alerts || []).filter((item: { last_stage?: string }) =>
         isExternalPending(item),
       ).length,
       blockContinueUntilExternal: Boolean(

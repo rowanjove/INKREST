@@ -54,7 +54,7 @@ export function useDashboardSerial() {
         getProjectStateCandidates(pid),
         getNovelProgressSummary().catch(() => ({ data: {} })),
       ])
-      serialStatus.value = statusRes.data
+      serialStatus.value = { ...serialStatus.value, ...(statusRes.data || {}) }
       const progress = progressRes.data || {}
       if (progress.authoritative_completed != null) {
         serialStatus.value.authoritative_completed = progress.authoritative_completed
@@ -65,7 +65,7 @@ export function useDashboardSerial() {
       if (progress.progress_note) {
         serialStatus.value.progress_note = progress.progress_note
       }
-      virtualComments.value = commentsRes.data
+      virtualComments.value = commentsRes.data || []
       const candidates = candidatesRes.data || []
       if (candidates.some((candidate: any) => candidate.status === 'pending')) {
         await approveAllProjectCandidates(pid)
