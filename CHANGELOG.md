@@ -10,6 +10,16 @@
 - WritingWorkspace：4 个模板子组件（章节侧栏 / 编辑器主区 / 右侧栏 / 对话框）
 - StateView：拆出 settings / chronicle / relation-graph composable + `stateViewFilters` 纯函数与 Vitest
 - StateView：2 个模板子组件（剧情设定库 Tab / 时空编年史 Tab）
+- LibraryView：拆出 projects / description / cover composable + `libraryFormatters` 纯函数
+- LibraryView：2 个模板子组件（书库网格 / 详情与封面对话框）
+- OutlineView：拆出 `useOutlineView` / `useOutlineMindmap` composable（加载、表单、卷队列同步、书名选择、类型基因、思维导图连线）
+- OutlineView：4 个模板子组件（类型基因面板 / 思维导图 / 传统视图 / 对话框）
+
+### Tests
+
+- Vitest：`libraryFormatters` + `viewSubcomponents` 子组件结构契约
+- 契约测试扩展：Writing / State / Outline / Library 子组件路径
+- E2E：`workspace-state.spec.ts`（写作页侧栏与工具栏、状态库双 Tab）
 
 ### Performance (Phase 0–4)
 
