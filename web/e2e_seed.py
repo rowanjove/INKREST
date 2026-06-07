@@ -132,5 +132,6 @@ def seed_maintenance_scenario(project_manager) -> Dict[str, Any]:
         "batch_paused": True,
         "pause_reason": "quality_blocked",
         "last_chapter_id": "003",
+        "pending_chapter_ids": ["002", "003"],
         "pending_total": int(pending.get("pending_total") or 0),
     }

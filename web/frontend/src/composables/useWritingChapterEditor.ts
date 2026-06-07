@@ -13,6 +13,14 @@ import {
 } from '../api'
 import { inferNextChapterId } from '../utils/dashboardEngine'
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 export function useWritingChapterEditor(options: {
   editorRef: Ref<HTMLTextAreaElement | null>
   adjustTextareaHeight: () => void
@@ -34,6 +42,7 @@ export function useWritingChapterEditor(options: {
   const versionsList = ref<any[]>([])
   const activeVersionId = ref('')
   const activeVersion = computed(() => versionsList.value.find((v) => v.id === activeVersionId.value))
+  let loadSeq = 0
 
   async function fetchChapters() {
     try {
@@ -50,15 +59,19 @@ export function useWritingChapterEditor(options: {
   }
 
   async function loadChapter(cid: string) {
+    const seq = ++loadSeq
     loadingEditor.value = true
     activeChapterId.value = cid
     onChapterLoadStart?.()
 
     try {
       const { data } = await getChapter(cid)
+      if (seq !== loadSeq) return
+
       currentChapter.value = data
 
       const { data: vData } = await listVersions(cid)
+      if (seq !== loadSeq) return
       versionsList.value = vData || []
 
       const activeV = versionsList.value.find((v: any) => v.is_active === 1)
@@ -75,20 +88,24 @@ export function useWritingChapterEditor(options: {
 
       if (rightTab.value === 'scrapbook' && fetchScrapbook) {
         await fetchScrapbook()
+        if (seq !== loadSeq) return
       }
 
       void nextTick(adjustTextareaHeight)
     } catch (e: any) {
+      if (seq !== loadSeq) return
       ElMessage.error('加载章节内容失败: ' + apiErrorMessage(e, '加载章节内容失败'))
       editorText.value = ''
       currentChapter.value = null
     } finally {
-      loadingEditor.value = false
+      if (seq === loadSeq) {
+        loadingEditor.value = false
+      }
     }
   }
 
   async function handleSave(silent = false) {
-    if (!activeChapterId.value || saving.value) return
+    if (!activeChapterId.value || saving.value || loadingEditor.value) return
     saving.value = true
 
     try {
@@ -125,8 +142,12 @@ export function useWritingChapterEditor(options: {
             .map((s: any) => s.label)
 
           let message = ''
-          if (created.length) message += `✨ <strong>新增设定</strong>: ${created.join('，')}<br />`
-          if (updated.length) message += `🔄 <strong>更新设定</strong>: ${updated.join('，')}<br />`
+          if (created.length) {
+            message += `✨ <strong>新增设定</strong>: ${created.map(escapeHtml).join('，')}<br />`
+          }
+          if (updated.length) {
+            message += `🔄 <strong>更新设定</strong>: ${updated.map(escapeHtml).join('，')}<br />`
+          }
 
           ElNotification({
             title: '资产库自动同步成功',

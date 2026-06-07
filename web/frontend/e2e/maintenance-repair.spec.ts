@@ -22,8 +22,9 @@ test.describe('chapter maintenance', () => {
     await expect(page.getByText('内部门禁（栖墨统一门禁）')).toBeVisible()
     await expect(page.getByRole('radio', { name: '门禁阻断' })).toBeVisible()
     await expect(page.getByRole('radio', { name: '批量跳过' })).toBeVisible()
-    await expect(page.getByText('第 002 章').first()).toBeVisible()
-    await expect(page.getByText('第 003 章').first()).toBeVisible()
+    for (const chapterId of seed.pending_chapter_ids) {
+      await expect(page.getByText(`第 ${chapterId} 章`).first()).toBeVisible()
+    }
   })
 
   test('seeded pause shows repair-first banner on maintenance', async ({ page, request }) => {

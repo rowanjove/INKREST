@@ -35,3 +35,4 @@ def test_e2e_seed_module_builds_pending_queue(tmp_path: Path) -> None:
     assert payload["pending_total"] == pending["pending_total"]
     assert pending["pending_total"] >= 2
     assert payload["pause_reason"] == "quality_blocked"
+    assert payload["pending_chapter_ids"] == ["002", "003"]

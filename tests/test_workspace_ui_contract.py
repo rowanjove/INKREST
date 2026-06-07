@@ -57,10 +57,7 @@ CHAPTER_MAINTENANCE = ROOT / "web" / "frontend" / "src" / "views" / "ChapterMain
 CHAPTER_MAINTENANCE_COMPOSABLE = (
     ROOT / "web" / "frontend" / "src" / "composables" / "useChapterMaintenance.ts"
 )
-CALL_LOG_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "CallLogView.vue"
-CALL_LOG_PAGE_HEAD = (
-    ROOT / "web" / "frontend" / "src" / "components" / "calllog" / "CallLogPageHead.vue"
-)
+
 OUTLINE_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "OutlineView.vue"
 CONFIG_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "ConfigView.vue"
 LIBRARY_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "LibraryView.vue"
@@ -416,7 +413,8 @@ def test_chapter_maintenance_exposes_repair_queue_grouping() -> None:
     )
     shanshan = SHANSHAN_COPY.read_text(encoding="utf-8")
     assert "useChapterMaintenance" in maintenance
-    assert "route.query.expand === 'alerts'" in composable
+    assert "expand !== 'alerts'" in composable
+    assert "lastExpandedQuery" in composable
     assert "expandPendingPanel" in composable
     assert "PendingChaptersPanel" in maintenance
     assert "修章队列" in pending
@@ -440,14 +438,40 @@ def test_chapters_layout_exposes_list_and_maintenance_subnav() -> None:
     assert "PendingChaptersPanel" in maintenance_source
 
 
-def test_call_log_page_wires_head_and_viewer() -> None:
-    shell_source = CALL_LOG_VIEW.read_text(encoding="utf-8")
-    head_source = CALL_LOG_PAGE_HEAD.read_text(encoding="utf-8")
+def test_tasks_store_uses_polling_reference_counts() -> None:
+    tasks_source = (ROOT / "web" / "frontend" / "src" / "stores" / "tasks.ts").read_text(
+        encoding="utf-8"
+    )
+    log_stream_source = (
+        ROOT / "web" / "frontend" / "src" / "components" / "LogStream.vue"
+    ).read_text(encoding="utf-8")
 
-    assert "CallLogPageHead" in shell_source
-    assert "LLMLogViewer" in shell_source
-    assert "调用日志" in head_source
-    assert "分页筛选" in head_source
+    assert "taskPollConsumers" in tasks_source
+    assert "runtimeLogPollConsumers" in tasks_source
+    assert "wsAllowReconnect" in tasks_source
+    assert "startRuntimeLogPolling" not in log_stream_source
+
+
+def test_writing_chapter_editor_guards_save_and_load_races() -> None:
+    editor_source = (
+        ROOT / "web" / "frontend" / "src" / "composables" / "useWritingChapterEditor.ts"
+    ).read_text(encoding="utf-8")
+
+    assert "let loadSeq = 0" in editor_source
+    assert "loadingEditor.value" in editor_source
+    assert "seq !== loadSeq" in editor_source
+    assert "escapeHtml" in editor_source
+
+
+def test_monitor_llm_logs_tab_wires_viewer() -> None:
+    tabs_source = MONITOR_TABS.read_text(encoding="utf-8")
+    router_source = (ROOT / "web" / "frontend" / "src" / "router.ts").read_text(encoding="utf-8")
+
+    assert 'name="logs"' in tabs_source
+    assert "LLMLogViewer" in tabs_source
+    assert "费用与接口" in tabs_source
+    compact_router = router_source.replace(" ", "").replace("'", '"')
+    assert 'redirect:"/monitor?tab=logs"' in compact_router
 
 
 def test_monitor_page_is_log_center_without_tasks_tab() -> None:

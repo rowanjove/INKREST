@@ -142,7 +142,7 @@
 | `/state` | `StateView.vue` | **状态查看器** — 角色、事件、伏笔、钩子、物品、线索 |
 | `/timeline` | `TimelineView.vue` | **时间线可视化** — 节点、关系边、伏笔、钩子 |
 | `/assets` | `AssetEditor.vue` | **素材编辑器** — 角色卡、世界圣经、风格指南、规则、自定义 |
-| `/logs` | `CallLogView.vue` | **调用日志** — LLM API 调用记录（Token、延迟、模型） |
+| `/logs` | 重定向至 `/monitor?tab=logs` | **LLM 调用日志** — 在日志中心「费用与接口」Tab（`MonitorTabsPane` + `LLMLogViewer`） |
 | `/config` | `ConfigView.vue` | **配置中心** — LLM 设置、Embedding、运行时、模型库 |
 | `/tasks` | `TaskMonitor.vue` | **任务监控** — 运行中/已完成/失败的章节任务 |
 

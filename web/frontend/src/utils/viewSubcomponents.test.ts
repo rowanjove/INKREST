@@ -298,17 +298,17 @@ describe('refactored view subcomponents', () => {
 
   it('useChapterMaintenance expands pending panel on alerts query', () => {
     const source = read('composables/useChapterMaintenance.ts')
-    expect(source).toContain("route.query.expand === 'alerts'")
+    expect(source).toContain("expand !== 'alerts'")
     expect(source).toContain('expandPendingPanel')
-    expect(source).toContain('route.query.expand')
+    expect(source).toContain('lastExpandedQuery')
   })
 
-  it('CallLogView shell wires page head and log viewer', () => {
-    const source = read('views/CallLogView.vue')
-    expect(source).toContain('CallLogPageHead')
+  it('MonitorTabsPane wires LLM log viewer on logs tab', () => {
+    const source = read('components/monitor/MonitorTabsPane.vue')
+    expect(source).toContain('name="logs"')
     expect(source).toContain('LLMLogViewer')
-    const head = read('components/calllog/CallLogPageHead.vue')
-    expect(head).toContain('调用日志')
-    expect(head).toContain('分页筛选')
+    expect(source).toContain('费用与接口')
+    const router = read('router.ts')
+    expect(router.replace(/\s/g, '')).toContain("redirect:'/monitor?tab=logs'")
   })
 })

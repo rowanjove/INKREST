@@ -215,7 +215,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  /* 其它页（监控）可能仍在用 store，不在此 stop */
+  tasksStore.stopPolling()
+  tasksStore.stopRuntimeLogPolling()
 })
 </script>
 

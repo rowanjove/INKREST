@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
 import { Delete, Bottom } from '@element-plus/icons-vue'
 import { useTasksStore } from '../stores/tasks'
@@ -84,13 +84,7 @@ const handleClear = async () => {
   }
 }
 
-onMounted(() => {
-  tasksStore.startRuntimeLogPolling()
-})
 
-onBeforeUnmount(() => {
-  tasksStore.stopRuntimeLogPolling()
-})
 </script>
 
 <template>

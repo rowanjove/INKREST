@@ -4,11 +4,18 @@ import { expandPendingPanel } from './usePendingPanelExpand'
 
 export function useChapterMaintenance() {
   const route = useRoute()
+  let lastExpandedQuery = ''
 
   const maybeExpandAlerts = async () => {
-    if (route.query.expand === 'alerts') {
-      await expandPendingPanel(true)
+    const expand = route.query.expand
+    if (expand !== 'alerts') {
+      lastExpandedQuery = ''
+      return
     }
+    const key = String(expand)
+    if (lastExpandedQuery === key) return
+    lastExpandedQuery = key
+    await expandPendingPanel(true)
   }
 
   onMounted(() => {

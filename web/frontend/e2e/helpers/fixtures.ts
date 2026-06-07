@@ -6,6 +6,7 @@ export type MaintenanceSeed = {
   batch_paused: boolean
   pause_reason: string
   last_chapter_id: string
+  pending_chapter_ids: string[]
   pending_total: number
 }
 

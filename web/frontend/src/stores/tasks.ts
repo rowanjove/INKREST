@@ -238,6 +238,7 @@ export const useTasksStore = defineStore('tasks', () => {
 
   const lastRuntimeLogId = ref(0)
   let runtimeLogTimer: number | null = null
+  let runtimeLogPollConsumers = 0
 
   function ingestRuntimeLog(row: {
     id?: number
@@ -277,12 +278,16 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   function startRuntimeLogPolling() {
-    if (runtimeLogTimer) return
+    runtimeLogPollConsumers += 1
+    if (runtimeLogPollConsumers > 1) return
     pollRuntimeLogs()
     runtimeLogTimer = window.setInterval(pollRuntimeLogs, 3000)
   }
 
   function stopRuntimeLogPolling() {
+    if (runtimeLogPollConsumers <= 0) return
+    runtimeLogPollConsumers -= 1
+    if (runtimeLogPollConsumers > 0) return
     if (runtimeLogTimer) {
       window.clearInterval(runtimeLogTimer)
       runtimeLogTimer = null
@@ -306,6 +311,8 @@ export const useTasksStore = defineStore('tasks', () => {
   let wsFallbackTimer: number | null = null
   let wsHeartbeatTimer: number | null = null
   let wsUsePollingFallback = false
+  let taskPollConsumers = 0
+  let wsAllowReconnect = true
 
 
   const isTauriClient =
@@ -453,7 +460,7 @@ export const useTasksStore = defineStore('tasks', () => {
       socket.onclose = () => {
         wsSocket = null
         stopWsHeartbeat()
-        if (!wsUsePollingFallback) {
+        if (!wsUsePollingFallback && wsAllowReconnect && taskPollConsumers > 0) {
           wsFallbackTimer = window.setTimeout(connectTaskWebSocket, 5000)
         }
       }
@@ -482,6 +489,9 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   function startPolling() {
+    taskPollConsumers += 1
+    if (taskPollConsumers > 1) return
+    wsAllowReconnect = true
     connectTaskWebSocket()
     if (wsUsePollingFallback) {
       startPollingFallback()
@@ -489,6 +499,10 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   function stopPolling() {
+    if (taskPollConsumers <= 0) return
+    taskPollConsumers -= 1
+    if (taskPollConsumers > 0) return
+    wsAllowReconnect = false
     disconnectTaskWebSocket()
     if (pollingTimer) {
       window.clearInterval(pollingTimer)
@@ -531,7 +545,6 @@ export const useTasksStore = defineStore('tasks', () => {
         if (data.chapter_id) markComplete(data.chapter_id)
       })
     }
-    startPolling()
   }
 
   async function abortCurrentTask() {

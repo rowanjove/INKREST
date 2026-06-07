@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- 写作页：`loadChapter` 请求代际 + 自动保存在 `loadingEditor` 时跳过，避免切章写错内容
+- `tasksStore`：任务/运行时日志轮询引用计数 + 有意断开时禁止 WS 自动重连
+- `LogStream` 不再在 Tab 卸载时误停 Monitor 日志轮询；`AgentProductionLine` 卸载时释放轮询
+- 移除未路由的 `CallLogView` 死代码；契约/E2E 对齐 Monitor「费用与接口」Tab
+- LLM 资产同步通知对 `label` 做 HTML 转义；AI 写作轮询在 composable 卸载时停止
+
 ## [1.0.0] - 2026-06-07
 
 ### Refactor

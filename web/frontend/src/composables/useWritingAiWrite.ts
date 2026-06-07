@@ -1,4 +1,4 @@
-import { nextTick, ref, type Ref } from 'vue'
+import { nextTick, onScopeDispose, ref, type Ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   apiErrorMessage,
@@ -33,6 +33,12 @@ export function useWritingAiWrite(options: {
   const writeDialogOpen = ref(false)
   const chapterGoalForWrite = ref('')
   let aiWritePollTimer: number | null = null
+  let pollActive = true
+
+  onScopeDispose(() => {
+    pollActive = false
+    stopAiWritePolling()
+  })
 
   function stopAiWritePolling() {
     if (aiWritePollTimer) {
@@ -44,6 +50,7 @@ export function useWritingAiWrite(options: {
   function pollAiWriteResult(taskId: string, chapterId: string) {
     stopAiWritePolling()
     aiWritePollTimer = window.setInterval(async () => {
+      if (!pollActive) return
       try {
         const { data } = await getTask(taskId)
         if (data.status === 'completed') {
