@@ -24,6 +24,10 @@ import {
   type BatchRunPhase,
 } from '../utils/batchRunForm'
 import { buildReadinessItems, readinessAllOk } from '../utils/projectReadiness'
+import {
+  estimateBatchTokenCost,
+  resolveDailyModelPricePer1k,
+} from '../utils/tokenCostEstimate'
 import { useProjectStore } from '../stores/project'
 import { useTasksStore } from '../stores/tasks'
 
@@ -52,6 +56,9 @@ const continueSubmitted = ref(false)
 const roundStartChapterCount = ref(0)
 const roundTargetChapters = ref(0)
 let chapterCountPollTimer: ReturnType<typeof setInterval> | null = null
+const modelPricePer1k = ref(0.0144)
+const modelPriceLabel = ref('默认模型')
+
 const ctx = ref<NovelBatchRunContext>({
   outline: null,
   assets: [],
@@ -122,26 +129,14 @@ export function useNovelBatchRun() {
     ctx.value.batchPaused ? '继续写书' : '连写启动',
   )
 
-  /** 粗估：单章全流水线约 8k–15k tokens（规划+写作+审校），取 12k 中位 */
-  const TOKENS_PER_CHAPTER_ESTIMATE = 12_000
-
-  /** 混合 in/out 粗估单价（元/千 tokens），与 orchestrator 默认档接近 */
-  const PRICE_PER_1K_TOKENS_CNY = 0.002
-
   const tokenEstimate = computed(() => {
     const n = Math.min(form.value.target_chapters || 0, maxAvailableChapters.value || 0)
-    if (n <= 0) return { chapters: 0, tokens: 0, label: '—', priceLabel: '—' }
-    const tokens = n * TOKENS_PER_CHAPTER_ESTIMATE
-    const label =
-      tokens >= 1_000_000
-        ? `约 ${(tokens / 1_000_000).toFixed(1)}M tokens`
-        : tokens >= 1000
-          ? `约 ${Math.round(tokens / 1000)}k tokens`
-          : `约 ${tokens} tokens`
-    const cny = (tokens / 1000) * PRICE_PER_1K_TOKENS_CNY
+    const est = estimateBatchTokenCost(n, modelPricePer1k.value)
     const priceLabel =
-      cny >= 1 ? `约 ¥${cny.toFixed(1)}（单价估）` : `约 ¥${(cny * 100).toFixed(0)} 分（单价估）`
-    return { chapters: n, tokens, label, priceLabel }
+      est.chapters > 0
+        ? `${est.priceLabel}（${modelPriceLabel.value} · ¥${modelPricePer1k.value.toFixed(3)}/千 tokens）`
+        : '—'
+    return { ...est, priceLabel }
   })
 
   const REFRESH_TIMEOUT_MS = 45_000
@@ -175,6 +170,9 @@ export function useNovelBatchRun() {
       )
     const outlineData = outlineRes.data
     const progress = arcRes.data?.progress || batchRes.data || null
+    const pricing = resolveDailyModelPricePer1k(configRes.data, modelsRes.data || [])
+    modelPricePer1k.value = pricing.pricePer1k
+    modelPriceLabel.value = pricing.modelLabel
     ctx.value = {
       outline: outlineData && Object.keys(outlineData).length > 0 ? outlineData : null,
       assets: assetRes.data || [],

@@ -35,7 +35,8 @@ onMounted(load)
       <li v-for="(row, idx) in rounds" :key="idx">
         <strong>{{ row.ts || '—' }}</strong>
         <span>
-          轮次 {{ row.round ?? '—' }} · 完成 {{ row.chapters_completed ?? row.completed ?? 0 }} 章
+          轮次 {{ row.round ?? '—' }} · 完成 {{ row.chapters ?? row.chapters_completed ?? row.completed ?? 0 }} 章
+          <template v-if="row.tokens_used"> · {{ row.tokens_used }} tokens</template>
           <template v-if="row.stopped_reason"> · {{ row.stopped_reason }}</template>
         </span>
       </li>

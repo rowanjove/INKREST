@@ -9,7 +9,11 @@
 - [x] 长篇向量黄条 + audit_profile 设置展示
 - [x] 修章队列命名 + 山山三步排障 + `GET /api/novel/autopilot-rounds`
 - [x] FirstBookGuide 按体量分轨、任务失败聚合条
-- [x] 示例插件 `plugins/examples/hello_guard.py`
+- [x] 示例插件 `plugins/examples/hello_guard.py`、`txt_export_hook.py`
+- [x] 书库卡片待处理角标（`pending_alert_count` + pipeline alerts 口径）
+- [x] 连写弹窗按日常模型 `blended_price_per_1k_cny` 估费
+- [x] `autopilot_rounds.jsonl` 写入 `tokens_used`
+- [x] `test_autopilot_one_round_mock.py` 冒烟
 
 ## 已完成（2026-06）
 

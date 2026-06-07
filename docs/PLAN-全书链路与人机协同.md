@@ -196,6 +196,7 @@ flowchart TD
 
 | 日期 | 项 | 说明 |
 |------|-----|------|
+| 2026-06 | WS 全量改进 | 连写弹窗记住章数/本轮进度、书库待处理角标、按日常模型估费、`autopilot_rounds` 含 tokens、示例插件 hello_guard + txt_export_hook、Playwright/E2E 脚手架、修章队列命名与山山三步排障 |
 | 2026-06 | 远期收尾 | progress_sync 写入统一、连载运营对齐权威进度、暗色告警 token、RESTORE 文档 |
 | 2026-06 | P2/P3 全量 | 外审状态、只重跑门禁、试发批量复制、progress_summary、跳过暂停、debug run 门禁、连写文案 |
 | 2026-06 | 体验加固 | 待重试一键修章、batch-status 待处理数、山山上下文、按 loop 的 TaskManager 锁、GitHub smoke CI |

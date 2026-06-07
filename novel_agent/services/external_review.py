@@ -32,6 +32,12 @@ def _save(root: Path, data: Dict[str, Any]) -> None:
     path = _path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        from novel_agent.services.pipeline_pending import invalidate_pipeline_alerts_cache
+
+        invalidate_pipeline_alerts_cache(root)
+    except Exception:
+        pass
 
 
 def set_external_review_status(

@@ -600,6 +600,14 @@ const handleSaveCover = async () => {
           <!-- 封面内容设计 -->
           <div class="cover-design">
             <span class="genre-badge" v-if="project.genre">{{ project.genre }}</span>
+            <span
+              v-if="(project.pending_alert_count || 0) > 0"
+              class="pending-badge"
+              :title="`有 ${project.pending_alert_count} 章待处理，请到章节维护修稿`"
+              @click.stop
+            >
+              待处理 {{ project.pending_alert_count }} 章
+            </span>
             <h2 class="book-title" @click.stop="openDetails(project)">{{ project.name }}</h2>
           </div>
           
@@ -1194,6 +1202,21 @@ const handleSaveCover = async () => {
   align-items: flex-start;
   gap: 9px;
   width: 100%;
+}
+
+.pending-badge {
+  max-width: 100%;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff8f0;
+  background: rgba(220, 38, 38, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+  padding: 3px 6px;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .genre-badge {

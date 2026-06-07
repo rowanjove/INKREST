@@ -23,6 +23,7 @@ export interface Project {
   channel?: string
   target_chapters?: number
   has_cover?: boolean
+  pending_alert_count?: number
 }
 
 export const useProjectStore = defineStore('project', () => {

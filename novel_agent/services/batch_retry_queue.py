@@ -29,6 +29,12 @@ def _save_doc(root_dir: Path, doc: Dict[str, Any]) -> None:
     path = _queue_path(root_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        from novel_agent.services.pipeline_pending import invalidate_pipeline_alerts_cache
+
+        invalidate_pipeline_alerts_cache(root_dir)
+    except Exception:
+        pass
 
 
 def record_batch_retry(

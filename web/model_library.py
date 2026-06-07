@@ -256,11 +256,14 @@ class ModelLibrary:
         models = data.get("models", {})
         slots = data.get("slots") or _default_slots()
         result = []
+        from novel_agent.pricing import pricing_hint_for_model
+
         for mid, m in models.items():
             entry = {**m, "id": mid}
             entry["slot"] = self._slot_for_model(slots, mid)
             entry["has_api_key"] = bool(entry.get("api_key"))
             entry["api_key"] = ""
+            entry.update(pricing_hint_for_model(mid, m))
             result.append(entry)
         return result
 

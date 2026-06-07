@@ -348,6 +348,30 @@ class ApiProjectsTests(ApiTestBase):
         finally:
             web_server.BASE_DIR = original_base
 
+    def test_project_list_includes_pending_alert_count(self):
+        original_base = web_server.BASE_DIR
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            pid = "pending_proj"
+            project_dir = self.tmpdir / "projects" / pid
+            project_dir.mkdir(parents=True)
+            (project_dir / "workspace" / "chapters" / "chapter_002").mkdir(parents=True)
+            (project_dir / "workspace" / "chapters" / "chapter_002" / "checkpoint.json").write_text(
+                '{"chapter_id":"002","last_stage":"quality_blocked"}',
+                encoding="utf-8",
+            )
+            (self.tmpdir / "projects.json").write_text(
+                json.dumps({"projects": {pid: {"name": "待修", "description": ""}}, "active_id": pid}),
+                encoding="utf-8",
+            )
+            manager = web_server.ProjectManager(self.tmpdir)
+            projects = manager.list_projects()
+            self.assertEqual(projects[0]["pending_alert_count"], 1)
+            cache_path = project_dir / "workspace" / "reports" / "pending_alert_count.cache.json"
+            self.assertTrue(cache_path.is_file())
+        finally:
+            web_server.BASE_DIR = original_base
+
     def test_project_list_recognizes_png_cover(self):
         original_base = web_server.BASE_DIR
         try:

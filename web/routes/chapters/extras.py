@@ -169,123 +169,16 @@ def golden_check(pid: str) -> Dict[str, Any]:
         }
 
 
-_PIPELINE_ALERT_STAGES = {
-    "quality_blocked": "质量门禁未通过，落库已暂停",
-    "approval_rejected": "审批未通过，已回滚审校检查点",
-    "batch_retry": "批量运行已跳过，待重试本章",
-    "external_review_pending": "已标记待外审，请平台试发后回改",
-}
-
-
 @router.get("/api/pipeline-alerts")
 def list_pipeline_alerts() -> Dict[str, Any]:
     """Chapters whose checkpoint indicates a blocked or rejected pipeline gate."""
+    from novel_agent.services.pipeline_pending import collect_pipeline_alerts
+
     root = ws_server.require_project_root()
     chapters_root = root / "workspace" / "chapters"
-
-    alerts: List[Dict[str, Any]] = []
     if not chapters_root.exists():
         chapters_root.mkdir(parents=True, exist_ok=True)
-    for chapter_dir in sorted(chapters_root.glob("chapter_*")):
-        checkpoint_path = chapter_dir / "checkpoint.json"
-        if not checkpoint_path.exists():
-            continue
-        try:
-            checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
-
-        if checkpoint.get("resolved_at"):
-            continue
-
-        last_stage = str(checkpoint.get("last_stage") or "")
-        if last_stage not in _PIPELINE_ALERT_STAGES:
-            continue
-
-        chapter_id = checkpoint.get("chapter_id") or chapter_dir.name.replace("chapter_", "")
-        quality_summary: Dict[str, Any] = {}
-        quality_path = chapter_dir / "reports" / "quality.json"
-        if quality_path.exists():
-            try:
-                quality = json.loads(quality_path.read_text(encoding="utf-8"))
-                guard = quality.get("guard_summary") or {}
-                quality_summary = {
-                    "mode": quality.get("mode"),
-                    "overall_pass": quality.get("overall_pass"),
-                    "overall_status": guard.get("overall_status"),
-                    "blocked_by": guard.get("blocked_by") or [],
-                }
-            except (json.JSONDecodeError, OSError):
-                pass
-
-        alerts.append(
-            {
-                "chapter_id": chapter_id,
-                "last_stage": last_stage,
-                "message": _PIPELINE_ALERT_STAGES[last_stage],
-                "completed_stages": checkpoint.get("completed_stages") or [],
-                "timestamp": checkpoint.get("timestamp"),
-                "quality": quality_summary,
-                "source": "checkpoint",
-            }
-        )
-
-    seen_ids = {a["chapter_id"] for a in alerts}
-    try:
-        from novel_agent.services.batch_retry_queue import list_pending_retries
-
-        for item in list_pending_retries(root):
-            cid = str(item.get("chapter_id") or "")
-            if not cid or cid in seen_ids:
-                continue
-            seen_ids.add(cid)
-            alerts.append(
-                {
-                    "chapter_id": cid,
-                    "last_stage": "batch_retry",
-                    "message": item.get("message")
-                    or _PIPELINE_ALERT_STAGES["batch_retry"],
-                    "completed_stages": [],
-                    "timestamp": item.get("timestamp"),
-                    "quality": {},
-                    "source": "batch_retry",
-                    "arc_id": item.get("arc_id"),
-                    "retry_reason": item.get("reason"),
-                }
-            )
-    except Exception:
-        pass
-
-    try:
-        from novel_agent.services.external_review import list_pending_external
-
-        for item in list_pending_external(root):
-            cid = str(item.get("chapter_id") or "")
-            if not cid or cid in seen_ids:
-                continue
-            seen_ids.add(cid)
-            alerts.append(
-                {
-                    "chapter_id": cid,
-                    "last_stage": "external_review_pending",
-                    "message": _PIPELINE_ALERT_STAGES["external_review_pending"],
-                    "completed_stages": [],
-                    "timestamp": item.get("updated_at"),
-                    "quality": {},
-                    "source": "external_review",
-                    "external_note": item.get("note", ""),
-                }
-            )
-    except Exception:
-        pass
-
-    alerts.sort(
-        key=lambda a: (
-            a.get("last_stage") not in ("quality_blocked", "batch_retry"),
-            str(a.get("chapter_id")),
-        )
-    )
-    return {"alerts": alerts}
+    return {"alerts": collect_pipeline_alerts(root)}
 
 
 @router.patch("/api/chapters/{chapter_id}/external-review")
@@ -376,6 +269,12 @@ def dismiss_pipeline_alert(chapter_id: str) -> Dict[str, Any]:
         json.dumps(checkpoint, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    try:
+        from novel_agent.services.pipeline_pending import invalidate_pipeline_alerts_cache
+
+        invalidate_pipeline_alerts_cache(ws_server.get_root_dir())
+    except Exception:
+        pass
     try:
         from novel_agent.services.batch_retry_queue import dismiss_batch_retry
 

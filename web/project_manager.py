@@ -148,6 +148,17 @@ class ProjectManager:
                 else info.get("updated_at", "")
             )
 
+            pending_alert_count = 0
+            try:
+                from novel_agent.services.pipeline_pending import count_pipeline_alerts_cached
+
+                pending_alert_count = count_pipeline_alerts_cached(project_dir)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to count pipeline alerts for %s: %s", pid, exc
+                )
+                pending_alert_count = 0
+
             projects.append({
                 "id": pid,
                 "name": info.get("name", pid),
@@ -163,6 +174,7 @@ class ProjectManager:
                 "channel": meta.get("channel", ""),
                 "target_chapters": meta.get("target_chapters", 0),
                 "has_cover": any((project_dir / f"cover{suffix}").exists() for suffix in (".jpg", ".png", ".webp")),
+                "pending_alert_count": pending_alert_count,
             })
 
         def sort_key(item: Dict[str, Any]) -> tuple:

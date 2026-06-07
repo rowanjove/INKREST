@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from novel_agent.logging_config import get_logger
+from novel_agent.orchestrator import NovelOrchestrator
 from novel_agent.pipeline import load_pipeline_settings
 from novel_agent.progress import emit_progress
 from novel_agent.services.arc_queue import load_arc_progress
@@ -172,6 +173,9 @@ async def run_novel_autopilot(
             full_book,
         )
 
+        if isinstance(orchestrator, NovelOrchestrator):
+            orchestrator.reset_round_token_accumulator()
+
         if full_book:
             batch = await orchestrator.arun_arcs(
                 resume=True,
@@ -184,12 +188,16 @@ async def run_novel_autopilot(
             )
 
         n = len(batch)
+        tokens_used = 0
+        if isinstance(orchestrator, NovelOrchestrator):
+            tokens_used = orchestrator.consume_round_tokens()
         outcome.rounds = round_idx
         outcome.chapters_completed += n
         summary = {
             "round": round_idx,
             "chapters": n,
-            "last_id": batch[-1].chapter_id if batch else "",
+            "last_id": str(getattr(batch[-1], "chapter_id", "") or "") if batch else "",
+            "tokens_used": tokens_used,
             "stopped_reason": "",
         }
         outcome.round_summaries.append(summary)
@@ -201,7 +209,7 @@ async def run_novel_autopilot(
             {
                 "round": round_idx,
                 "chapters_completed": outcome.chapters_completed,
-                "last_chapter": batch[-1].chapter_id if batch else "",
+                "last_chapter": str(getattr(batch[-1], "chapter_id", "") or "") if batch else "",
             },
         )
 

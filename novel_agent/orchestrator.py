@@ -97,6 +97,7 @@ class NovelOrchestrator:
         self.context_builder = ContextBuilderAgent(self.root_dir, self.vector_store)
         self.store = SQLiteStateStore(self.root_dir)
         self.prompts.store = self.store
+        self._round_tokens_acc = 0
         
         # 挂载项目目录和存储库到大纲规划器及场景写入器 Agent
         if hasattr(self, "chapter_planner"):
@@ -461,28 +462,41 @@ class NovelOrchestrator:
         except Exception as e:
             logger.warning("Failed to estimate chapter cost: %s", e)
 
+    def _clear_call_logs(self) -> None:
+        for client in self.config.llm_registry.values():
+            if hasattr(client, "call_log"):
+                client.call_log.clear()
+        if hasattr(self.config.llm, "call_log"):
+            self.config.llm.call_log.clear()
+
+    def reset_round_token_accumulator(self) -> None:
+        """Start a fresh autopilot round: drop stale call_log from failed chapters."""
+        self._round_tokens_acc = 0
+        self._clear_call_logs()
+
+    def consume_round_tokens(self) -> int:
+        used = int(getattr(self, "_round_tokens_acc", 0) or 0)
+        self._round_tokens_acc = 0
+        return used
+
     def _persist_llm_cost(self, chapter_id: str) -> None:
         try:
+            from novel_agent.pricing import resolve_model_prices_usd
+
             logs = self.config.get_call_log()
+            round_tokens = 0
+            for log in logs:
+                round_tokens += int(
+                    log.get("total_tokens")
+                    or (log.get("prompt_tokens", 0) + log.get("completion_tokens", 0))
+                    or 0
+                )
+            self._round_tokens_acc = int(getattr(self, "_round_tokens_acc", 0) or 0) + round_tokens
             for log in logs:
                 model_name = log.get("model", "")
                 prompt_tokens = log.get("prompt_tokens", 0)
                 completion_tokens = log.get("completion_tokens", 0)
-                
-                prices = {
-                    "gpt-4o-mini": (0.001, 0.004),
-                    "gpt-4o": (0.036, 0.108),
-                    "claude-3-5-sonnet": (0.021, 0.108),
-                    "deepseek-chat": (0.001, 0.002),
-                    "deepseek-coder": (0.001, 0.002),
-                }
-                
-                in_price, out_price = 0.001, 0.003
-                for k, v in prices.items():
-                    if k in model_name.lower():
-                        in_price, out_price = v
-                        break
-                        
+                in_price, out_price = resolve_model_prices_usd(model_name)
                 input_cost = (prompt_tokens / 1000) * in_price
                 output_cost = (completion_tokens / 1000) * out_price
                 
@@ -498,11 +512,7 @@ class NovelOrchestrator:
                     project_id=str(self.root_dir.name)
                 )
             
-            for client in self.config.llm_registry.values():
-                if hasattr(client, "call_log"):
-                    client.call_log.clear()
-            if hasattr(self.config.llm, "call_log"):
-                self.config.llm.call_log.clear()
+            self._clear_call_logs()
             logger.info("Successfully persisted and cleared %d LLM cost logs for chapter %s", len(logs), chapter_id)
         except Exception as e:
             logger.warning("Failed to persist LLM cost logs: %s", e)

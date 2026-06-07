@@ -101,6 +101,18 @@ def test_library_book_cards_use_spine_without_tick_overlay() -> None:
     assert "✓" not in source.split("book-cover")[0]
 
 
+def test_project_manager_uses_cached_pipeline_alert_count() -> None:
+    source = (ROOT / "web" / "project_manager.py").read_text(encoding="utf-8")
+    assert "count_pipeline_alerts_cached" in source
+
+
+def test_library_cards_show_pending_alert_badge() -> None:
+    source = LIBRARY_VIEW.read_text(encoding="utf-8")
+    assert "pending_alert_count" in source
+    assert 'class="pending-badge"' in source
+    assert "待处理" in source
+
+
 def test_chapter_pages_hide_rewrite_actions_without_final_text() -> None:
     list_source = CHAPTER_LIST.read_text(encoding="utf-8")
     detail_source = CHAPTER_DETAIL.read_text(encoding="utf-8")
@@ -270,6 +282,13 @@ def test_longform_vector_warn_surfaces_in_readiness_and_dialog() -> None:
     assert "longFormVectorWarn" in readiness
     assert "vector-warn-banner" in card
     assert "长篇向量建议" in dialog
+
+
+def test_batch_run_cost_uses_model_pricing_hint() -> None:
+    estimate = ROOT / "web" / "frontend" / "src" / "utils" / "tokenCostEstimate.ts"
+    composable = ROOT / "web" / "frontend" / "src" / "composables" / "useNovelBatchRun.ts"
+    assert "blended_price_per_1k_cny" in estimate.read_text(encoding="utf-8")
+    assert "resolveDailyModelPricePer1k" in composable.read_text(encoding="utf-8")
 
 
 def test_batch_run_form_persists_per_project() -> None:
