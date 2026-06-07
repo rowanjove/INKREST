@@ -250,4 +250,40 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('AI 创作引导')
     expect(source).toContain('rec-tag')
   })
+
+  it('ConfigView shell wires navigation and sections stack', () => {
+    const source = read('views/ConfigView.vue')
+    expect(source).toContain('ConfigPageNav')
+    expect(source).toContain('ConfigSectionsStack')
+    expect(source).toContain('useConfigNavigation')
+    expect(source).toContain('.config-page :deep(.fold-head)')
+  })
+
+  it('MonitorView shell wires tabs pane composable', () => {
+    const source = read('views/MonitorView.vue')
+    expect(source).toContain('MonitorTabsPane')
+    expect(source).toContain('useMonitorView')
+    expect(source).toContain('min-height: calc(100vh - 96px)')
+  })
+
+  it('MonitorTabsPane keeps task rounds split layout', () => {
+    const source = read('components/monitor/MonitorTabsPane.vue')
+    expect(source).toContain('task-rounds-split')
+    expect(source).toContain('CostSummaryPanel')
+    expect(source).toContain('hide-recent-rounds')
+  })
+
+  it('PetView shell uses window interaction composable', () => {
+    const source = read('views/PetView.vue')
+    expect(source).toContain('usePetWindowInteraction')
+    expect(source).toContain('pet-hit-area')
+  })
+
+  it('ChaptersLayout delegates subnav to ChapterSubnav', () => {
+    const source = read('views/ChaptersLayout.vue')
+    expect(source).toContain('ChapterSubnav')
+    const subnav = read('components/chapter/ChapterSubnav.vue')
+    expect(subnav).toContain('to="/chapters/list"')
+    expect(subnav).toContain('chapter-subnav__badge')
+  })
 })

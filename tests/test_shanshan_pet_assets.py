@@ -112,13 +112,16 @@ def test_pet_bubble_pulse_uses_effective_state_not_hide_sprite() -> None:
 
 def test_pet_view_edge_auto_hide_hooks() -> None:
     pet_view = ROOT / "web" / "frontend" / "src" / "views" / "PetView.vue"
+    pet_window = ROOT / "web" / "frontend" / "src" / "composables" / "usePetWindowInteraction.ts"
     edge_dock = ROOT / "web" / "frontend" / "src" / "composables" / "usePetEdgeDock.ts"
-    source = pet_view.read_text(encoding="utf-8")
+    shell_source = pet_view.read_text(encoding="utf-8")
+    window_source = pet_window.read_text(encoding="utf-8")
     dock_source = edge_dock.read_text(encoding="utf-8")
 
-    assert "usePetEdgeDock" in source
-    assert "applyEdgeDockIfNeeded" in source
-    assert "restoreFromEdge" in source
+    assert "usePetWindowInteraction" in shell_source
+    assert "usePetEdgeDock" in window_source
+    assert "applyEdgeDockIfNeeded" in window_source
+    assert "restoreFromEdge" in window_source
     assert "setHiddenAtEdge" in dock_source or "setHiddenAtEdge" in PET_STORE.read_text(encoding="utf-8")
 
 

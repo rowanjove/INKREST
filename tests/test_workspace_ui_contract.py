@@ -39,7 +39,20 @@ TASK_LOG = ROOT / "web" / "frontend" / "src" / "components" / "TaskLog.vue"
 LLM_CONFIG = ROOT / "web" / "frontend" / "src" / "components" / "LLMConfig.vue"
 LOG_STREAM = ROOT / "web" / "frontend" / "src" / "components" / "LogStream.vue"
 MONITOR = ROOT / "web" / "frontend" / "src" / "views" / "MonitorView.vue"
+MONITOR_TABS = (
+    ROOT / "web" / "frontend" / "src" / "components" / "monitor" / "MonitorTabsPane.vue"
+)
+MONITOR_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "useMonitorView.ts"
 CHAPTERS_LAYOUT = ROOT / "web" / "frontend" / "src" / "views" / "ChaptersLayout.vue"
+CHAPTER_SUBNAV = (
+    ROOT / "web" / "frontend" / "src" / "components" / "chapter" / "ChapterSubnav.vue"
+)
+CONFIG_SECTIONS_STACK = (
+    ROOT / "web" / "frontend" / "src" / "components" / "config" / "ConfigSectionsStack.vue"
+)
+PET_WINDOW_INTERACTION = (
+    ROOT / "web" / "frontend" / "src" / "composables" / "usePetWindowInteraction.ts"
+)
 CHAPTER_MAINTENANCE = ROOT / "web" / "frontend" / "src" / "views" / "ChapterMaintenance.vue"
 OUTLINE_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "OutlineView.vue"
 CONFIG_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "ConfigView.vue"
@@ -237,18 +250,20 @@ def test_chapter_list_exposes_gate_only_rerun() -> None:
 
 
 def test_monitor_includes_cost_summary_panel() -> None:
-    source = MONITOR.read_text(encoding="utf-8")
-    assert "CostSummaryPanel" in source
-    assert "cost-api-pane" in source
-    assert "hide-recent-rounds" in source
+    shell_source = MONITOR.read_text(encoding="utf-8")
+    tabs_source = MONITOR_TABS.read_text(encoding="utf-8")
+    assert "MonitorTabsPane" in shell_source
+    assert "CostSummaryPanel" in tabs_source
+    assert "cost-api-pane" in tabs_source
+    assert "hide-recent-rounds" in tabs_source
 
 
 def test_monitor_task_logs_splits_rounds_and_task_log() -> None:
-    source = MONITOR.read_text(encoding="utf-8")
-    assert "task-rounds-split" in source
-    assert "AutopilotRoundsPanel" in source
-    assert "TaskLog" in source
-    task_logs_block = source.split('name="task_logs"', 1)[1].split('name="agent_logs"', 1)[0]
+    tabs_source = MONITOR_TABS.read_text(encoding="utf-8")
+    assert "task-rounds-split" in tabs_source
+    assert "AutopilotRoundsPanel" in tabs_source
+    assert "TaskLog" in tabs_source
+    task_logs_block = tabs_source.split('name="task_logs"', 1)[1].split('name="agent_logs"', 1)[0]
     assert "CostSummaryPanel" not in task_logs_block
 
 
@@ -400,12 +415,14 @@ def test_chapter_maintenance_exposes_repair_queue_grouping() -> None:
 
 def test_chapters_layout_exposes_list_and_maintenance_subnav() -> None:
     layout_source = CHAPTERS_LAYOUT.read_text(encoding="utf-8")
+    subnav_source = CHAPTER_SUBNAV.read_text(encoding="utf-8")
     list_source = CHAPTER_LIST.read_text(encoding="utf-8")
     maintenance_source = CHAPTER_MAINTENANCE.read_text(encoding="utf-8")
 
-    assert 'to="/chapters/list"' in layout_source
-    assert 'to="/chapters/maintenance"' in layout_source
-    assert "chapter-subnav__badge" in layout_source
+    assert "ChapterSubnav" in layout_source
+    assert 'to="/chapters/list"' in subnav_source
+    assert 'to="/chapters/maintenance"' in subnav_source
+    assert "chapter-subnav__badge" in subnav_source
     assert "复制全书已有正文" not in list_source
     assert ":link-focus=\"true\"" in maintenance_source
     assert "SemiAutoRepairHint" in maintenance_source
@@ -413,14 +430,16 @@ def test_chapters_layout_exposes_list_and_maintenance_subnav() -> None:
 
 
 def test_monitor_page_is_log_center_without_tasks_tab() -> None:
-    source = MONITOR.read_text(encoding="utf-8")
-    assert ">日志中心<" in source.replace("\n", "").replace(" ", "")
-    assert "任务执行监控" not in source
-    assert "NovelProgressHelp" not in source
-    assert 'name="task_logs"' in source
-    assert "费用与接口" in source
-    assert "router.replace('/chapters/maintenance')" in source
-    assert "interface_logs" in source
+    shell_source = MONITOR.read_text(encoding="utf-8")
+    tabs_source = MONITOR_TABS.read_text(encoding="utf-8")
+    composable_source = MONITOR_COMPOSABLE.read_text(encoding="utf-8")
+    assert ">日志中心<" in shell_source.replace("\n", "").replace(" ", "")
+    assert "任务执行监控" not in shell_source
+    assert "NovelProgressHelp" not in shell_source
+    assert 'name="task_logs"' in tabs_source
+    assert "费用与接口" in tabs_source
+    assert "router.replace('/chapters/maintenance')" in composable_source
+    assert "interface_logs" in composable_source
 
 
 def test_batch_banner_prioritizes_repair_before_force_resume() -> None:
@@ -664,3 +683,32 @@ def test_trope_blueprint_panel_keeps_slots_and_preview() -> None:
     assert "markdown-preview" in source
     assert "以此新建作品" in source
     assert "应用到当前作品" in source
+
+
+def test_config_view_shell_delegates_to_nav_and_sections() -> None:
+    shell_source = CONFIG_VIEW.read_text(encoding="utf-8")
+    stack_source = CONFIG_SECTIONS_STACK.read_text(encoding="utf-8")
+    assert "ConfigPageNav" in shell_source
+    assert "ConfigSectionsStack" in shell_source
+    assert "useConfigNavigation" in shell_source
+    assert "LLMConfig" in stack_source
+    assert "EmbeddingConfig" in stack_source
+
+
+def test_monitor_shell_delegates_to_tabs_pane() -> None:
+    shell_source = MONITOR.read_text(encoding="utf-8")
+    composable_source = MONITOR_COMPOSABLE.read_text(encoding="utf-8")
+    assert "MonitorTabsPane" in shell_source
+    assert "useMonitorView" in shell_source
+    assert "startRuntimeLogPolling" in composable_source
+
+
+def test_pet_view_shell_delegates_to_window_interaction() -> None:
+    shell_source = (ROOT / "web" / "frontend" / "src" / "views" / "PetView.vue").read_text(
+        encoding="utf-8"
+    )
+    interaction_source = PET_WINDOW_INTERACTION.read_text(encoding="utf-8")
+    assert "usePetWindowInteraction" in shell_source
+    assert "PetSprite" in shell_source
+    assert "togglePetBubble" in interaction_source
+    assert "applyEdgeDockIfNeeded" in interaction_source

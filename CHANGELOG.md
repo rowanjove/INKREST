@@ -28,6 +28,10 @@
 - ReaderView：拆出 `useReaderView` composable + 3 个模板子组件（工具栏 / 目录抽屉 / 正文阅读区）
 - ChapterDetail：拆出 `useChapterDetail` composable + 4 个模板子组件（告警 / 页头 / Tabs / 编辑对话框）
 - CreateWizard：拆出 `useCreateWizard` composable + 4 个模板子组件（模式 Tab / 快速 / 解析 / AI 引导）
+- ConfigView：拆出 `useConfigNavigation` + `configSections` + 2 个子组件（分区导航 / 设置栈）
+- MonitorView：拆出 `useMonitorView` + `MonitorTabsPane`（三 Tab 日志布局）
+- PetView：拆出 `usePetWindowInteraction`（拖拽、贴边、气泡切换）
+- ChaptersLayout：抽出 `ChapterSubnav` 子组件
 
 ### Tests
 
@@ -36,6 +40,7 @@
 - E2E：`workspace-state.spec.ts`（写作页侧栏与工具栏、状态库双 Tab）
 - E2E：`assets-pet.spec.ts`（项目资产侧栏/面板、山山气泡状态与对话 Tab）
 - E2E：`chapters-plugins.spec.ts`（章节列表门禁重跑、插件管理网格）
+- E2E：`smoke-routes.spec.ts`（设置 / 日志中心 / 套路工坊 / 书库冒烟）
 
 ### Performance (Phase 0–4)
 
