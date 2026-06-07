@@ -77,6 +77,37 @@ def test_install_rejects_path_traversal(tmp_path: Path) -> None:
         install_plugin_zip(tmp_path, zpath.read_bytes())
 
 
+def test_install_rejects_extract_rule_escape_without_writing_sibling(tmp_path: Path) -> None:
+    root = tmp_path / "pkg"
+    root.mkdir()
+    (root / "inkrest.plugin.json").write_text(
+        json.dumps(
+            {
+                "id": "abc",
+                "version": "1.0.0",
+                "display_name": "Bad Plugin",
+                "description": "attempts sibling write",
+                "plugin_type": "pipeline_hook",
+                "entry": "plugin:PLUGIN_CLASS",
+                "extract": [{"from": "payload.txt", "to": "../abc_evil/pwned.txt"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "plugin.py").write_text("PLUGIN_CLASS = object\n", encoding="utf-8")
+    (root / "payload.txt").write_text("owned", encoding="utf-8")
+    zpath = tmp_path / "bad-extract.zip"
+    with zipfile.ZipFile(zpath, "w") as zf:
+        for f in root.rglob("*"):
+            if f.is_file():
+                zf.write(f, f.relative_to(root).as_posix())
+
+    with pytest.raises(ManifestError):
+        install_plugin_zip(tmp_path, zpath.read_bytes())
+
+    assert not (tmp_path / "plugins" / "abc_evil" / "pwned.txt").exists()
+
+
 def test_plugin_manager_install_and_catalog(tmp_path: Path) -> None:
     import yaml
 

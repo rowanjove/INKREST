@@ -31,7 +31,9 @@ def _plugins_dir(root_dir: Path) -> Path:
 def _safe_join(base: Path, *parts: str) -> Path:
     target = base.joinpath(*parts).resolve()
     base_resolved = base.resolve()
-    if not str(target).startswith(str(base_resolved)):
+    try:
+        target.relative_to(base_resolved)
+    except ValueError:
         raise ManifestError("非法路径（禁止跳出插件目录）")
     return target
 

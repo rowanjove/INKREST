@@ -550,14 +550,16 @@ async def arun_novel(
     }
     if orch.config.plugin_manager:
         for hook in orch.config.plugin_manager.get_hooks():
-            try:
-                theme_kwargs = hook.before_outline(
-                    theme_kwargs.get("theme", theme),
-                    theme_kwargs.get("genre", genre),
-                    **theme_kwargs
-                )
-            except Exception as e:
-                orch._on_hook_error("before_outline", e)
+            theme_kwargs = orch._call_hook(
+                "before_outline",
+                "",
+                lambda h=hook, kwargs=theme_kwargs: h.before_outline(
+                    kwargs.get("theme", theme),
+                    kwargs.get("genre", genre),
+                    **{k: v for k, v in kwargs.items() if k not in {"theme", "genre"}},
+                ),
+                default=theme_kwargs,
+            )
 
     # Apply potentially modified hook arguments
     theme = theme_kwargs.get("theme", theme)
@@ -578,10 +580,12 @@ async def arun_novel(
 
     if orch.config.plugin_manager:
         for hook in orch.config.plugin_manager.get_hooks():
-            try:
-                outline = hook.after_outline(outline)
-            except Exception as e:
-                orch._on_hook_error("after_outline", e)
+            outline = orch._call_hook(
+                "after_outline",
+                "",
+                lambda h=hook, data=outline: h.after_outline(data),
+                default=outline,
+            )
     orch._write_json(orch.root_dir / "workspace" / "outline.json", outline)
     emit_progress("chief_editor", "done", {
         "title": outline.get("title_options", [""])[0],
@@ -642,10 +646,12 @@ async def arun_novel(
 
     if orch.config.plugin_manager:
         for hook in orch.config.plugin_manager.get_hooks():
-            try:
-                hook.on_novel_complete(results)
-            except Exception as e:
-                orch._on_hook_error("on_novel_complete", e)
+            orch._call_hook(
+                "on_novel_complete",
+                "",
+                lambda h=hook: h.on_novel_complete(results),
+                default=None,
+            )
 
     return results
 

@@ -210,13 +210,10 @@ async function handleBlockContinue(blockId: string) {
 
 onMounted(() => {
   tasksStore.connectElectronEvents()
-  tasksStore.startPolling()
-  tasksStore.startRuntimeLogPolling()
 })
 
 onUnmounted(() => {
-  tasksStore.stopPolling()
-  tasksStore.stopRuntimeLogPolling()
+  /* 轮询由工作台 / 日志中心页面生命周期管理，不在此 stop */
 })
 </script>
 

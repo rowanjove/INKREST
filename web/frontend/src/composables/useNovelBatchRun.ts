@@ -31,7 +31,6 @@ import {
   resolveDailyModelPricePer1k,
 } from '../utils/tokenCostEstimate'
 import { useProjectStore } from '../stores/project'
-import { useTasksStore } from '../stores/tasks'
 import { needsRepairBeforeResume } from '../utils/batchPause'
 
 export type NovelBatchRunContext = {
@@ -93,7 +92,6 @@ function resolveEngine(config: any, models: any[]) {
 export function useNovelBatchRun() {
   const router = useRouter()
   const projectStore = useProjectStore()
-  const tasksStore = useTasksStore()
   const { currentProject } = storeToRefs(projectStore)
 
   const maxAvailableChapters = computed(() => {
@@ -375,8 +373,6 @@ export function useNovelBatchRun() {
     running.value = true
     runAbort = new AbortController()
     const signal = runAbort.signal
-    tasksStore.startRuntimeLogPolling()
-    tasksStore.startPolling()
     startChapterCountPoll()
     let queueMsg: ReturnType<typeof ElMessage.info> | null = null
     try {

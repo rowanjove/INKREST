@@ -364,21 +364,79 @@ class TaskManager:
         dry_run: bool = False,
     ) -> str:
         batch_id = str(uuid.uuid4())[:8]
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            self.store.save_task,
+            batch_id,
+            "",
+            f"batch:{len(chapters)}",
+            dry_run,
+            "pending",
+        )
         loop = asyncio.get_running_loop()
         task = loop.create_task(self._run_batch(batch_id, chapters, dry_run))
         self._running_tasks[batch_id] = task
         return batch_id
 
     async def _run_batch(self, batch_id: str, chapters: list, dry_run: bool) -> None:
-        await run_chapter_batch(
-            batch_id,
-            chapters,
-            dry_run,
-            submit_chapter=self.submit_chapter,
-            get_task_async=self.get_task_async,
-            is_aborted=self.is_aborted,
-            running_tasks=self._running_tasks,
-        )
+        token = task_id_var.set(batch_id)
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                batch_id,
+                "running",
+            )
+            await run_chapter_batch(
+                batch_id,
+                chapters,
+                dry_run,
+                submit_chapter=self.submit_chapter,
+                get_task_async=self.get_task_async,
+                is_aborted=self.is_aborted,
+                running_tasks=self._running_tasks,
+            )
+            if self.is_aborted(batch_id):
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    self.store.update_task_status,
+                    batch_id,
+                    "failed",
+                    None,
+                    "Task aborted",
+                )
+            else:
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    self.store.update_task_status,
+                    batch_id,
+                    "completed",
+                    {"chapter_count": len(chapters)},
+                    None,
+                )
+        except asyncio.CancelledError:
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                batch_id,
+                "failed",
+                None,
+                "Task aborted",
+            )
+            raise
+        except Exception as exc:
+            logger.exception("Batch task %s failed", batch_id)
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.store.update_task_status,
+                batch_id,
+                "failed",
+                None,
+                str(exc),
+            )
+        finally:
+            self._running_tasks.pop(batch_id, None)
+            task_id_var.reset(token)
 
     async def _run_chapter(
         self,

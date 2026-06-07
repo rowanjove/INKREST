@@ -14,7 +14,7 @@ from typing import Optional
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.websockets import WebSocket
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 ACCESS_TOKEN_ENV = "NOVEL_AGENT_ACCESS_TOKEN"
 ACCESS_TOKEN_HEADER = "X-Novel-Agent-Token"
@@ -165,6 +165,8 @@ async def authorize_websocket(ws: WebSocket) -> bool:
         data = json.loads(raw)
         if data.get("type") == "auth" and _tokens_match(str(data.get("token") or ""), expected):
             return True
+    except WebSocketDisconnect:
+        return False
     except (asyncio.TimeoutError, json.JSONDecodeError, TypeError):
         pass
     await ws.close(code=1008, reason="Invalid or missing access token")

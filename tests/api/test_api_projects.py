@@ -234,6 +234,55 @@ class ApiProjectsTests(ApiTestBase):
             web_server._active_project_id = original_active
             web_server.BASE_DIR = original_base
 
+    def test_zip_import_preserves_pinned_metadata(self):
+        import io
+        import zipfile
+
+        original_active = web_server._active_project_id
+        original_base = web_server.BASE_DIR
+        original_project_manager = web_server.project_manager
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            web_server._active_project_id = None
+            web_server.project_manager = web_server.ProjectManager(self.tmpdir)
+
+            archive_buf = io.BytesIO()
+            with zipfile.ZipFile(archive_buf, "w") as zf:
+                zf.writestr(
+                    "project_info.json",
+                    json.dumps(
+                        {
+                            "name": "置顶导入",
+                            "description": "imported pinned project",
+                            "pinned": True,
+                            "pinned_at": "2026-01-01T00:00:00",
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+                zf.writestr("workspace/outline.json", json.dumps({"chosen_title": "置顶导入"}))
+
+            response = TestClient(web_app).post(
+                "/api/projects/import-zip",
+                files={
+                    "file": (
+                        "pinned_project.zip",
+                        archive_buf.getvalue(),
+                        "application/zip",
+                    )
+                },
+            )
+
+            self.assertEqual(response.status_code, 200)
+            pid = response.json()["id"]
+            registry = json.loads((self.tmpdir / "projects.json").read_text(encoding="utf-8"))
+            self.assertTrue(registry["projects"][pid]["pinned"])
+            self.assertEqual(registry["projects"][pid]["pinned_at"], "2026-01-01T00:00:00")
+        finally:
+            web_server._active_project_id = original_active
+            web_server.BASE_DIR = original_base
+            web_server.project_manager = original_project_manager
+
     def test_zip_export_excludes_executable_plugin_files(self):
         import io
         import zipfile

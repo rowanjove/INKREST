@@ -279,7 +279,7 @@ export const useTasksStore = defineStore('tasks', () => {
 
   function startRuntimeLogPolling() {
     runtimeLogPollConsumers += 1
-    if (runtimeLogPollConsumers > 1) return
+    if (runtimeLogTimer) return
     pollRuntimeLogs()
     runtimeLogTimer = window.setInterval(pollRuntimeLogs, 3000)
   }
@@ -490,7 +490,6 @@ export const useTasksStore = defineStore('tasks', () => {
 
   function startPolling() {
     taskPollConsumers += 1
-    if (taskPollConsumers > 1) return
     wsAllowReconnect = true
     connectTaskWebSocket()
     if (wsUsePollingFallback) {

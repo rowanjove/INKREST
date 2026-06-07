@@ -78,7 +78,7 @@ def chapters_remaining_to_target(root_dir: Path) -> int:
     try:
         from novel_agent.state.sqlite_store import SQLiteStateStore
 
-        done = SQLiteStateStore(root_dir).count_chapters()
+        done = SQLiteStateStore(root_dir).count_chapters_indexed()
     except Exception:
         progress = load_arc_progress(root_dir)
         done = int(progress.get("completed_chapters") or 0)

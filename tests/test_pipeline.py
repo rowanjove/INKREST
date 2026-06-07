@@ -301,16 +301,20 @@ class PipelineTests(unittest.TestCase):
         from novel_agent.plugins.hook_runner import call_hook_with_timeout
 
         def slow():
-            time.sleep(2)
+            time.sleep(1)
             return "ok"
 
+        start = time.perf_counter()
         with self.assertRaises(TimeoutError):
-            call_hook_with_timeout(slow, timeout_seconds=0.1)
+            call_hook_with_timeout(slow, timeout_seconds=0.05)
+        self.assertLess(time.perf_counter() - start, 0.5)
 
+        start = time.perf_counter()
         self.assertEqual(
-            call_hook_with_timeout(slow, timeout_seconds=0.1, default="fallback"),
+            call_hook_with_timeout(slow, timeout_seconds=0.05, default="fallback"),
             "fallback",
         )
+        self.assertLess(time.perf_counter() - start, 0.5)
 
     def test_persona_evaluations_off_skips_reader_block(self):
         from novel_agent.quality.settings import resolve_persona_evaluations

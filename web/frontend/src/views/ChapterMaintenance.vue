@@ -1,11 +1,26 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue'
 import PendingChaptersPanel from '../components/PendingChaptersPanel.vue'
 import SemiAutoRepairHint from '../components/SemiAutoRepairHint.vue'
 import BatchRunStatusBanner from '../components/BatchRunStatusBanner.vue'
 import NovelBatchRunDialog from '../components/NovelBatchRunDialog.vue'
 import { useChapterMaintenance } from '../composables/useChapterMaintenance'
+import { useTasksStore } from '../stores/tasks'
 
 useChapterMaintenance()
+
+const tasksStore = useTasksStore()
+
+onMounted(() => {
+  tasksStore.connectElectronEvents()
+  tasksStore.startPolling()
+  tasksStore.startRuntimeLogPolling()
+})
+
+onUnmounted(() => {
+  tasksStore.stopPolling()
+  tasksStore.stopRuntimeLogPolling()
+})
 </script>
 
 <template>

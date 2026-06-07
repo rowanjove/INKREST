@@ -93,6 +93,25 @@ def test_chapters_remaining_to_target(tmp_path: Path) -> None:
     assert chapters_remaining_to_target(tmp_path) == 15
 
 
+def test_chapters_remaining_uses_indexed_chapter_count(tmp_path: Path) -> None:
+    from novel_agent.state.sqlite_store import SQLiteStateStore
+
+    _outline(tmp_path, 5)
+    store = SQLiteStateStore(tmp_path)
+    for i in range(1, 5):
+        chapter_id = f"{i:03d}"
+        store.index_chapter(
+            chapter_id,
+            f"Chapter {chapter_id}",
+            Path(f"workspace/chapters/chapter_{chapter_id}/chapter_final.txt"),
+            1000,
+            "low",
+        )
+    save_arc_progress(tmp_path, {"status": "running", "completed_chapters": 0})
+
+    assert chapters_remaining_to_target(tmp_path) == 1
+
+
 def test_is_batch_circuit_paused(tmp_path: Path) -> None:
     record_novel_batch_paused(tmp_path, reason="circuit_breaker", streak=3)
     assert is_batch_circuit_paused(tmp_path) is True

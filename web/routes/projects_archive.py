@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 import web.context as ws_server
+from web.project_manager import MAX_PINNED_PROJECTS
 
 router = APIRouter()
 
@@ -110,7 +111,7 @@ def _register_imported_project(pid: str, name: str, description: str, import_pin
     }
     if import_pinned:
         pinned_count = sum(1 for p in registry.get("projects", {}).values() if p.get("pinned"))
-        if pinned_count < ws_server.project_manager.MAX_PINNED_PROJECTS:
+        if pinned_count < MAX_PINNED_PROJECTS:
             entry["pinned"] = True
             entry["pinned_at"] = import_pinned_at or now
     registry["projects"][pid] = entry

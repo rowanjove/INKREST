@@ -240,6 +240,25 @@ class SecurityRegressionTests(unittest.TestCase):
         with patch.dict(os.environ, {ACCESS_TOKEN_ENV: "test-token-value-here!!!!"}):
             self.assertTrue(websocket_has_access_token(ws))
 
+    def test_websocket_disconnect_during_auth_returns_false(self):
+        import asyncio
+        from starlette.websockets import WebSocketDisconnect
+        from unittest.mock import AsyncMock, MagicMock
+        from web.security import ACCESS_TOKEN_ENV, authorize_websocket
+
+        ws = MagicMock()
+        ws.headers = {}
+        ws.query_params = {}
+        ws.accept = AsyncMock()
+        ws.receive_text = AsyncMock(side_effect=WebSocketDisconnect(1006))
+        ws.close = AsyncMock()
+
+        with patch.dict(os.environ, {ACCESS_TOKEN_ENV: "test-token-value-here!!!!"}):
+            self.assertFalse(asyncio.run(authorize_websocket(ws)))
+
+        ws.accept.assert_awaited_once()
+        ws.close.assert_not_awaited()
+
     def test_token_compare_rejects_wrong_length_without_500(self):
         from web.security import _tokens_match
 

@@ -49,6 +49,37 @@ class ApiTasksTests(ApiTestBase):
 
         self.assertTrue(manager.has_active_tasks())
 
+    def test_submit_batch_persists_parent_task_and_allows_abort(self):
+        import asyncio
+
+        manager = TaskManager(self.tmpdir)
+
+        async def run_scenario():
+            release = asyncio.Event()
+
+            async def fake_run_batch(*_args):
+                await release.wait()
+
+            manager._run_batch = fake_run_batch
+            batch_id = await manager.submit_batch(
+                [{"chapter_id": "001", "goal": "first"}],
+                dry_run=True,
+            )
+            task = await manager.get_task_async(batch_id)
+            abort_result = await manager.abort_task(batch_id)
+            release.set()
+            await asyncio.gather(*manager._running_tasks.values(), return_exceptions=True)
+            return batch_id, task, abort_result
+
+        batch_id, task, abort_result = asyncio.run(run_scenario())
+
+        self.assertIsNotNone(task)
+        self.assertEqual(task["task_id"], batch_id)
+        self.assertEqual(task["chapter_id"], "")
+        self.assertEqual(task["status"], "pending")
+        self.assertTrue(abort_result)
+        self.assertEqual(manager.get_task(batch_id)["status"], "failed")
+
     def test_switch_project_rejects_when_active_tasks_are_running(self):
         original_active = web_server._active_project_id
         original_manager = web_server._task_manager

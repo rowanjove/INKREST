@@ -36,6 +36,11 @@ def resolve_model_prices_usd(model_name: str) -> Tuple[float, float]:
     return _DEFAULT_USD
 
 
+def usd_to_cny(amount_usd: float, *, usd_cny: float = _USD_TO_CNY) -> float:
+    """Convert a USD cost estimate to CNY for persisted cost fields."""
+    return amount_usd * usd_cny
+
+
 def blended_cny_per_1k_tokens(model_name: str, *, usd_cny: float = _USD_TO_CNY) -> float:
     """Single blended ¥/1k tokens for UI rough estimates."""
     in_usd, out_usd = resolve_model_prices_usd(model_name)

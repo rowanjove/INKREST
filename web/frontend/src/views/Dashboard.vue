@@ -93,12 +93,15 @@ onMounted(async () => {
   await loadWorkbench(loadSerialData)
   restartDashboardTimer()
   watch(() => tasksStore.isRunning, restartDashboardTimer)
+  tasksStore.connectElectronEvents()
   tasksStore.startPolling()
+  tasksStore.startRuntimeLogPolling()
 })
 
 onUnmounted(() => {
   stopDashboardPolling()
   tasksStore.stopPolling()
+  tasksStore.stopRuntimeLogPolling()
 })
 </script>
 

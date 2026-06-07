@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import concurrent.futures
+import queue
+import threading
 from typing import Any, Callable, Optional, TypeVar
 
 from novel_agent.pipeline import load_pipeline_settings
@@ -49,13 +50,23 @@ def call_hook_with_timeout(
     default: Optional[T] = None,
 ) -> T:
     """Run a hook callable with a hard timeout (sync hooks only)."""
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(fn)
+    result_queue: "queue.Queue[tuple[str, Any]]" = queue.Queue(maxsize=1)
+
+    def _runner() -> None:
         try:
-            return future.result(timeout=timeout_seconds)
-        except concurrent.futures.TimeoutError as exc:
-            if default is not None:
-                return default
-            raise TimeoutError(
-                f"Pipeline hook exceeded {timeout_seconds}s limit"
-            ) from exc
+            result_queue.put(("ok", fn()))
+        except Exception as exc:
+            result_queue.put(("err", exc))
+
+    thread = threading.Thread(target=_runner, name="novel-agent-hook", daemon=True)
+    thread.start()
+    thread.join(timeout_seconds)
+    if thread.is_alive():
+        if default is not None:
+            return default
+        raise TimeoutError(f"Pipeline hook exceeded {timeout_seconds}s limit")
+
+    status, payload = result_queue.get_nowait()
+    if status == "err":
+        raise payload
+    return payload

@@ -86,6 +86,36 @@ class CostSummaryTests(unittest.TestCase):
         self.assertIn("persisted_error", summary)
         self.assertIn("recent_rounds", summary)
 
+    def test_orchestrator_persists_usd_prices_as_cny(self):
+        from novel_agent.agents.base import StaticLLM
+        from novel_agent.orchestrator import NovelOrchestrator
+        from novel_agent.pipeline import PipelineConfig
+
+        llm = StaticLLM({"default": "ok"})
+        llm.call_log = [
+            {
+                "model": "gpt-4o-mini",
+                "prompt_tokens": 1000,
+                "completion_tokens": 1000,
+            }
+        ]
+        config = PipelineConfig(
+            root_dir=self.tmpdir,
+            llm=llm,
+            llm_registry={"writer": llm},
+            max_workers=1,
+        )
+        orchestrator = NovelOrchestrator(config)
+
+        orchestrator._persist_llm_cost("001")
+
+        persisted, err = query_persisted_cost_summary(
+            self.tmpdir, project_id=self.tmpdir.name
+        )
+        self.assertIsNone(err)
+        # gpt-4o-mini is 0.001 + 0.004 USD per 1k tokens; stored CNY must be * 7.2.
+        self.assertAlmostEqual(persisted["total_cost_cny"], 0.036, places=6)
+
 
 if __name__ == "__main__":
     unittest.main()

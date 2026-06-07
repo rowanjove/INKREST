@@ -424,10 +424,12 @@ class NovelOrchestrator:
             },
         )
         for hook in self.config.plugin_manager.get_hooks():
-            try:
-                hook.on_chapter_complete(ctx, result)
-            except Exception as e:
-                self._on_hook_error("on_chapter_complete", e, chapter_id)
+            self._call_hook(
+                "on_chapter_complete",
+                chapter_id,
+                lambda h=hook: h.on_chapter_complete(ctx, result),
+                default=None,
+            )
 
     def _ensure_project_dirs(self) -> None:
         for relative in [
@@ -481,7 +483,7 @@ class NovelOrchestrator:
 
     def _persist_llm_cost(self, chapter_id: str) -> None:
         try:
-            from novel_agent.pricing import resolve_model_prices_usd
+            from novel_agent.pricing import resolve_model_prices_usd, usd_to_cny
 
             logs = self.config.get_call_log()
             round_tokens = 0
@@ -497,8 +499,8 @@ class NovelOrchestrator:
                 prompt_tokens = log.get("prompt_tokens", 0)
                 completion_tokens = log.get("completion_tokens", 0)
                 in_price, out_price = resolve_model_prices_usd(model_name)
-                input_cost = (prompt_tokens / 1000) * in_price
-                output_cost = (completion_tokens / 1000) * out_price
+                input_cost = usd_to_cny((prompt_tokens / 1000) * in_price)
+                output_cost = usd_to_cny((completion_tokens / 1000) * out_price)
                 
                 import uuid
                 call_id = f"call_{uuid.uuid4().hex[:8]}"
