@@ -56,6 +56,9 @@ const backendStatus = ref('online')
 const backendUnreachable = ref(false)
 let unlistenBackendStatus: (() => void) | null = null
 let healthPollTimer: number | null = null
+let healthFailStreak = 0
+const HEALTH_FAIL_THRESHOLD = 2
+
 const getHealthUrl = () => {
   const origin = window.location.origin
   if (origin.includes('tauri') || origin.startsWith('file:')) {
@@ -65,14 +68,19 @@ const getHealthUrl = () => {
 }
 
 const checkBackendHealth = async () => {
+  if (backendStatus.value === 'restarting') return
   try {
     const res = await fetch(getHealthUrl(), { signal: AbortSignal.timeout(8000) })
     if (!res.ok) throw new Error('health not ok')
+    healthFailStreak = 0
     backendUnreachable.value = false
     if (backendStatus.value === 'offline') backendStatus.value = 'online'
   } catch {
-    backendUnreachable.value = true
-    if (!window.electronAPI) backendStatus.value = 'offline'
+    healthFailStreak += 1
+    if (healthFailStreak >= HEALTH_FAIL_THRESHOLD) {
+      backendUnreachable.value = true
+      if (!window.electronAPI) backendStatus.value = 'offline'
+    }
   }
 }
 
@@ -394,7 +402,7 @@ const loadEngineStatus = async () => {
   <router-view v-if="isPetRoute" />
   <div v-else class="app-shell" v-loading="backendStatus === 'restarting'" element-loading-text="后台服务异常中断，正在自动重启中，请稍候...">
     <el-alert
-      v-if="backendStatus === 'offline' || backendUnreachable"
+      v-if="backendStatus !== 'restarting' && (backendStatus === 'offline' || backendUnreachable)"
       class="backend-offline-alert"
       type="error"
       :closable="false"

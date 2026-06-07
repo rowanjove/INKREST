@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -203,8 +203,29 @@ const getRiskTagType = (chapter: any) => {
   return 'success'
 }
 
+let alertsPollTimer: number | null = null
+
+const refreshAlerts = () => {
+  void alertsStore.fetchAlerts()
+}
+
+watch(
+  () => tasksStore.isRunning,
+  (running, wasRunning) => {
+    if (wasRunning && !running) refreshAlerts()
+  },
+)
+
 onMounted(async () => {
   await Promise.all([loadChapters(), alertsStore.fetchAlerts()])
+  alertsPollTimer = window.setInterval(refreshAlerts, 8000)
+})
+
+onUnmounted(() => {
+  if (alertsPollTimer) {
+    window.clearInterval(alertsPollTimer)
+    alertsPollTimer = null
+  }
 })
 </script>
 

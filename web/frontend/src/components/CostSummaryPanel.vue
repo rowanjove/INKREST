@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { getCostSummary } from '../api'
 
 type CostSummary = {
@@ -11,12 +12,14 @@ type CostSummary = {
     today_tokens: number
     today_cost_cny: number
   }
+  persisted_error?: string | null
   recent_rounds?: Array<{ round?: number; tokens_used?: number; chapters_completed?: number }>
   disclaimer?: string
 }
 
 const loading = ref(false)
 const summary = ref<CostSummary | null>(null)
+const loadError = ref('')
 
 const formatCny = (value?: number) => {
   const n = Number(value || 0)
@@ -27,11 +30,17 @@ const formatCny = (value?: number) => {
 
 const load = async () => {
   loading.value = true
+  loadError.value = ''
   try {
     const { data } = await getCostSummary()
     summary.value = data
-  } catch {
+    if (data?.persisted_error) {
+      loadError.value = `费用落库读取异常：${data.persisted_error}`
+    }
+  } catch (error: any) {
     summary.value = null
+    loadError.value = error?.message || '费用摘要加载失败'
+    ElMessage.warning(loadError.value)
   } finally {
     loading.value = false
   }
@@ -49,7 +58,15 @@ onMounted(load)
       </div>
       <el-button size="small" text @click="load">刷新</el-button>
     </div>
-    <div v-if="summary" class="cost-grid">
+    <el-alert
+      v-if="loadError"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="loadError"
+      class="cost-error-alert"
+    />
+    <div v-if="summary && !loadError" class="cost-grid">
       <div class="cost-stat">
         <span class="label">今日 tokens</span>
         <strong>{{ summary.persisted?.today_tokens ?? 0 }}</strong>
@@ -72,7 +89,7 @@ onMounted(load)
         <template v-if="row.chapters_completed"> · {{ row.chapters_completed }} 章</template>
       </li>
     </ul>
-    <p v-if="summary?.disclaimer" class="cost-disclaimer">{{ summary.disclaimer }}</p>
+    <p v-if="summary?.disclaimer && !loadError" class="cost-disclaimer">{{ summary.disclaimer }}</p>
   </section>
 </template>
 
@@ -100,6 +117,10 @@ onMounted(load)
   margin: 4px 0 0;
   font-size: 12px;
   color: var(--color-text-subtle);
+}
+
+.cost-error-alert {
+  margin-bottom: 10px;
 }
 
 .cost-grid {

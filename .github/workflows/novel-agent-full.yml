@@ -1,6 +1,8 @@
 name: Novel Agent Full Tests
 
 on:
+  pull_request:
+    branches: [master, main]
   schedule:
     - cron: "0 18 * * *"
   workflow_dispatch:

@@ -15,6 +15,7 @@ const {
   currentProject,
   maxAvailableChapters,
   isCircuitPaused,
+  isExternalBlockActive,
   dialogTitle,
   tokenEstimate,
   submit,
@@ -64,7 +65,8 @@ const showVectorAlert = computed(() =>
         title="有待外审章节"
         class="external-alert"
       >
-        {{ ctx.externalPendingCount }} 章待外审通过后再续跑。可在设置 → 流水线高级关闭「外审未过禁止续跑」，或到章节维护标记通过。
+        <p>{{ ctx.externalPendingCount }} 章待外审通过后再续跑。可在设置 → 流水线高级关闭「外审未过禁止续跑」，或到章节维护标记通过。</p>
+        <el-button size="small" type="warning" plain @click="goMonitorAlerts">去章节维护</el-button>
       </el-alert>
       <el-alert
         v-else-if="ctx.externalPendingCount > 0"
@@ -132,7 +134,12 @@ const showVectorAlert = computed(() =>
       <p v-if="busy && busyPhaseLabel" class="busy-phase-hint">{{ busyPhaseLabel }}</p>
       <el-button v-if="busy" type="danger" plain @click="cancelBatchRun">取消连写</el-button>
       <el-button v-else @click="dialogVisible = false">关闭</el-button>
-      <el-button type="primary" :loading="running" :disabled="running" @click="submit(false)">
+      <el-button
+        type="primary"
+        :loading="running"
+        :disabled="running || isExternalBlockActive"
+        @click="submit(false)"
+      >
         {{ running ? '同步卷队列 / 连写启动中…' : '确认连写' }}
       </el-button>
     </template>

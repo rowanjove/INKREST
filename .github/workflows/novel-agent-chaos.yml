@@ -25,6 +25,6 @@ jobs:
         with:
           name: chaos-long-run-log
           path: |
-            scratch/
-            **/chaos*.json
+            logs/
+            logs/chaos_report.json
           if-no-files-found: ignore

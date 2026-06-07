@@ -161,6 +161,32 @@ def test_app_shows_backend_offline_alert() -> None:
     source = APP.read_text(encoding="utf-8")
     assert "backend-offline-alert" in source
     assert "栖墨后台未响应" in source
+    assert "HEALTH_FAIL_THRESHOLD" in source
+
+
+def test_batch_dialog_blocks_submit_when_external_review_active() -> None:
+    dialog = (
+        ROOT / "web" / "frontend" / "src" / "components" / "NovelBatchRunDialog.vue"
+    ).read_text(encoding="utf-8")
+    composable = (
+        ROOT / "web" / "frontend" / "src" / "composables" / "useNovelBatchRun.ts"
+    ).read_text(encoding="utf-8")
+    assert "isExternalBlockActive" in composable
+    assert "isExternalBlockActive" in dialog
+
+
+def test_pending_panel_scopes_select_all_to_filter() -> None:
+    source = (
+        ROOT / "web" / "frontend" / "src" / "components" / "PendingChaptersPanel.vue"
+    ).read_text(encoding="utf-8")
+    assert "全选当前筛选" in source
+    assert "filteredAlerts.value" in source
+
+
+def test_cost_summary_panel_handles_load_error() -> None:
+    source = COST_PANEL.read_text(encoding="utf-8")
+    assert "persisted_error" in source
+    assert "loadError" in source
 
 
 def test_chapter_pages_hide_rewrite_actions_without_final_text() -> None:

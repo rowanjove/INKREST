@@ -80,7 +80,11 @@ const filteredAlerts = computed(() => {
 })
 
 const selectFilter = (cardId: string) => {
-  activeFilterId.value = activeFilterId.value === cardId ? 'all' : cardId
+  if (cardId === 'all') {
+    activeFilterId.value = 'all'
+  } else {
+    activeFilterId.value = cardId
+  }
   expanded.value = true
 }
 
@@ -94,17 +98,21 @@ const stepViews = computed(() =>
   })),
 )
 
-const isAllSelected = computed(
-  () =>
-    pipelineAlerts.value.length > 0 &&
-    selectedIds.value.length === pipelineAlerts.value.length,
-)
+const isAllSelected = computed(() => {
+  const visible = filteredAlerts.value
+  return (
+    visible.length > 0 &&
+    visible.every((item) => selectedIds.value.includes(item.chapter_id))
+  )
+})
 
-const isIndeterminate = computed(
-  () =>
-    selectedIds.value.length > 0 &&
-    selectedIds.value.length < pipelineAlerts.value.length,
-)
+const isIndeterminate = computed(() => {
+  const visible = filteredAlerts.value
+  const selectedVisible = visible.filter((item) =>
+    selectedIds.value.includes(item.chapter_id),
+  )
+  return selectedVisible.length > 0 && selectedVisible.length < visible.length
+})
 
 watch(pipelineAlerts, (newAlerts) => {
   const currentIds = newAlerts.map((item) => item.chapter_id)
@@ -116,7 +124,13 @@ const toggleExpanded = () => {
 }
 
 const toggleSelectAll = (val: boolean) => {
-  selectedIds.value = val ? pipelineAlerts.value.map((item) => item.chapter_id) : []
+  const visibleIds = filteredAlerts.value.map((item) => item.chapter_id)
+  if (val) {
+    selectedIds.value = [...new Set([...selectedIds.value, ...visibleIds])]
+    return
+  }
+  const visibleSet = new Set(visibleIds)
+  selectedIds.value = selectedIds.value.filter((id) => !visibleSet.has(id))
 }
 
 const handleCheckboxChange = (chapterId: string, checked: boolean) => {
@@ -583,7 +597,7 @@ const resumeAudit = async (chapterId: string) => {
           :indeterminate="isIndeterminate"
           @change="toggleSelectAll"
         >
-          全选
+          {{ activeFilterId === 'all' ? '全选' : '全选当前筛选' }}
         </el-checkbox>
       </div>
     </div>

@@ -131,6 +131,11 @@ export function useNovelBatchRun() {
       (ctx.value.pauseReason || 'circuit_breaker') === 'circuit_breaker',
   )
 
+  const isExternalBlockActive = computed(
+    () =>
+      ctx.value.blockContinueUntilExternal && ctx.value.externalPendingCount > 0,
+  )
+
   const dialogTitle = computed(() =>
     ctx.value.batchPaused ? '继续写书' : '连写启动',
   )
@@ -327,6 +332,14 @@ export function useNovelBatchRun() {
       return
     }
 
+    if (isExternalBlockActive.value) {
+      ElMessage.warning(
+        `尚有 ${ctx.value.externalPendingCount} 章待外审通过。请先到章节维护标记「外审已通过」，或在设置关闭「外审未过禁止续跑」。`,
+      )
+      goMonitorAlerts()
+      return
+    }
+
     if (isCircuitPaused.value && !forceResume) {
       try {
         await ElMessageBox.confirm(
@@ -443,6 +456,7 @@ export function useNovelBatchRun() {
     readinessItems,
     canRun,
     isCircuitPaused,
+    isExternalBlockActive,
     dialogTitle,
     tokenEstimate,
     refreshContext,
