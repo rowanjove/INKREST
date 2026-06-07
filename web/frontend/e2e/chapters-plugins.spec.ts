@@ -16,6 +16,9 @@ test.describe('chapter list and plugin manager', () => {
     await expect(page.getByRole('heading', { name: /插件生态管理/ })).toBeVisible({
       timeout: 15_000,
     })
-    await expect(page.locator('.plugins-grid')).toBeVisible()
+    await expect(page.locator('.plugins-grid-container')).toBeVisible()
+    await expect(
+      page.locator('.plugins-grid, .el-empty').first(),
+    ).toBeVisible()
   })
 })

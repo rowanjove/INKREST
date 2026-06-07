@@ -54,6 +54,13 @@ PET_WINDOW_INTERACTION = (
     ROOT / "web" / "frontend" / "src" / "composables" / "usePetWindowInteraction.ts"
 )
 CHAPTER_MAINTENANCE = ROOT / "web" / "frontend" / "src" / "views" / "ChapterMaintenance.vue"
+CHAPTER_MAINTENANCE_COMPOSABLE = (
+    ROOT / "web" / "frontend" / "src" / "composables" / "useChapterMaintenance.ts"
+)
+CALL_LOG_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "CallLogView.vue"
+CALL_LOG_PAGE_HEAD = (
+    ROOT / "web" / "frontend" / "src" / "components" / "calllog" / "CallLogPageHead.vue"
+)
 OUTLINE_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "OutlineView.vue"
 CONFIG_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "ConfigView.vue"
 LIBRARY_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "LibraryView.vue"
@@ -400,6 +407,7 @@ def test_settings_page_applies_shared_fold_card_alignment() -> None:
 
 def test_chapter_maintenance_exposes_repair_queue_grouping() -> None:
     maintenance = CHAPTER_MAINTENANCE.read_text(encoding="utf-8")
+    composable = CHAPTER_MAINTENANCE_COMPOSABLE.read_text(encoding="utf-8")
     pending = (
         ROOT / "web" / "frontend" / "src" / "components" / "PendingChaptersPanel.vue"
     ).read_text(encoding="utf-8")
@@ -407,6 +415,9 @@ def test_chapter_maintenance_exposes_repair_queue_grouping() -> None:
         encoding="utf-8"
     )
     shanshan = SHANSHAN_COPY.read_text(encoding="utf-8")
+    assert "useChapterMaintenance" in maintenance
+    assert "route.query.expand === 'alerts'" in composable
+    assert "expandPendingPanel" in composable
     assert "PendingChaptersPanel" in maintenance
     assert "修章队列" in pending
     assert "展开修章队列" in semi
@@ -427,6 +438,16 @@ def test_chapters_layout_exposes_list_and_maintenance_subnav() -> None:
     assert ":link-focus=\"true\"" in maintenance_source
     assert "SemiAutoRepairHint" in maintenance_source
     assert "PendingChaptersPanel" in maintenance_source
+
+
+def test_call_log_page_wires_head_and_viewer() -> None:
+    shell_source = CALL_LOG_VIEW.read_text(encoding="utf-8")
+    head_source = CALL_LOG_PAGE_HEAD.read_text(encoding="utf-8")
+
+    assert "CallLogPageHead" in shell_source
+    assert "LLMLogViewer" in shell_source
+    assert "调用日志" in head_source
+    assert "分页筛选" in head_source
 
 
 def test_monitor_page_is_log_center_without_tasks_tab() -> None:

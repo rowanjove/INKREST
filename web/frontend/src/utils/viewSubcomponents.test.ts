@@ -286,4 +286,29 @@ describe('refactored view subcomponents', () => {
     expect(subnav).toContain('to="/chapters/list"')
     expect(subnav).toContain('chapter-subnav__badge')
   })
+
+  it('ChapterMaintenance shell wires repair queue and expand composable', () => {
+    const source = read('views/ChapterMaintenance.vue')
+    expect(source).toContain('useChapterMaintenance')
+    expect(source).toContain('SemiAutoRepairHint')
+    expect(source).toContain('PendingChaptersPanel')
+    expect(source).toContain(':link-focus="true"')
+    expect(source).toContain('BatchRunStatusBanner')
+  })
+
+  it('useChapterMaintenance expands pending panel on alerts query', () => {
+    const source = read('composables/useChapterMaintenance.ts')
+    expect(source).toContain("route.query.expand === 'alerts'")
+    expect(source).toContain('expandPendingPanel')
+    expect(source).toContain('route.query.expand')
+  })
+
+  it('CallLogView shell wires page head and log viewer', () => {
+    const source = read('views/CallLogView.vue')
+    expect(source).toContain('CallLogPageHead')
+    expect(source).toContain('LLMLogViewer')
+    const head = read('components/calllog/CallLogPageHead.vue')
+    expect(head).toContain('调用日志')
+    expect(head).toContain('分页筛选')
+  })
 })

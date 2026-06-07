@@ -7,7 +7,9 @@ test.describe('route smoke coverage', () => {
   test('config page renders settings nav', async ({ page, request }) => {
     await injectLocalAccessToken(page, request)
     await page.goto('/config')
-    await expect(page.getByRole('heading', { name: '设置' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole('heading', { level: 1, name: '设置' })).toBeVisible({
+      timeout: 15_000,
+    })
     await expect(page.locator('.config-nav .nav-chip').first()).toBeVisible()
   })
 
@@ -33,5 +35,12 @@ test.describe('route smoke coverage', () => {
     await expect(
       page.locator('.empty-library, .project-grid').first(),
     ).toBeVisible()
+  })
+
+  test('monitor llm logs tab renders viewer shell', async ({ page, request }) => {
+    await openWithActiveProject(page, request, '/monitor?tab=logs')
+    await expect(page.getByRole('heading', { name: '日志中心' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole('tab', { name: '费用与接口' })).toBeVisible()
+    await expect(page.locator('.llm-log-card').first()).toBeVisible({ timeout: 15_000 })
   })
 })

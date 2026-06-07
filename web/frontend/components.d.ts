@@ -22,6 +22,7 @@ declare module 'vue' {
     AssetSidebar: typeof import('./src/components/AssetSidebar.vue')['default']
     AutopilotRoundsPanel: typeof import('./src/components/AutopilotRoundsPanel.vue')['default']
     BatchRunStatusBanner: typeof import('./src/components/BatchRunStatusBanner.vue')['default']
+    CallLogPageHead: typeof import('./src/components/calllog/CallLogPageHead.vue')['default']
     ChapterArtifactStatus: typeof import('./src/components/ChapterArtifactStatus.vue')['default']
     ChapterAudit: typeof import('./src/components/ChapterAudit.vue')['default']
     ChapterContent: typeof import('./src/components/ChapterContent.vue')['default']

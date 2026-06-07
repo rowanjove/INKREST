@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [1.0.0] - 2026-06-07
+
 ### Refactor
 
 - Dashboard：composable 拆分（workbench / serial / batch / polling）+ 5 个子组件（Workbench / Metrics / Serialization / 两个 Dialog）
@@ -32,15 +34,18 @@
 - MonitorView：拆出 `useMonitorView` + `MonitorTabsPane`（三 Tab 日志布局）
 - PetView：拆出 `usePetWindowInteraction`（拖拽、贴边、气泡切换）
 - ChaptersLayout：抽出 `ChapterSubnav` 子组件
+- ChapterMaintenance：拆出 `useChapterMaintenance`（`expand=alerts` 自动展开修章队列）
+- CallLogView：抽出 `CallLogPageHead` 页头子组件
 
 ### Tests
 
 - Vitest：`libraryFormatters` + `petMarkdown` + `viewSubcomponents` 子组件结构契约
-- 契约测试扩展：Writing / State / Outline / Library / AssetEditor / PetBubble / ChapterList / PluginManager / TropeWorkshop / Reader / ChapterDetail / CreateWizard 子组件路径
+- 契约测试扩展：Writing / State / Outline / Library / AssetEditor / PetBubble / ChapterList / PluginManager / TropeWorkshop / Reader / ChapterDetail / CreateWizard / ChapterMaintenance / CallLogView 子组件路径
 - E2E：`workspace-state.spec.ts`（写作页侧栏与工具栏、状态库双 Tab）
 - E2E：`assets-pet.spec.ts`（项目资产侧栏/面板、山山气泡状态与对话 Tab）
 - E2E：`chapters-plugins.spec.ts`（章节列表门禁重跑、插件管理网格）
-- E2E：`smoke-routes.spec.ts`（设置 / 日志中心 / 套路工坊 / 书库冒烟）
+- E2E：`smoke-routes.spec.ts`（设置 / 日志中心 / 套路工坊 / 书库 / LLM 日志 Tab 冒烟）
+- Bundle budget：`max_total_js_bytes` 调至 1780000（Phase 0–4 拆分后体积基线）
 
 ### Performance (Phase 0–4)
 
