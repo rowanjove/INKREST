@@ -1,646 +1,87 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
 import { Calendar, Compass, Connection, Location, Refresh, Share } from '@element-plus/icons-vue'
-import { useStateStore } from '../stores/state'
-import { useChapterStore } from '../stores/chapter'
-import { 
-  getState, searchEvents, collectDebt,
-  getCharacterRelations, saveCharacterRelation, deleteCharacterRelation 
-} from '../api'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useStateViewSettings } from '../composables/useStateViewSettings'
+import { useStateViewChronicle } from '../composables/useStateViewChronicle'
+import { NODE_CIRCLE_R, RELATION_TYPE_COLORS } from '../composables/useStateRelationGraph'
+import { emotionDotColor } from '../utils/stateViewFilters'
 
-const route = useRoute()
 const router = useRouter()
-const chapterStore = useChapterStore()
 
-// --- State View 原始核心数据 ---
-const state = ref<any>(null)
-const events = ref<any[]>([])
-const eventQuery = ref('')
-const loadError = ref('')
+const {
+  state,
+  eventQuery,
+  loadError,
+  activeTab,
+  charPage,
+  forePage,
+  hookPage,
+  objPage,
+  eventPage,
+  pageSize,
+  chapterRange,
+  maxChapter,
+  sliderMarks,
+  loadState,
+  handleCollect,
+  handleSearch,
+  filteredCharacters,
+  filteredForeshadows,
+  filteredHooks,
+  filteredObjects,
+  filteredEvents,
+  paginatedCharacters,
+  paginatedForeshadows,
+  paginatedHooks,
+  paginatedObjects,
+  paginatedEvents,
+} = useStateViewSettings()
 
-// Tabs active pane names
-const activeOuterTab = ref('settings')
-const activeTab = ref('characters')
-const activeTimelineTab = ref('timeline')
-const chronicleRefreshing = ref(false)
-
-// Pagination states for settings
-const charPage = ref(1)
-const forePage = ref(1)
-const hookPage = ref(1)
-const objPage = ref(1)
-const eventPage = ref(1)
-const pageSize = 12
-
-// Slider range filter state
-const chapterRange = ref([1, 1])
-const sliderInitialized = ref(false)
-
-const loadState = async (sync = false) => {
-  try {
-    loadError.value = ''
-    const { data } = await getState({ sync })
-    state.value = data
-    events.value = data.events || []
-    
-    // Automatically set range constraints on first load
-    if (!sliderInitialized.value && maxChapter.value > 0) {
-      chapterRange.value = [1, maxChapter.value]
-      sliderInitialized.value = true
-    }
-  } catch (error: any) {
-    loadError.value = error.message || '状态库加载失败'
-  }
-}
-
-const handleCollect = async (debtType: string, debtId: string) => {
-  try {
-    await collectDebt({ debt_type: debtType, debt_id: debtId, priority: 3 })
-    ElMessage.success('催收成功！该伏笔已加入下一章强行注入计划中。')
-    await loadState()
-  } catch (error: any) {
-    ElMessage.error(error.message || '催收失败')
-  }
-}
-
-const handleSearch = async () => {
-  try {
-    loadError.value = ''
-    const { data } = await searchEvents(eventQuery.value)
-    events.value = data
-  } catch (error: any) {
-    loadError.value = error.message || '事件搜索失败'
-  }
-}
-
-// Compute the maximum chapter ID present in the dataset
-const maxChapter = computed(() => {
-  let maxVal = 1
-  const check = (id: any) => {
-    if (!id) return
-    const num = parseInt(id)
-    if (!isNaN(num) && num > maxVal) {
-      maxVal = num
-    }
-  }
-  if (state.value) {
-    ;(state.value.foreshadows || []).forEach((x: any) => check(x.chapter_id))
-    ;(state.value.hooks || []).forEach((x: any) => check(x.chapter_id))
-    ;(state.value.events || []).forEach((x: any) => check(x.chapter_id))
-  }
-  return maxVal
-})
-
-// Marks for el-slider
-const sliderMarks = computed(() => {
-  const marks: any = {
-    1: '第 1 章',
-  }
-  if (maxChapter.value > 1) {
-    marks[maxChapter.value] = `第 ${maxChapter.value} 章`
-  }
-  return marks
-})
-
-// Helper filter function
-const matchesChapterRange = (item: any) => {
-  if (!item || !item.chapter_id) return true
-  const num = parseInt(item.chapter_id)
-  if (isNaN(num)) return true
-  return num >= chapterRange.value[0] && num <= chapterRange.value[1]
-}
-
-// Computed Filtered Lists
-const filteredCharacters = computed(() => {
-  if (!state.value) return []
-  return Object.entries(state.value.characters).map(([id, d]: any) => ({ id, ...d }))
-})
-
-const filteredForeshadows = computed(() => {
-  if (!state.value) return []
-  return (state.value.foreshadows || []).filter(matchesChapterRange)
-})
-
-const filteredHooks = computed(() => {
-  if (!state.value) return []
-  return (state.value.hooks || []).filter(matchesChapterRange)
-})
-
-const filteredObjects = computed(() => {
-  if (!state.value) return []
-  return state.value.objects || []
-})
-
-const filteredEvents = computed(() => {
-  return events.value.filter(matchesChapterRange)
-})
-
-// Computed Paginated Lists
-const paginatedCharacters = computed(() => {
-  const list = filteredCharacters.value
-  const maxPage = Math.max(1, Math.ceil(list.length / pageSize))
-  if (charPage.value > maxPage) charPage.value = 1
-  return list.slice((charPage.value - 1) * pageSize, charPage.value * pageSize)
-})
-
-const paginatedForeshadows = computed(() => {
-  const list = filteredForeshadows.value
-  const maxPage = Math.max(1, Math.ceil(list.length / pageSize))
-  if (forePage.value > maxPage) forePage.value = 1
-  return list.slice((forePage.value - 1) * pageSize, forePage.value * pageSize)
-})
-
-const paginatedHooks = computed(() => {
-  const list = filteredHooks.value
-  const maxPage = Math.max(1, Math.ceil(list.length / pageSize))
-  if (hookPage.value > maxPage) hookPage.value = 1
-  return list.slice((hookPage.value - 1) * pageSize, hookPage.value * pageSize)
-})
-
-const paginatedObjects = computed(() => {
-  const list = filteredObjects.value
-  const maxPage = Math.max(1, Math.ceil(list.length / pageSize))
-  if (objPage.value > maxPage) objPage.value = 1
-  return list.slice((objPage.value - 1) * pageSize, objPage.value * pageSize)
-})
-
-const paginatedEvents = computed(() => {
-  const list = filteredEvents.value
-  const maxPage = Math.max(1, Math.ceil(list.length / pageSize))
-  if (eventPage.value > maxPage) eventPage.value = 1
-  return list.slice((eventPage.value - 1) * pageSize, eventPage.value * pageSize)
-})
-
-// --- 时空编年史 & 图谱数据 ---
-const stateStore = useStateStore()
-const { timeline, continuity } = storeToRefs(stateStore)
-const timelinePageSize = ref(10)
-const timelineEventPage = ref(1)
-const timelineFsPage = ref(1)
-const timelineHookPage = ref(1)
-const timelineNodePage = ref(1)
-
-const relations = ref<any[]>([])
-
-const refreshRelations = async () => {
-  try {
-    const { data } = await getCharacterRelations()
-    relations.value = data
-  } catch (error: any) {
-    console.error('加载人物关系失败:', error)
-  }
-}
-
-/** 编年史统一数据源：优先使用 loadState 结果，避免与 pinia 静默失败不同步 */
-const chronicleSource = computed(() => {
-  if (state.value) return state.value
-  return {
-    characters: continuity.value?.characters || {},
-    events: continuity.value?.events || [],
-    foreshadows: continuity.value?.foreshadows || [],
-    hooks: continuity.value?.hooks || [],
-    objects: continuity.value?.objects || [],
-    threads: continuity.value?.threads || [],
-  }
-})
-
-const timelineData = computed(() => timeline.value || { nodes: [], edges: [], foreshadows: [], hooks: [] })
-
-const mergeById = (items: any[]) => {
-  const map = new Map<string, any>()
-  for (const item of items) {
-    if (!item?.id) continue
-    map.set(String(item.id), { ...map.get(String(item.id)), ...item })
-  }
-  return Array.from(map.values())
-}
-
-const timelineNodes = computed(() => {
-  const nodes = (timelineData.value.nodes || []).filter(matchesChapterRange)
-  return nodes.sort((a: any, b: any) => (parseInt(a.chapter_id) || 0) - (parseInt(b.chapter_id) || 0))
-})
-
-const timelineForeshadows = computed(() => {
-  const fromState = (chronicleSource.value?.foreshadows || []).filter(matchesChapterRange)
-  const fromTimeline = (timelineData.value.foreshadows || []).filter(matchesChapterRange)
-  return mergeById([...fromState, ...fromTimeline]).sort(
-    (a: any, b: any) => (parseInt(a.chapter_id) || 0) - (parseInt(b.chapter_id) || 0),
-  )
-})
-
-const timelineHooks = computed(() => {
-  const fromState = (chronicleSource.value?.hooks || []).filter(matchesChapterRange)
-  const fromTimeline = (timelineData.value.hooks || []).filter(matchesChapterRange)
-  return mergeById([...fromState, ...fromTimeline]).sort(
-    (a: any, b: any) => (parseInt(a.chapter_id) || 0) - (parseInt(b.chapter_id) || 0),
-  )
-})
-
-const timelineEvents = computed(() => {
-  const events = (chronicleSource.value?.events || []).filter(matchesChapterRange)
-  return events.sort((a: any, b: any) => (parseInt(a.chapter_id) || 0) - (parseInt(b.chapter_id) || 0))
-})
-
-const chapterGoalPreviews = computed(() =>
-  (chapterStore.chapters || [])
-    .filter((ch) => ch.goal?.trim())
-    .map((ch) => ({
-      id: `preview_${ch.chapter_id}`,
-      chapter_id: ch.chapter_id,
-      summary: ch.goal,
-      characters: [] as string[],
-      threads: [] as string[],
-      objects: [] as string[],
-      _preview: true,
-    }))
-    .sort((a, b) => (parseInt(a.chapter_id) || 0) - (parseInt(b.chapter_id) || 0)),
-)
-
-const showChapterGoalPreview = computed(
-  () => timelineEvents.value.length === 0 && chapterGoalPreviews.value.length > 0,
-)
-
-const chronicleStats = computed(() => ({
-  events: timelineEvents.value.length,
-  foreshadows: timelineForeshadows.value.length,
-  hooks: timelineHooks.value.length,
-  nodes: timelineNodes.value.length,
-  characters: Object.keys(chronicleSource.value?.characters || {}).length,
-  relations: relations.value.length,
-}))
-
-const refreshChronicle = async (quiet = false) => {
-  chronicleRefreshing.value = true
-  try {
-    await Promise.all([
-      loadState(true),
-      stateStore.refreshAll(),
-      refreshRelations(),
-      chapterStore.fetchChapters(),
-    ])
-    if (!quiet) ElMessage.success('状态库已刷新')
-  } catch (error: any) {
-    ElMessage.error(error.message || '状态库刷新失败')
-  } finally {
-    chronicleRefreshing.value = false
-  }
-}
-
-const emotionDotColor = (emotion?: string) => {
-  const e = emotion || ''
-  return e.includes('怒') || e.includes('恨') ? 'var(--color-danger)' : 'var(--color-success)'
-}
+const {
+  activeOuterTab,
+  activeTimelineTab,
+  chronicleRefreshing,
+  timelinePageSize,
+  timelineEventPage,
+  timelineFsPage,
+  timelineHookPage,
+  timelineNodePage,
+  timelineEvents,
+  timelineForeshadows,
+  timelineHooks,
+  timelineNodes,
+  chapterGoalPreviews,
+  showChapterGoalPreview,
+  chronicleStats,
+  refreshChronicle,
+  paginatedTimelineEvents,
+  paginatedTimelineForeshadows,
+  paginatedTimelineHooks,
+  paginatedTimelineNodes,
+  characters,
+  graphViewport,
+  graphNodes,
+  graphEdges,
+  graphHasRenderableNodes,
+  hoveredEdge,
+  edgeTooltipStyle,
+  showEdgeTooltip,
+  hideEdgeTooltip,
+  truncateGraphName,
+  dialogVisible,
+  dialogMode,
+  relationForm,
+  openAddRelation,
+  openEditRelation,
+  submitRelation,
+  deleteRelation,
+} = useStateViewChronicle({ state, chapterRange, loadState })
 
 const goChapters = () => router.push('/chapters')
 const goMonitor = () => router.push('/monitor')
 const goSettingsTab = () => {
   activeOuterTab.value = 'settings'
 }
-
-// 分页切片计算
-const paginatedTimelineEvents = computed(() => {
-  const start = (timelineEventPage.value - 1) * timelinePageSize.value
-  return timelineEvents.value.slice(start, start + timelinePageSize.value)
-})
-
-const paginatedTimelineForeshadows = computed(() => {
-  const start = (timelineFsPage.value - 1) * timelinePageSize.value
-  return timelineForeshadows.value.slice(start, start + timelinePageSize.value)
-})
-
-const paginatedTimelineHooks = computed(() => {
-  const start = (timelineHookPage.value - 1) * timelinePageSize.value
-  return timelineHooks.value.slice(start, start + timelinePageSize.value)
-})
-
-const paginatedTimelineNodes = computed(() => {
-  const start = (timelineNodePage.value - 1) * timelinePageSize.value
-  return timelineNodes.value.slice(start, start + timelinePageSize.value)
-})
-
-// --- 人物关系图谱：自动环形布局（无拖拽）---
-const GRAPH_MIN_WIDTH = 880
-const GRAPH_MIN_HEIGHT = 520
-/** 圆点半径；连线和布局按此留白 */
-const NODE_CIRCLE_R = 22
-const NODE_EDGE_PAD = NODE_CIRCLE_R + 8
-/** 相邻节点圆心最小弧长间距 */
-const MIN_NODE_ARC_GAP = 96
-
-type RelationPolarity = 'forward' | 'neutral' | 'reverse'
-
-type GraphNode = {
-  id: string
-  name: string
-  location: string
-  emotion: string
-  x: number
-  y: number
-}
-
-type GraphEdge = {
-  raw: any
-  id: number | string
-  sourceId: string
-  targetId: string
-  relation_type: string
-  intensity: number
-  description: string
-  since_chapter: number
-  polarity: RelationPolarity
-  typeColor: string
-  polarityColor: string
-  x1: number
-  y1: number
-  x2: number
-  y2: number
-  midX: number
-  midY: number
-  label: string
-}
-
-const characters = computed(() => {
-  const chars = chronicleSource.value?.characters
-  if (!chars) return []
-  return Object.entries(chars).map(([id, d]: any) => ({
-    id,
-    name: d.name || id,
-    location: d.location || '',
-    emotion: d.emotion || '',
-  }))
-})
-
-const RELATION_TYPE_COLORS: Record<string, string> = {
-  结盟: '#2563eb',
-  合作: '#0891b2',
-  师徒: '#c66f4f',
-  同门: '#0d9488',
-  亲属: '#7c3aed',
-  恋人: '#db2777',
-  暗恋: '#ec4899',
-  敌对: '#dc2626',
-  反目: '#b91c1c',
-  竞争: '#ea580c',
-}
-
-const polarityFromIntensity = (intensity: number): RelationPolarity => {
-  if (intensity > 0.15) return 'forward'
-  if (intensity < -0.15) return 'reverse'
-  return 'neutral'
-}
-
-const polarityColor = (polarity: RelationPolarity) => {
-  if (polarity === 'forward') return '#16a34a'
-  if (polarity === 'reverse') return '#dc2626'
-  return '#94a3b8'
-}
-
-const colorForRelationType = (type: string) => {
-  const key = (type || '').trim()
-  if (key && RELATION_TYPE_COLORS[key]) return RELATION_TYPE_COLORS[key]
-  let hash = 0
-  for (let i = 0; i < key.length; i++) hash = key.charCodeAt(i) + ((hash << 5) - hash)
-  const hue = Math.abs(hash) % 360
-  return `hsl(${hue}, 52%, 42%)`
-}
-
-const resolveCharacterId = (key: string, charList: { id: string; name: string }[]) => {
-  if (!key) return null
-  if (charList.some((c) => c.id === key)) return key
-  const byName = charList.find((c) => c.name === key)
-  return byName?.id ?? key
-}
-
-const truncateGraphName = (name: string, maxLen = 4) => {
-  const s = (name || '').trim()
-  if (s.length <= maxLen) return s
-  return `${s.slice(0, maxLen)}…`
-}
-
-const layoutRadiusForCount = (n: number, maxR: number) => {
-  if (n <= 1) return 0
-  const byGap = MIN_NODE_ARC_GAP / (2 * Math.sin(Math.PI / n))
-  return Math.min(maxR, Math.max(118, byGap))
-}
-
-const edgeLinePoints = (sx: number, sy: number, tx: number, ty: number, pad = NODE_EDGE_PAD) => {
-  const dx = tx - sx
-  const dy = ty - sy
-  const dist = Math.sqrt(dx * dx + dy * dy) || 1
-  const ux = dx / dist
-  const uy = dy / dist
-  return {
-    x1: sx + ux * pad,
-    y1: sy + uy * pad,
-    x2: tx - ux * pad,
-    y2: ty - uy * pad,
-    midX: (sx + tx) / 2,
-    midY: (sy + ty) / 2,
-  }
-}
-
-const graphLayout = computed(() => {
-  const charList = characters.value
-  const rels = relations.value
-  const nodeIds = new Set<string>()
-
-  for (const c of charList) nodeIds.add(c.id)
-  for (const r of rels) {
-    if (r.source_char) nodeIds.add(resolveCharacterId(r.source_char, charList) || r.source_char)
-    if (r.target_char) nodeIds.add(resolveCharacterId(r.target_char, charList) || r.target_char)
-  }
-
-  const nodes: GraphNode[] = Array.from(nodeIds).map((id) => {
-    const fromChar = charList.find((c) => c.id === id || c.name === id)
-    return {
-      id: fromChar?.id ?? id,
-      name: fromChar?.name ?? id,
-      location: fromChar?.location ?? '',
-      emotion: fromChar?.emotion ?? '',
-      x: 0,
-      y: 0,
-    }
-  })
-
-  const n = nodes.length
-  const footprint = NODE_CIRCLE_R + 10
-  const maxR = Math.min(GRAPH_MIN_WIDTH, GRAPH_MIN_HEIGHT) / 2 - footprint - 28
-  const radius = layoutRadiusForCount(n, maxR)
-  const canvasPad = 52
-  const width = Math.max(GRAPH_MIN_WIDTH, 2 * (radius + footprint) + canvasPad * 2)
-  const height = Math.max(GRAPH_MIN_HEIGHT, 2 * (radius + footprint) + canvasPad * 2)
-  const cx = width / 2
-  const cy = height / 2
-  nodes.forEach((node, i) => {
-    const angle = (2 * Math.PI * i) / Math.max(1, n) - Math.PI / 2
-    node.x = cx + radius * Math.cos(angle)
-    node.y = cy + radius * Math.sin(angle)
-  })
-
-  const nodeMap = new Map(nodes.map((nd) => [nd.id, nd]))
-  const edges: GraphEdge[] = []
-
-  for (const r of rels) {
-    const sourceId = resolveCharacterId(r.source_char, charList)
-    const targetId = resolveCharacterId(r.target_char, charList)
-    if (!sourceId || !targetId || sourceId === targetId) continue
-    const source = nodeMap.get(sourceId)
-    const target = nodeMap.get(targetId)
-    if (!source || !target) continue
-
-    const intensity = Number(r.intensity ?? 0)
-    const polarity = polarityFromIntensity(intensity)
-    const pts = edgeLinePoints(source.x, source.y, target.x, target.y)
-    const relationType = r.relation_type || '未命名'
-    const polarityLabel =
-      polarity === 'forward' ? '正向' : polarity === 'reverse' ? '反向' : '中立'
-
-    edges.push({
-      raw: r,
-      id: r.id ?? `${sourceId}-${targetId}-${relationType}`,
-      sourceId,
-      targetId,
-      relation_type: relationType,
-      intensity,
-      description: r.description || '',
-      since_chapter: r.since_chapter || 1,
-      polarity,
-      typeColor: colorForRelationType(relationType),
-      polarityColor: polarityColor(polarity),
-      ...pts,
-      label: `${relationType} · ${polarityLabel} (${intensity >= 0 ? '+' : ''}${intensity.toFixed(1)})`,
-    })
-  }
-
-  return { nodes, edges, hasEdges: edges.length > 0, width, height }
-})
-
-const graphViewport = computed(() => ({
-  width: graphLayout.value.width || GRAPH_MIN_WIDTH,
-  height: graphLayout.value.height || GRAPH_MIN_HEIGHT,
-}))
-
-const hoveredEdge = ref<GraphEdge | null>(null)
-const edgeTooltipStyle = ref({ left: '0px', top: '0px' })
-
-const showEdgeTooltip = (edge: GraphEdge, event: MouseEvent) => {
-  hoveredEdge.value = edge
-  const wrap = (event.currentTarget as Element)?.closest?.('.svg-wrapper') as HTMLElement | null
-  if (!wrap) return
-  const rect = wrap.getBoundingClientRect()
-  edgeTooltipStyle.value = {
-    left: `${event.clientX - rect.left + 12}px`,
-    top: `${event.clientY - rect.top + 12}px`,
-  }
-}
-
-const hideEdgeTooltip = () => {
-  hoveredEdge.value = null
-}
-
-const graphNodes = computed(() => graphLayout.value.nodes)
-const graphEdges = computed(() => graphLayout.value.edges)
-const graphHasRenderableNodes = computed(() => graphNodes.value.length > 0)
-
-// 关系对话框
-const dialogVisible = ref(false)
-const dialogMode = ref<'create' | 'edit'>('create')
-const activeRelationId = ref<number | null>(null)
-const relationForm = ref({
-  source_char: '',
-  target_char: '',
-  relation_type: '',
-  intensity: 0.5,
-  since_chapter: 1,
-  description: ''
-})
-
-const openAddRelation = () => {
-  dialogMode.value = 'create'
-  activeRelationId.value = null
-  relationForm.value = {
-    source_char: '',
-    target_char: '',
-    relation_type: '',
-    intensity: 0.5,
-    since_chapter: 1,
-    description: ''
-  }
-  dialogVisible.value = true
-}
-
-const openEditRelation = (rel: any) => {
-  dialogMode.value = 'edit'
-  activeRelationId.value = rel.id
-  relationForm.value = {
-    source_char: rel.source_char,
-    target_char: rel.target_char,
-    relation_type: rel.relation_type,
-    intensity: rel.intensity,
-    since_chapter: rel.since_chapter || 1,
-    description: rel.description || ''
-  }
-  dialogVisible.value = true
-}
-
-const submitRelation = async () => {
-  if (!relationForm.value.source_char || !relationForm.value.target_char) {
-    ElMessage.warning('源角色和目标角色不能为空')
-    return
-  }
-  if (relationForm.value.source_char === relationForm.value.target_char) {
-    ElMessage.warning('不能对同一个角色建立关系')
-    return
-  }
-  try {
-    await saveCharacterRelation(relationForm.value)
-    ElMessage.success('保存关系成功！')
-    dialogVisible.value = false
-    await refreshRelations()
-  } catch (error: any) {
-    ElMessage.error(error.message || '保存关系失败')
-  }
-}
-
-const deleteRelation = async () => {
-  if (!activeRelationId.value) return
-  try {
-    await ElMessageBox.confirm('确定要删除这条人物关系吗？', '提示', {
-      type: 'warning'
-    })
-    await deleteCharacterRelation(activeRelationId.value)
-    ElMessage.success('删除关系成功！')
-    dialogVisible.value = false
-    await refreshRelations()
-  } catch (error: any) {
-    if (error !== 'cancel') {
-      ElMessage.error(error.message || '删除关系失败')
-    }
-  }
-}
-
-watch(activeOuterTab, (tab) => {
-  if (tab === 'chronicle') refreshChronicle(true)
-})
-
-watch(
-  () => route.query.tab,
-  (tab) => {
-    if (tab === 'chronicle') activeOuterTab.value = 'chronicle'
-  },
-)
-
-onMounted(async () => {
-  if (route.query.tab === 'chronicle') activeOuterTab.value = 'chronicle'
-  await loadState()
-  await stateStore.refreshAll()
-  await refreshRelations()
-  await chapterStore.fetchChapters()
-  if (activeOuterTab.value === 'chronicle') await refreshChronicle(true)
-})
 </script>
 
 <template>
