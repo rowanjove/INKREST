@@ -3,7 +3,6 @@ import { onMounted, onUnmounted } from 'vue'
 import PendingChaptersPanel from '../components/PendingChaptersPanel.vue'
 import SemiAutoRepairHint from '../components/SemiAutoRepairHint.vue'
 import BatchRunStatusBanner from '../components/BatchRunStatusBanner.vue'
-import NovelBatchRunDialog from '../components/NovelBatchRunDialog.vue'
 import { useChapterMaintenance } from '../composables/useChapterMaintenance'
 import { useTasksStore } from '../stores/tasks'
 
@@ -26,7 +25,6 @@ onUnmounted(() => {
 <template>
   <div class="chapter-maintenance-page">
     <BatchRunStatusBanner />
-    <NovelBatchRunDialog />
     <SemiAutoRepairHint compact />
     <PendingChaptersPanel :show-actions="true" :hide-footnote="true" :link-focus="true" />
   </div>

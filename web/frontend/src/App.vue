@@ -26,6 +26,7 @@ import {
 } from './api'
 import SetupWizard from './components/SetupWizard.vue'
 import FirstBookGuide from './components/workbench/FirstBookGuide.vue'
+import NovelBatchRunDialog from './components/NovelBatchRunDialog.vue'
 import { provide } from 'vue'
 
 const showSetupWizard = ref(false)
@@ -524,6 +525,8 @@ const loadEngineStatus = async () => {
       v-if="isInProject && projectStore.currentProject?.id"
       :project-id="projectStore.currentProject.id"
     />
+
+    <NovelBatchRunDialog v-if="isInProject" />
   </div>
 </template>
 

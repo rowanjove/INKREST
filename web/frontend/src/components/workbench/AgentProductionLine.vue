@@ -48,6 +48,8 @@ const { progress, isRunning, currentChapterId } = storeToRefs(tasksStore)
 const {
   cancelBatchRun,
   openDialog,
+  opening: batchOpening,
+  running: batchRunning,
   busy: batchBusy,
   roundProgress,
 } = useNovelBatchRun()
@@ -157,7 +159,8 @@ const pipelineActive = computed(
 
 const primaryLabel = computed(() => {
   if (userPaused.value) return '继续写书'
-  if (batchBusy.value || isRunning.value) return '连写进行中…'
+  if (batchOpening.value) return '加载开书状态…'
+  if (batchRunning.value || isRunning.value) return '连写进行中…'
   return '连写启动'
 })
 
@@ -228,11 +231,12 @@ onUnmounted(() => {
         <el-button
           type="success"
           class="batch-run-primary"
-          :disabled="!readinessOk || (batchBusy && !userPaused)"
+          :disabled="!readinessOk || batchOpening || ((batchRunning || isRunning) && !userPaused)"
           @click="handlePrimaryStart"
         >
-          <el-icon v-if="!(batchBusy && !userPaused)" class="batch-run-icon"><Lightning /></el-icon>
-          <el-icon v-else class="batch-run-icon is-loading"><Loading /></el-icon>
+          <el-icon v-if="batchOpening" class="batch-run-icon is-loading"><Loading /></el-icon>
+          <el-icon v-else-if="(batchRunning || isRunning) && !userPaused" class="batch-run-icon is-loading"><Loading /></el-icon>
+          <el-icon v-else class="batch-run-icon"><Lightning /></el-icon>
           {{ primaryLabel }}
         </el-button>
         <el-button

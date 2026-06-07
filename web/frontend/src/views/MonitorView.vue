@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Loading } from '@element-plus/icons-vue'
 import BatchRunStatusBanner from '../components/BatchRunStatusBanner.vue'
-import NovelBatchRunDialog from '../components/NovelBatchRunDialog.vue'
 import MonitorTabsPane from '../components/monitor/MonitorTabsPane.vue'
 import { useMonitorView } from '../composables/useMonitorView'
 
@@ -32,8 +31,6 @@ const { isRunning, currentChapterId, lastTaskFailure, activeTab, dismissTaskFail
       :description="lastTaskFailure.hint"
       @close="dismissTaskFailure"
     />
-    <NovelBatchRunDialog />
-
     <MonitorTabsPane v-model:active-tab="activeTab" />
   </div>
 </template>

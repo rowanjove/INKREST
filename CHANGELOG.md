@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- 连写弹窗：刷新后不再因 readiness 与按钮状态不一致而静默拦截；章节计数与工作台对齐；弹窗全局单例挂载
 - 连写：`tasksStore` 轮询 acquire 恢复幂等连接；`submit` 不再重复 acquire；工作台/章节维护页统一托管轮询生命周期
 - 写作页：`loadChapter` 请求代际 + 自动保存在 `loadingEditor` 时跳过，避免切章写错内容
 - `tasksStore`：任务/运行时日志轮询引用计数 + 有意断开时禁止 WS 自动重连

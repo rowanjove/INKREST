@@ -14,6 +14,8 @@ const {
   ctx,
   currentProject,
   maxAvailableChapters,
+  readinessItems,
+  canRun,
   isCircuitPaused,
   isExternalBlockActive,
   dialogTitle,
@@ -26,6 +28,8 @@ const {
   goChapterRepair,
   workScale,
 } = useNovelBatchRun()
+
+const pendingReadiness = computed(() => readinessItems.value.filter((i) => !i.ok))
 
 const showVectorAlert = computed(() =>
   longFormVectorWarn({
@@ -45,6 +49,16 @@ const showVectorAlert = computed(() =>
     append-to-body
   >
     <div class="batch-run-body">
+      <el-alert
+        v-if="!canRun"
+        type="error"
+        :closable="false"
+        show-icon
+        title="开书清单未全绿"
+        class="readiness-alert"
+      >
+        <p>请先完成：{{ pendingReadiness.map((i) => i.label).join('、') }}</p>
+      </el-alert>
       <p class="batch-run-lead">
         按已有卷级队列续跑，不会重新生成全书大纲。队列不足时会按「规划窗口」自动补章目标，再执行单章流水线。
       </p>
@@ -138,7 +152,7 @@ const showVectorAlert = computed(() =>
         <el-button type="warning" plain @click="goMonitorAlerts">先处理待处理章</el-button>
         <el-button
           type="primary"
-          :disabled="isExternalBlockActive"
+          :disabled="!canRun || isExternalBlockActive"
           @click="submit(true)"
         >
           仍继续写书
@@ -148,7 +162,7 @@ const showVectorAlert = computed(() =>
         v-else
         type="primary"
         :loading="running"
-        :disabled="running || isExternalBlockActive"
+        :disabled="!canRun || running || isExternalBlockActive"
         @click="submit(false)"
       >
         {{ running ? '同步卷队列 / 连写启动中…' : '确认连写' }}

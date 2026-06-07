@@ -166,7 +166,7 @@ export function useNovelBatchRun() {
       await withRefreshTimeout(
         Promise.all([
           listAssets().catch(() => ({ data: [] })),
-          getChapterCount(false).catch(() => ({ data: { total: 0 } })),
+          getChapterCount(true).catch(() => ({ data: { total: 0 } })),
           getOutline().catch(() => ({ data: {} })),
           listModels().catch(() => ({ data: [] })),
           getConfig().catch(() => ({ data: {} })),
@@ -185,10 +185,8 @@ export function useNovelBatchRun() {
     ctx.value = {
       outline: outlineData && Object.keys(outlineData).length > 0 ? outlineData : null,
       assets: assetRes.data || [],
-      chapterCountTotal:
-        batchRes.data?.progress_summary?.authoritative_completed ??
-        countRes.data?.total ??
-        0,
+      // 与工作台 loadWorkbench 一致，避免 authoritative_completed 偏大导致弹窗被静默拦截
+      chapterCountTotal: countRes.data?.total ?? 0,
       engineReady: resolveEngine(configRes.data, modelsRes.data || []).ready,
       semanticSearchEffective: Boolean(embRes.data?.semantic_search_effective),
       vectorEnabled: embRes.data?.vector_enabled !== false,
@@ -303,9 +301,16 @@ export function useNovelBatchRun() {
       opening.value = false
       if (runPhase.value === 'opening') runPhase.value = 'idle'
     }
-    if (!warnIfNotReady()) return
     applyFormDefaults()
     dialogVisible.value = true
+    if (!canRun.value) {
+      const pending = readinessItems.value.filter((i) => !i.ok).map((i) => i.label)
+      ElMessage.warning(
+        pending.length
+          ? `开书清单尚有未就绪项：${pending.join('、')}。可在弹窗内查看详情后再启动。`
+          : '开书清单未全绿，请补齐后再确认连写。',
+      )
+    }
   }
 
   function goMonitorAlerts() {
@@ -324,6 +329,10 @@ export function useNovelBatchRun() {
   }
 
   async function submit(forceResume = false) {
+    if (!canRun.value) {
+      warnIfNotReady()
+      return
+    }
     if (form.value.target_chapters <= 0) {
       ElMessage.warning('可生成章节数必须大于 0')
       return
