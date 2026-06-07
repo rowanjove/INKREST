@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import api, { getEmbeddingStatus, startSetupLocal, getSetupLocalStatus, updateConfig } from '../api'
@@ -183,12 +183,16 @@ const handleClose = () => {
 onMounted(() => {
   fetchStatus()
   // Check if setup is already running
-  getSetupLocalStatus().then(({ data }) => {
-    setupState.value = data
-    if (data.status === 'running') {
-      startPollingStatus()
-    }
-  })
+  getSetupLocalStatus()
+    .then(({ data }) => {
+      setupState.value = data
+      if (data.status === 'running') {
+        startPollingStatus()
+      }
+    })
+    .catch((e) => {
+      console.error('获取本地安装状态失败:', e)
+    })
 })
 
 onBeforeUnmount(() => {

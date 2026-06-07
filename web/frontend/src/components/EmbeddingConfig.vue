@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import { CircleCheck, Warning, Cpu, Cloudy, Timer } from '@element-plus/icons-vue'
@@ -243,10 +243,14 @@ const handleRebuildIndex = async () => {
 
 onMounted(() => {
   load()
-  getSetupLocalStatus().then(({ data }) => {
-    setupState.value = data
-    if (data.status === 'running') startPollingStatus()
-  })
+  getSetupLocalStatus()
+    .then(({ data }) => {
+      setupState.value = data
+      if (data.status === 'running') startPollingStatus()
+    })
+    .catch((e) => {
+      console.error('获取本地安装状态失败:', e)
+    })
 })
 
 onBeforeUnmount(() => {
