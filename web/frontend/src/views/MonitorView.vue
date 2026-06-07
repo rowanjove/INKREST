@@ -60,7 +60,7 @@ function dismissTaskFailure() {
     <header class="page-head">
       <div class="page-title-area">
         <h1>日志中心</h1>
-        <p>查看任务流水、Agent 实时日志与接口调用记录；修章与待处理见「章节 → 章节维护」。</p>
+        <p>查看任务流水与连写轮次、Agent 实时日志、费用摘要与接口调用；修章与待处理见「章节 → 章节维护」。</p>
       </div>
       <div class="running-badge" v-if="isRunning">
         <el-icon class="is-loading"><Loading /></el-icon>
@@ -90,10 +90,9 @@ function dismissTaskFailure() {
               <span>任务流水日志</span>
             </span>
           </template>
-          <div class="tab-content-wrapper full-height-pane">
-            <CostSummaryPanel />
-            <AutopilotRoundsPanel />
-            <TaskLog />
+          <div class="tab-content-wrapper full-height-pane task-rounds-split">
+            <AutopilotRoundsPanel class="task-rounds-split__rounds" />
+            <TaskLog class="task-rounds-split__logs" />
           </div>
         </el-tab-pane>
 
@@ -113,11 +112,12 @@ function dismissTaskFailure() {
           <template #label>
             <span class="tab-label-custom">
               <el-icon><Connection /></el-icon>
-              <span>接口调用日志</span>
+              <span>费用与接口</span>
             </span>
           </template>
-          <div class="tab-content-wrapper full-height-pane">
-            <LLMLogViewer />
+          <div class="tab-content-wrapper full-height-pane cost-api-pane">
+            <CostSummaryPanel compact hide-recent-rounds />
+            <LLMLogViewer class="cost-api-pane__logs" />
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -211,5 +211,34 @@ function dismissTaskFailure() {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+.task-rounds-split {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.task-rounds-split__rounds,
+.task-rounds-split__logs {
+  min-height: 0;
+  height: 100%;
+}
+
+.cost-api-pane {
+  gap: 12px;
+}
+
+.cost-api-pane__logs {
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .task-rounds-split {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(160px, 220px) minmax(0, 1fr);
+  }
 }
 </style>

@@ -46,8 +46,13 @@ onMounted(load)
 
 <style scoped>
 .autopilot-rounds {
-  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  margin-bottom: 0;
   padding: 12px 14px;
+  box-sizing: border-box;
 }
 
 .head {
@@ -75,7 +80,8 @@ onMounted(load)
   list-style: none;
   display: grid;
   gap: 8px;
-  max-height: 200px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 

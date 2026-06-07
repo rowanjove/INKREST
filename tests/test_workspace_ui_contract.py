@@ -147,6 +147,17 @@ def test_chapter_list_exposes_gate_only_rerun() -> None:
 def test_monitor_includes_cost_summary_panel() -> None:
     source = MONITOR.read_text(encoding="utf-8")
     assert "CostSummaryPanel" in source
+    assert "cost-api-pane" in source
+    assert "hide-recent-rounds" in source
+
+
+def test_monitor_task_logs_splits_rounds_and_task_log() -> None:
+    source = MONITOR.read_text(encoding="utf-8")
+    assert "task-rounds-split" in source
+    assert "AutopilotRoundsPanel" in source
+    assert "TaskLog" in source
+    task_logs_block = source.split('name="task_logs"', 1)[1].split('name="agent_logs"', 1)[0]
+    assert "CostSummaryPanel" not in task_logs_block
 
 
 def test_pending_panel_has_filter_tabs() -> None:
@@ -311,6 +322,7 @@ def test_monitor_page_is_log_center_without_tasks_tab() -> None:
     assert "任务执行监控" not in source
     assert "NovelProgressHelp" not in source
     assert 'name="task_logs"' in source
+    assert "费用与接口" in source
     assert "router.replace('/chapters/maintenance')" in source
 
 

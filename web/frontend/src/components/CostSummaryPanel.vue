@@ -1,5 +1,16 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+
+withDefaults(
+  defineProps<{
+    compact?: boolean
+    hideRecentRounds?: boolean
+  }>(),
+  {
+    compact: false,
+    hideRecentRounds: false,
+  },
+)
 import { ElMessage } from 'element-plus'
 import { getCostSummary } from '../api'
 import { formatCnyYuan } from '../utils/tokenCostEstimate'
@@ -44,7 +55,11 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="cost-summary-panel panel" v-loading="loading">
+  <section
+    class="cost-summary-panel panel"
+    :class="{ 'cost-summary-panel--compact': compact }"
+    v-loading="loading"
+  >
     <div class="cost-head">
       <div>
         <h3>费用摘要</h3>
@@ -77,7 +92,7 @@ onMounted(load)
         <small>按章持久化</small>
       </div>
     </div>
-    <ul v-if="summary?.recent_rounds?.length" class="round-list">
+    <ul v-if="!hideRecentRounds && summary?.recent_rounds?.length" class="round-list">
       <li v-for="(row, idx) in summary.recent_rounds" :key="idx">
         第 {{ row.round ?? '—' }} 轮 · {{ row.tokens_used ?? 0 }} tokens
         <template v-if="row.chapters_completed"> · {{ row.chapters_completed }} 章</template>
@@ -90,7 +105,20 @@ onMounted(load)
 <style scoped>
 .cost-summary-panel {
   padding: 14px 16px;
-  margin-bottom: 12px;
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
+.cost-summary-panel--compact {
+  padding: 10px 14px;
+}
+
+.cost-summary-panel--compact .cost-head {
+  margin-bottom: 8px;
+}
+
+.cost-summary-panel--compact .cost-stat strong {
+  font-size: 16px;
 }
 
 .cost-head {
