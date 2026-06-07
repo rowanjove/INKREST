@@ -3,6 +3,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WRITER = ROOT / "web" / "frontend" / "src" / "views" / "WritingWorkspace.vue"
+WRITER_EDITOR_MAIN = (
+    ROOT / "web" / "frontend" / "src" / "components" / "writing" / "WritingEditorMain.vue"
+)
 WRITER_CHAPTER = (
     ROOT / "web" / "frontend" / "src" / "composables" / "useWritingChapterEditor.ts"
 )
@@ -64,7 +67,7 @@ def test_writer_save_button_uses_toolbar_style_instead_of_green_block() -> None:
 
 
 def test_writer_toolbar_actions_use_even_grid_distribution() -> None:
-    source = WRITER.read_text(encoding="utf-8")
+    source = WRITER_EDITOR_MAIN.read_text(encoding="utf-8")
 
     assert "grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));" in source
     assert ".action-buttons .premium-btn" in source

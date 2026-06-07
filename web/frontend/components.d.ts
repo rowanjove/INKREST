@@ -115,7 +115,11 @@ declare module 'vue' {
     SystemReadinessPanel: typeof import('./src/components/SystemReadinessPanel.vue')['default']
     TaskLog: typeof import('./src/components/TaskLog.vue')['default']
     TrialPublishExport: typeof import('./src/components/TrialPublishExport.vue')['default']
+    WritingChapterSidebar: typeof import('./src/components/writing/WritingChapterSidebar.vue')['default']
+    WritingEditorMain: typeof import('./src/components/writing/WritingEditorMain.vue')['default']
+    WritingRightSidebar: typeof import('./src/components/writing/WritingRightSidebar.vue')['default']
     WritingRulesConfig: typeof import('./src/components/WritingRulesConfig.vue')['default']
+    WritingWorkspaceDialogs: typeof import('./src/components/writing/WritingWorkspaceDialogs.vue')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']
