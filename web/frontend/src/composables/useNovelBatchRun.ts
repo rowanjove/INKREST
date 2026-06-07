@@ -319,14 +319,14 @@ export function useNovelBatchRun() {
   /** 可选：调整本次章数 / 是否自动续轮后再启动 */
   async function openDialog() {
     if (busy.value) return
+    // 必须先同步弹出，再在弹窗内加载；异步后再 visible 会被工作台刷新/遮罩误关
+    dialogVisible.value = true
+    armDialogOpenGuard()
     opening.value = true
     runPhase.value = 'opening'
     try {
       await refreshContext()
       applyFormDefaults()
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
-      dialogVisible.value = true
-      armDialogOpenGuard()
       if (!canRun.value) {
         const pending = readinessItems.value.filter((i) => !i.ok).map((i) => i.label)
         ElMessage.warning(
@@ -337,6 +337,7 @@ export function useNovelBatchRun() {
       }
     } catch (error: any) {
       ElMessage.error(error?.message || '无法加载开书状态，请稍后重试')
+      closeBatchDialog()
     } finally {
       opening.value = false
       if (runPhase.value === 'opening') runPhase.value = 'idle'

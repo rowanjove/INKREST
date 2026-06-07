@@ -6,6 +6,7 @@ import {
   LONG_FORM_VECTOR_WARN_TEXT,
 } from '../utils/projectReadiness'
 import { computed } from 'vue'
+import { Loading } from '@element-plus/icons-vue'
 
 const {
   dialogVisible,
@@ -25,6 +26,7 @@ const {
   closeBatchDialog,
   beforeDialogClose,
   dialogInteractReady,
+  opening,
   busy,
   busyPhaseLabel,
   goMonitorAlerts,
@@ -53,7 +55,11 @@ const showVectorAlert = computed(() =>
     :close-on-press-escape="dialogInteractReady"
     :before-close="beforeDialogClose"
   >
-    <div class="batch-run-body">
+    <div v-if="opening" class="batch-run-loading">
+      <el-icon class="is-loading batch-run-loading__icon"><Loading /></el-icon>
+      <p>{{ busyPhaseLabel || '正在加载开书状态…' }}</p>
+    </div>
+    <div v-else class="batch-run-body">
       <el-alert
         v-if="!canRun"
         type="error"
@@ -177,6 +183,20 @@ const showVectorAlert = computed(() =>
 </template>
 
 <style scoped>
+.batch-run-loading {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 36px 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.batch-run-loading__icon {
+  font-size: 28px;
+  color: var(--el-color-primary);
+}
+
 .batch-run-body {
   display: grid;
   gap: 14px;
