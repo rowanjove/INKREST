@@ -63,13 +63,13 @@ class ProjectManager:
         if outline_path.is_file():
             epochs.append(outline_path.stat().st_mtime)
 
-        chapters_dir = project_dir / "workspace" / "chapters"
-        if chapters_dir.is_dir():
-            for ch_dir in chapters_dir.glob("chapter_*"):
-                for rel in ("chapter_final.txt", "plan.json"):
-                    fp = ch_dir / rel
-                    if fp.is_file():
-                        epochs.append(fp.stat().st_mtime)
+        db_path = project_dir / "data" / "novel.sqlite"
+        if db_path.is_file():
+            epochs.append(db_path.stat().st_mtime)
+
+        snapshot_path = project_dir / "workspace" / "reports" / "progress_snapshot.json"
+        if snapshot_path.is_file():
+            epochs.append(snapshot_path.stat().st_mtime)
 
         cover_dir = project_dir
         for suffix in (".jpg", ".png", ".webp"):
@@ -122,17 +122,13 @@ class ProjectManager:
         projects: List[Dict[str, Any]] = []
         for pid, info in data.get("projects", {}).items():
             project_dir = self.base_dir / "projects" / pid
-            chapters_dir = project_dir / "workspace" / "chapters"
-            chapter_count = len(list(chapters_dir.glob("chapter_*"))) if chapters_dir.exists() else 0
-            total_words = 0
-            if chapters_dir.exists():
-                for ch_dir in chapters_dir.glob("chapter_*"):
-                    wc_path = ch_dir / "reports" / "wordcount.json"
-                    if wc_path.exists():
-                        try:
-                            total_words += json.loads(wc_path.read_text(encoding="utf-8")).get("count", 0)
-                        except (json.JSONDecodeError, OSError) as exc:
-                            logger.warning("Failed to load wordcount from %s: %s", wc_path, exc)
+            try:
+                from novel_agent.services.project_library_stats import project_library_stats
+
+                chapter_count, total_words = project_library_stats(project_dir)
+            except Exception as exc:
+                logger.warning("Failed to load library stats for %s: %s", pid, exc)
+                chapter_count, total_words = 0, 0
             meta_path = project_dir / "config" / "project_meta.json"
             meta: Dict[str, Any] = {}
             if meta_path.exists():

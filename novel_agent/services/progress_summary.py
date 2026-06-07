@@ -8,11 +8,56 @@ from pathlib import Path
 from typing import Any, Dict, Tuple
 
 _SUMMARY_CACHE_TTL_SEC = 3.0
+_PROGRESS_SNAPSHOT_REL = Path("workspace/reports/progress_snapshot.json")
 _summary_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 
 
 def invalidate_progress_summary_cache(root: Path) -> None:
     _summary_cache.pop(str(root.resolve()), None)
+    snapshot_path = root / _PROGRESS_SNAPSHOT_REL
+    try:
+        if snapshot_path.is_file():
+            snapshot_path.unlink()
+    except OSError:
+        pass
+
+
+def load_progress_snapshot_stats(root: Path) -> Dict[str, Any] | None:
+    """Read materialized library stats for lightweight project list."""
+    path = root / _PROGRESS_SNAPSHOT_REL
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _write_progress_snapshot(root: Path, payload: Dict[str, Any], total_words: int) -> None:
+    path = root / _PROGRESS_SNAPSHOT_REL
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "library_indexed": int(payload.get("library_indexed") or 0),
+                    "total_words": int(total_words),
+                    "authoritative_completed": int(
+                        payload.get("authoritative_completed") or 0
+                    ),
+                    "pending_total": int(payload.get("pending_total") or 0),
+                    "batch_status": str(payload.get("batch_status") or "idle"),
+                    "updated_at": time.time(),
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
 
 from novel_agent.services.arc_queue import load_arc_progress
 from novel_agent.services.pipeline_pending import summarize_pipeline_pending
@@ -78,7 +123,7 @@ def build_progress_summary(root: Path, *, reconcile: bool = False) -> Dict[str, 
 
     payload = _build_progress_summary_uncached(root, reconcile=reconcile)
     _summary_cache[cache_key] = (time.monotonic(), payload)
-    return payload
+    return dict(payload)
 
 
 def _build_progress_summary_uncached(root: Path, *, reconcile: bool = False) -> Dict[str, Any]:
@@ -94,12 +139,19 @@ def _build_progress_summary_uncached(root: Path, *, reconcile: bool = False) -> 
     ledger = progress.get("completed_chapter_ids") or []
 
     library_indexed = 0
+    total_words = 0
     try:
+        from novel_agent.services.chapter_index_sync import sync_chapters_from_disk
         from novel_agent.state.sqlite_store import SQLiteStateStore
 
-        library_indexed = SQLiteStateStore(root).count_chapters()
+        store = SQLiteStateStore(root)
+        if store.count_chapters_indexed() == 0:
+            sync_chapters_from_disk(root, store)
+        library_indexed = store.count_chapters_indexed()
+        total_words = store.sum_chapters_word_count_indexed()
     except Exception:
         library_indexed = 0
+        total_words = 0
 
     disk_with_final = _count_disk_chapters_with_final(root)
     disk_pipeline_complete = _count_pipeline_complete_on_disk(root)
@@ -107,10 +159,11 @@ def _build_progress_summary_uncached(root: Path, *, reconcile: bool = False) -> 
 
     remaining_chapters = _remaining_chapters(root, authoritative_completed)
 
-    return {
+    payload = {
         "authoritative_completed": authoritative_completed,
         "completed_chapter_ids": ledger if isinstance(ledger, list) else [],
         "library_indexed": library_indexed,
+        "total_words": total_words,
         "disk_chapters_with_final": disk_with_final,
         "disk_pipeline_complete": disk_pipeline_complete,
         "pending_total": pending.get("pending_total", 0),
@@ -128,3 +181,5 @@ def _build_progress_summary_uncached(root: Path, *, reconcile: bool = False) -> 
             "待处理以 pending_total 为准。门禁阻断会立即暂停批量，不再静默跳章。"
         ),
     }
+    _write_progress_snapshot(root, payload, total_words)
+    return payload

@@ -12,6 +12,7 @@ import {
   SHANSHAN_WELCOME_CHAT,
 } from '../constants/shanshanCopy'
 import { shouldPoll } from '../utils/pollingGate'
+import { subscribePolling, unsubscribePolling } from '../utils/pollingHub'
 import { isPipelineRunning, mapContextToPetState, type PetState } from '../utils/petState'
 import { formatTaskStep } from '../utils/taskStepLabels'
 
@@ -118,7 +119,8 @@ export const usePetStore = defineStore('pet', () => {
   const state = ref<PetState>('idle')
   const loading = ref(false)
   const lastError = ref('')
-  let pollTimer: number | null = null
+  const PET_POLL_KEY = 'pet-context'
+  let petPollingActive = false
   let flashTimer: number | null = null
   let wasPipelineRunning = false
   let lastActiveFailedCount = 0
@@ -374,20 +376,19 @@ export const usePetStore = defineStore('pet', () => {
   }
 
   function startPolling() {
-    if (pollTimer) return
+    if (petPollingActive) return
+    petPollingActive = true
     syncIgnoredFailedTasks()
     window.addEventListener('storage', syncIgnoredFailedTasks)
-    refreshContext()
-    pollTimer = window.setInterval(refreshContext, 2500)
+    subscribePolling(PET_POLL_KEY, refreshContext, 2500)
   }
 
   function stopPolling() {
+    if (!petPollingActive) return
+    petPollingActive = false
     window.removeEventListener('storage', syncIgnoredFailedTasks)
     clearFlashTimer()
-    if (pollTimer) {
-      window.clearInterval(pollTimer)
-      pollTimer = null
-    }
+    unsubscribePolling(PET_POLL_KEY)
   }
 
   // ---- Chat Q&A Actions ----

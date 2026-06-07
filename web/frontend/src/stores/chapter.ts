@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, shallowRef } from 'vue'
 import { listChapters, getChapter, listTasks, runChapter } from '../api'
 
 export interface Chapter {
@@ -23,7 +23,7 @@ export interface Task {
 export const useChapterStore = defineStore('chapter', () => {
   const chapters = ref<Chapter[]>([])
   const tasks = ref<Task[]>([])
-  const currentChapter = ref<any>(null)
+  const currentChapter = shallowRef<any>(null)
   const loading = ref(false)
 
   const completedTasks = computed(() => tasks.value.filter(t => t.status === 'completed').length)
@@ -47,7 +47,7 @@ export const useChapterStore = defineStore('chapter', () => {
 
   async function fetchChapter(id: string) {
     const { data } = await getChapter(id)
-    currentChapter.value = data
+    currentChapter.value = { ...data }
     return data
   }
 

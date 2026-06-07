@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { getPipelineAlerts } from '../api'
 import { shouldPoll } from '../utils/pollingGate'
+import { subscribePolling, unsubscribePolling } from '../utils/pollingHub'
 
 export type PipelineAlert = {
   chapter_id: string
@@ -28,8 +29,9 @@ export function formatAlertStage(stage: string) {
 export const usePipelineAlertsStore = defineStore('pipelineAlerts', () => {
   const alerts = ref<PipelineAlert[]>([])
   const loading = ref(false)
-  let timer: number | null = null
+  const POLL_KEY = 'pipeline-alerts'
   let subscribers = 0
+  let pollIntervalMs = 4000
 
   async function fetchAlerts() {
     if (!shouldPoll()) return
@@ -45,19 +47,17 @@ export const usePipelineAlertsStore = defineStore('pipelineAlerts', () => {
   }
 
   function startPolling(intervalMs = 4000) {
-    subscribers += 1
-    if (subscribers === 1) {
-      fetchAlerts()
-      timer = window.setInterval(fetchAlerts, intervalMs)
+    if (subscribers === 0 || intervalMs < pollIntervalMs) {
+      pollIntervalMs = intervalMs
     }
+    subscribers += 1
+    subscribePolling(POLL_KEY, fetchAlerts, pollIntervalMs)
   }
 
   function stopPolling() {
-    subscribers = Math.max(0, subscribers - 1)
-    if (subscribers === 0 && timer !== null) {
-      window.clearInterval(timer)
-      timer = null
-    }
+    if (subscribers <= 0) return
+    subscribers -= 1
+    unsubscribePolling(POLL_KEY)
   }
 
   return {

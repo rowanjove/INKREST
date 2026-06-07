@@ -1,5 +1,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { getNovelProgressSummary } from '../api'
+import { shouldPoll } from '../utils/pollingGate'
+import { subscribePolling, unsubscribePolling, updatePollingInterval } from '../utils/pollingHub'
 
 export interface NovelProgressSnapshot {
   authoritative_completed: number
@@ -19,10 +21,10 @@ export interface NovelProgressSnapshot {
   progress_note: string
 }
 
+const POLL_KEY = 'novel-progress'
 const snapshot = ref<NovelProgressSnapshot | null>(null)
 const loading = ref(false)
 let subscriberCount = 0
-let pollTimer: ReturnType<typeof setInterval> | null = null
 let pollIntervalMs = 0
 
 function normalize(data: Record<string, unknown>): NovelProgressSnapshot {
@@ -46,6 +48,7 @@ function normalize(data: Record<string, unknown>): NovelProgressSnapshot {
 }
 
 export async function refreshNovelProgress() {
+  if (!shouldPoll()) return
   loading.value = true
   try {
     const { data } = await getNovelProgressSummary()
@@ -57,21 +60,16 @@ export async function refreshNovelProgress() {
   }
 }
 
-function startPolling(intervalMs: number) {
+function beginPolling(intervalMs: number) {
+  if (intervalMs <= 0) return
   pollIntervalMs = intervalMs
-  if (pollTimer) clearInterval(pollTimer)
-  if (intervalMs > 0) {
-    pollTimer = setInterval(() => {
-      void refreshNovelProgress()
-    }, intervalMs)
-  }
+  subscribePolling(POLL_KEY, refreshNovelProgress, pollIntervalMs)
 }
 
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
+function tightenPolling(intervalMs: number) {
+  if (intervalMs <= 0 || pollIntervalMs === 0 || intervalMs >= pollIntervalMs) return
+  pollIntervalMs = intervalMs
+  updatePollingInterval(POLL_KEY, intervalMs)
 }
 
 export function useNovelProgress(options?: { pollMs?: number }) {
@@ -81,16 +79,17 @@ export function useNovelProgress(options?: { pollMs?: number }) {
     subscriberCount += 1
     if (subscriberCount === 1) {
       void refreshNovelProgress()
-      startPolling(pollMs)
-    } else if (pollMs > 0 && (pollIntervalMs === 0 || pollMs < pollIntervalMs)) {
-      startPolling(pollMs)
+      beginPolling(pollMs)
+    } else {
+      tightenPolling(pollMs)
     }
   })
 
   onUnmounted(() => {
     subscriberCount = Math.max(0, subscriberCount - 1)
-    if (subscriberCount === 0) {
-      stopPolling()
+    if (subscriberCount === 0 && pollIntervalMs > 0) {
+      unsubscribePolling(POLL_KEY)
+      pollIntervalMs = 0
     }
   })
 
