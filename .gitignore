@@ -55,7 +55,7 @@ agent-tools/
 
 # Dev workspace roots (runtime data, not source)
 state/
-dashboard/
+/dashboard/
 data/
 test_async_workspace/
 

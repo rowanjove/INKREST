@@ -9,6 +9,9 @@ DASHBOARD = ROOT / "web" / "frontend" / "src" / "views" / "Dashboard.vue"
 DASHBOARD_SERIAL = (
     ROOT / "web" / "frontend" / "src" / "composables" / "useDashboardSerial.ts"
 )
+DASHBOARD_SERIALIZATION_PANE = (
+    ROOT / "web" / "frontend" / "src" / "components" / "dashboard" / "DashboardSerializationPane.vue"
+)
 APP = ROOT / "web" / "frontend" / "src" / "App.vue"
 PET_BUBBLE = ROOT / "web" / "frontend" / "src" / "views" / "PetBubbleView.vue"
 TASK_LOG = ROOT / "web" / "frontend" / "src" / "components" / "TaskLog.vue"
@@ -75,10 +78,10 @@ def test_asset_source_panels_are_hidden_until_toolbar_toggle() -> None:
 
 def test_dashboard_auto_accepts_pending_state_candidates() -> None:
     serial_source = DASHBOARD_SERIAL.read_text(encoding="utf-8")
-    dashboard_source = DASHBOARD.read_text(encoding="utf-8")
+    serialization_pane = DASHBOARD_SERIALIZATION_PANE.read_text(encoding="utf-8")
     assert "candidate.status === 'pending'" in serial_source
     assert "await approveAllProjectCandidates(pid)" in serial_source
-    assert "默认自动通过" in dashboard_source
+    assert "默认自动通过" in serialization_pane
 
 
 def test_pet_abort_button_uses_short_label() -> None:
