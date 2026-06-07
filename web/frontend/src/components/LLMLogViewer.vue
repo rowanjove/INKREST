@@ -114,7 +114,8 @@ defineExpose({ loadLogs })
         </el-select>
       </div>
     </div>
-    <el-table :data="pagedLogs" size="small" border max-height="520" v-loading="loading">
+    <div class="log-table-region">
+    <el-table :data="pagedLogs" size="small" border height="100%" v-loading="loading">
       <el-table-column prop="chapter_id" label="章节" width="80" />
       <el-table-column prop="role" label="角色" width="140" />
       <el-table-column prop="model" label="模型" width="180" />
@@ -134,6 +135,7 @@ defineExpose({ loadLogs })
         <template #default="{ row }">{{ formatTime(row.timestamp) }}</template>
       </el-table-column>
     </el-table>
+    </div>
     <div class="pager">
       <span>共 {{ filteredLogs.length }} 条</span>
       <el-pagination
@@ -151,7 +153,25 @@ defineExpose({ loadLogs })
 
 <style scoped>
 .llm-log-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   margin-bottom: 0;
+}
+
+.llm-log-card :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.log-table-region {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .intro {

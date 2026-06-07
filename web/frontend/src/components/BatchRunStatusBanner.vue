@@ -45,23 +45,27 @@ const goFixChapter = () => {
       </span>
     </div>
     <div class="banner-actions">
-      <el-button size="small" type="warning" plain @click="goMaintenance">
-        去章节维护
-      </el-button>
+      <template v-if="isCircuit()">
+        <el-button size="small" type="primary" @click="goMaintenance">
+          先处理待处理章
+        </el-button>
+        <el-button size="small" plain @click="openDialog">
+          仍继续写书
+        </el-button>
+        <el-button size="small" type="info" plain @click="goFixChapter">
+          改问题章
+        </el-button>
+      </template>
+      <template v-else>
+        <el-button size="small" type="warning" plain @click="goMaintenance">
+          去章节维护
+        </el-button>
+        <el-button size="small" type="primary" @click="openDialog">
+          继续写书
+        </el-button>
+      </template>
       <el-button size="small" plain @click="goTaskLogs">
         看任务日志
-      </el-button>
-      <el-button
-        v-if="isCircuit()"
-        size="small"
-        type="info"
-        plain
-        @click="goFixChapter"
-      >
-        改问题章
-      </el-button>
-      <el-button size="small" type="primary" @click="openDialog">
-        继续写书
       </el-button>
     </div>
   </section>

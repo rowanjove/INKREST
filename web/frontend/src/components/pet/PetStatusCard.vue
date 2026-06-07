@@ -1,6 +1,7 @@
 ﻿<script setup lang="ts">
 import { computed } from 'vue'
 import type { AssistantContext } from '../../stores/pet'
+import { formatTaskStep } from '../../utils/taskStepLabels'
 
 const props = defineProps<{
   context: AssistantContext | null
@@ -17,7 +18,7 @@ const failedTask = computed(() => {
 const detail = computed(() => {
   if (props.error) return props.error
   if (runningTask.value) {
-    return `${runningTask.value.chapter_id || '章节'} · ${runningTask.value.step || '运行中'}`
+    return `${runningTask.value.chapter_id || '章节'} · ${formatTaskStep(runningTask.value.step)}`
   }
   if (failedTask.value) {
     return failedTask.value.error || '最近有任务失败'

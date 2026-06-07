@@ -82,6 +82,13 @@ def test_ignored_failed_tasks_sync_across_pet_windows() -> None:
     assert "ignoredFailedTaskIds.value = readIgnoredFailedTaskIds()" in source
 
 
+def test_shanshan_pet_uses_transient_success_and_step_labels() -> None:
+    source = PET_STORE.read_text(encoding="utf-8")
+    assert "flashTransientState" in source
+    assert "formatTaskStep" in source
+    assert "pending_total" in source
+
+
 def test_shanshan_pipeline_state_maps_working_and_question() -> None:
     pet_state = ROOT / "web" / "frontend" / "src" / "utils" / "petState.ts"
     source = pet_state.read_text(encoding="utf-8")

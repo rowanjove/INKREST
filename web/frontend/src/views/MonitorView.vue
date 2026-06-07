@@ -24,9 +24,14 @@ const syncTab = () => {
     router.replace('/chapters/maintenance')
     return
   }
+  const tab = route.query.tab as string | undefined
+  if (tab === 'interface_logs') {
+    router.replace({ path: '/monitor', query: { ...route.query, tab: 'logs' } })
+    return
+  }
   const allowedTabs = ['task_logs', 'agent_logs', 'logs']
-  if (route.query.tab && allowedTabs.includes(route.query.tab as string)) {
-    activeTab.value = route.query.tab as string
+  if (tab && allowedTabs.includes(tab)) {
+    activeTab.value = tab
   }
 }
 

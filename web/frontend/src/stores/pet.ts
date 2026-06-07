@@ -11,7 +11,8 @@ import {
   SHANSHAN_FIX_REPLY,
   SHANSHAN_WELCOME_CHAT,
 } from '../constants/shanshanCopy'
-import { mapContextToPetState, type PetState } from '../utils/petState'
+import { isPipelineRunning, mapContextToPetState, type PetState } from '../utils/petState'
+import { formatTaskStep } from '../utils/taskStepLabels'
 
 export type { PetState }
 
@@ -117,6 +118,9 @@ export const usePetStore = defineStore('pet', () => {
   const loading = ref(false)
   const lastError = ref('')
   let pollTimer: number | null = null
+  let flashTimer: number | null = null
+  let wasPipelineRunning = false
+  let lastActiveFailedCount = 0
 
   function readIgnoredFailedTaskIds() {
     try {
@@ -172,12 +176,17 @@ export const usePetStore = defineStore('pet', () => {
     }
     const running = context.value?.running_tasks?.[0]
     if (running) {
-      return `${running.chapter_id || '章节'} · ${running.step || '运行中'}`
+      const stepLabel = formatTaskStep(running.step)
+      return `${running.chapter_id || '章节'} · ${stepLabel}`
     }
     if (latestFailedTask.value) {
       const gate = latestFailedTask.value.gate_summary
       const err = latestFailedTask.value.error || '章节任务失败'
       return gate ? `${err} · ${gate}` : err
+    }
+    const pendingTotal = context.value?.pipeline_pending?.pending_total ?? 0
+    if (pendingTotal > 0) {
+      return `${pendingTotal} 章待处理修章，可到章节维护查看。`
     }
     if (workProgressLine.value) return workProgressLine.value
     return '助手正在待命，有任务动态会及时提醒。'
@@ -203,6 +212,75 @@ export const usePetStore = defineStore('pet', () => {
     return mapContextToPetState(next, ignoredFailedTaskIds.value)
   }
 
+  function countActiveFailed(next: AssistantContext | null): number {
+    if (!next) return 0
+    return (next.failed_tasks || []).filter(
+      (t) => t.id && !ignoredFailedTaskIds.value.includes(t.id),
+    ).length
+  }
+
+  function clearFlashTimer() {
+    if (flashTimer) {
+      window.clearTimeout(flashTimer)
+      flashTimer = null
+    }
+  }
+
+  function flashTransientState(next: AssistantContext, flash: 'success' | 'error') {
+    if (isHiddenAtEdge.value) return
+    if (flash === 'success' && !settings.value.notifyOnTaskComplete) {
+      state.value = mapContextToState(next)
+      return
+    }
+    if (flash === 'error' && !settings.value.notifyOnTaskError) {
+      state.value = mapContextToState(next)
+      return
+    }
+    clearFlashTimer()
+    state.value = flash
+    flashTimer = window.setTimeout(() => {
+      state.value = mapContextToState(context.value)
+      flashTimer = null
+    }, 4000)
+  }
+
+  function applyContextState(next: AssistantContext) {
+    const running = isPipelineRunning(next)
+    const activeFailed = countActiveFailed(next)
+    const steady = mapContextToState(next)
+
+    if (isHiddenAtEdge.value) {
+      wasPipelineRunning = running
+      lastActiveFailedCount = activeFailed
+      return
+    }
+
+    if (flashTimer) {
+      wasPipelineRunning = running
+      lastActiveFailedCount = activeFailed
+      return
+    }
+
+    if (running) {
+      wasPipelineRunning = true
+      state.value = steady
+    } else if (wasPipelineRunning) {
+      wasPipelineRunning = false
+      const batchPaused = Boolean(next.novel_batch?.paused)
+      if (activeFailed > 0 || batchPaused) {
+        flashTransientState(next, 'error')
+      } else {
+        flashTransientState(next, 'success')
+      }
+    } else if (activeFailed > lastActiveFailedCount) {
+      flashTransientState(next, 'error')
+    } else {
+      state.value = steady
+    }
+
+    lastActiveFailedCount = activeFailed
+  }
+
   function ignoreFailedTask(taskId: string) {
     // 批量忽略当前所有的失败任务，从而彻底清空错误状态
     const failedIds = context.value?.failed_tasks.map(t => t.id) || []
@@ -216,7 +294,12 @@ export const usePetStore = defineStore('pet', () => {
       ignoredFailedTaskIds.value.push(taskId)
     }
     localStorage.setItem(ignoredFailedTasksKey, JSON.stringify(ignoredFailedTaskIds.value))
-    state.value = mapContextToState(context.value)
+    clearFlashTimer()
+    if (context.value) {
+      applyContextState(context.value)
+    } else {
+      state.value = mapContextToState(context.value)
+    }
     runDiagnose() // Re-run diagnose immediately to filter ignored issues
   }
 
@@ -243,8 +326,9 @@ export const usePetStore = defineStore('pet', () => {
   function syncIgnoredFailedTasks(event?: StorageEvent) {
     if (event && event.key !== ignoredFailedTasksKey) return
     ignoredFailedTaskIds.value = readIgnoredFailedTaskIds()
-    if (!isHiddenAtEdge.value) {
-      state.value = mapContextToState(context.value)
+    if (!isHiddenAtEdge.value && context.value) {
+      clearFlashTimer()
+      applyContextState(context.value)
     }
   }
 
@@ -253,9 +337,7 @@ export const usePetStore = defineStore('pet', () => {
     try {
       const { data } = await getAssistantContext()
       context.value = data
-      if (!isHiddenAtEdge.value) {
-        state.value = mapContextToState(data)
-      }
+      applyContextState(data)
       lastError.value = ''
     } catch (error: any) {
       context.value = null
@@ -299,6 +381,7 @@ export const usePetStore = defineStore('pet', () => {
 
   function stopPolling() {
     window.removeEventListener('storage', syncIgnoredFailedTasks)
+    clearFlashTimer()
     if (pollTimer) {
       window.clearInterval(pollTimer)
       pollTimer = null

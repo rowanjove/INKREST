@@ -134,7 +134,18 @@ const showVectorAlert = computed(() =>
       <p v-if="busy && busyPhaseLabel" class="busy-phase-hint">{{ busyPhaseLabel }}</p>
       <el-button v-if="busy" type="danger" plain @click="cancelBatchRun">取消连写</el-button>
       <el-button v-else @click="dialogVisible = false">关闭</el-button>
+      <template v-if="isCircuitPaused && !busy">
+        <el-button type="warning" plain @click="goMonitorAlerts">先处理待处理章</el-button>
+        <el-button
+          type="primary"
+          :disabled="isExternalBlockActive"
+          @click="submit(true)"
+        >
+          仍继续写书
+        </el-button>
+      </template>
       <el-button
+        v-else
         type="primary"
         :loading="running"
         :disabled="running || isExternalBlockActive"

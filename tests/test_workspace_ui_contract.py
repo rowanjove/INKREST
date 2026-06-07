@@ -324,6 +324,35 @@ def test_monitor_page_is_log_center_without_tasks_tab() -> None:
     assert 'name="task_logs"' in source
     assert "费用与接口" in source
     assert "router.replace('/chapters/maintenance')" in source
+    assert "interface_logs" in source
+
+
+def test_batch_banner_prioritizes_repair_before_force_resume() -> None:
+    source = BATCH_BANNER.read_text(encoding="utf-8")
+    assert "先处理待处理章" in source
+    assert "仍继续写书" in source
+    assert "useNovelBatchRun" in source
+
+
+def test_task_log_and_pet_share_task_step_labels() -> None:
+    task_source = TASK_LOG.read_text(encoding="utf-8")
+    pet_source = (ROOT / "web" / "frontend" / "src" / "stores" / "pet.ts").read_text(
+        encoding="utf-8"
+    )
+    labels_source = (
+        ROOT / "web" / "frontend" / "src" / "utils" / "taskStepLabels.ts"
+    ).read_text(encoding="utf-8")
+    assert "formatTaskStep" in task_source
+    assert "formatTaskStep" in pet_source
+    assert "writer: 'AI 写作正文初稿'" in labels_source
+
+
+def test_llm_log_viewer_fills_remaining_height() -> None:
+    source = (
+        ROOT / "web" / "frontend" / "src" / "components" / "LLMLogViewer.vue"
+    ).read_text(encoding="utf-8")
+    assert "log-table-region" in source
+    assert 'max-height="520"' not in source
 
 
 def test_outline_page_places_progress_help_above_queue_status() -> None:
