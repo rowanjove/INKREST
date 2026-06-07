@@ -14,12 +14,18 @@
 - LibraryView：2 个模板子组件（书库网格 / 详情与封面对话框）
 - OutlineView：拆出 `useOutlineView` / `useOutlineMindmap` composable（加载、表单、卷队列同步、书名选择、类型基因、思维导图连线）
 - OutlineView：4 个模板子组件（类型基因面板 / 思维导图 / 传统视图 / 对话框）
+- AssetEditor：拆出 `useAssetEditor` composable + `assetEditorConfig` 常量/类型
+- AssetEditor：3 个模板子组件（资产列表侧栏 / 编辑面板 / 对话框）
+- PetBubbleView：拆出 `usePetBubbleView` composable（Tab 状态、对话发送、诊断折叠、导航、滚动）
+- PetBubbleView：`petMarkdown` 纯函数与 Vitest
+- PetBubbleView：2 个模板子组件（状态 Tab / 对话 Tab）
 
 ### Tests
 
-- Vitest：`libraryFormatters` + `viewSubcomponents` 子组件结构契约
-- 契约测试扩展：Writing / State / Outline / Library 子组件路径
+- Vitest：`libraryFormatters` + `petMarkdown` + `viewSubcomponents` 子组件结构契约
+- 契约测试扩展：Writing / State / Outline / Library / AssetEditor / PetBubble 子组件路径
 - E2E：`workspace-state.spec.ts`（写作页侧栏与工具栏、状态库双 Tab）
+- E2E：`assets-pet.spec.ts`（项目资产侧栏/面板、山山气泡状态与对话 Tab）
 
 ### Performance (Phase 0–4)
 

@@ -86,4 +86,47 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('OutlineClassicPane')
     expect(source).toContain('OutlineDialogs')
   })
+
+  it('AssetEditor shell wires sidebar, panel, and dialogs', () => {
+    const source = read('views/AssetEditor.vue')
+    expect(source).toContain('AssetListSidebar')
+    expect(source).toContain('AssetEditorPanel')
+    expect(source).toContain('AssetEditorDialogs')
+    expect(source).toContain('useAssetEditor')
+  })
+
+  it('AssetEditorPanel keeps source toggle contract', () => {
+    const source = read('components/asset/AssetEditorPanel.vue')
+    expect(source).toContain('showAssetSource')
+    expect(source).toContain('@click="showAssetSource = !showAssetSource"')
+    expect(source).toContain(':show-source="showAssetSource"')
+  })
+
+  it('AssetListSidebar keeps custom asset bulk actions', () => {
+    const source = read('components/asset/AssetListSidebar.vue')
+    expect(source).toContain('导入名词解释')
+    expect(source).toContain('onBulkImportToTerminology')
+    expect(source).toContain('onContextCommand')
+  })
+
+  it('PetBubbleView shell wires status and chat tabs', () => {
+    const source = read('views/PetBubbleView.vue')
+    expect(source).toContain('PetBubbleStatusTab')
+    expect(source).toContain('PetBubbleChatTab')
+    expect(source).toContain('usePetBubbleView')
+    expect(source).toContain('bubble-header-bar')
+  })
+
+  it('PetBubbleStatusTab keeps abort and maintenance navigation', () => {
+    const source = read('components/pet/PetBubbleStatusTab.vue')
+    expect(source).toContain('status-detail-desc')
+    expect(source.replace(/\s/g, '')).toContain('>中止<')
+    expect(source).toContain('🔧 修章')
+  })
+
+  it('PetBubbleChatTab keeps welcome card modifier', () => {
+    const source = read('components/pet/PetBubbleChatTab.vue')
+    expect(source).toContain('welcome: index === 0 && msg.role')
+    expect(source).toContain('msg-bubble.welcome')
+  })
 })

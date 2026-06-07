@@ -118,6 +118,18 @@ async function navigateInApp(page: Page, path: string): Promise<void> {
     return
   }
 
+  if (pathname === '/assets') {
+    await nav.getByRole('button', { name: '项目资产' }).click()
+    await expect(page.getByRole('heading', { name: '资产编辑' })).toBeVisible({ timeout: 15_000 })
+    return
+  }
+
+  if (pathname === '/pet-bubble') {
+    await page.goto('/pet-bubble')
+    await expect(page.locator('.bubble-header-bar')).toBeVisible({ timeout: 15_000 })
+    return
+  }
+
   if (pathname === '/') {
     await page.getByRole('button', { name: /栖墨/ }).click()
     await expect(page.getByRole('heading', { name: '我的书库' })).toBeVisible({ timeout: 15_000 })

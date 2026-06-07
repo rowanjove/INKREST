@@ -11,6 +11,13 @@ WRITER_CHAPTER = (
 )
 WRITER_AI_WRITE = ROOT / "web" / "frontend" / "src" / "composables" / "useWritingAiWrite.ts"
 ASSET_EDITOR = ROOT / "web" / "frontend" / "src" / "views" / "AssetEditor.vue"
+ASSET_EDITOR_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "asset" / "AssetEditorPanel.vue"
+)
+ASSET_EDITOR_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "useAssetEditor.ts"
+ASSET_LIST_SIDEBAR = (
+    ROOT / "web" / "frontend" / "src" / "components" / "asset" / "AssetListSidebar.vue"
+)
 MARKDOWN_EDITOR = ROOT / "web" / "frontend" / "src" / "components" / "MarkdownAssetEditor.vue"
 DASHBOARD = ROOT / "web" / "frontend" / "src" / "views" / "Dashboard.vue"
 DASHBOARD_SERIAL = (
@@ -21,6 +28,13 @@ DASHBOARD_SERIALIZATION_PANE = (
 )
 APP = ROOT / "web" / "frontend" / "src" / "App.vue"
 PET_BUBBLE = ROOT / "web" / "frontend" / "src" / "views" / "PetBubbleView.vue"
+PET_BUBBLE_STATUS = (
+    ROOT / "web" / "frontend" / "src" / "components" / "pet" / "PetBubbleStatusTab.vue"
+)
+PET_BUBBLE_CHAT = (
+    ROOT / "web" / "frontend" / "src" / "components" / "pet" / "PetBubbleChatTab.vue"
+)
+PET_BUBBLE_VIEW = ROOT / "web" / "frontend" / "src" / "composables" / "usePetBubbleView.ts"
 TASK_LOG = ROOT / "web" / "frontend" / "src" / "components" / "TaskLog.vue"
 LLM_CONFIG = ROOT / "web" / "frontend" / "src" / "components" / "LLMConfig.vue"
 LOG_STREAM = ROOT / "web" / "frontend" / "src" / "components" / "LogStream.vue"
@@ -98,14 +112,30 @@ def test_writer_toolbar_actions_use_even_grid_distribution() -> None:
 
 
 def test_asset_source_panels_are_hidden_until_toolbar_toggle() -> None:
-    asset_source = ASSET_EDITOR.read_text(encoding="utf-8")
+    asset_shell = ASSET_EDITOR.read_text(encoding="utf-8")
+    asset_panel = ASSET_EDITOR_PANEL.read_text(encoding="utf-8")
     markdown_source = MARKDOWN_EDITOR.read_text(encoding="utf-8")
 
-    assert "showAssetSource" in asset_source
-    assert "@click=\"showAssetSource = !showAssetSource\"" in asset_source
-    assert ":show-source=\"showAssetSource\"" in asset_source
+    assert "showAssetSource" in asset_shell or "showAssetSource" in asset_panel
+    assert "@click=\"showAssetSource = !showAssetSource\"" in asset_panel
+    assert ":show-source=\"showAssetSource\"" in asset_panel
     assert "showSource?: boolean" in markdown_source
     assert 'v-if="showSource"' in markdown_source
+
+
+def test_asset_editor_shell_delegates_to_subcomponents() -> None:
+    source = ASSET_EDITOR.read_text(encoding="utf-8")
+    assert "AssetListSidebar" in source
+    assert "AssetEditorPanel" in source
+    assert "AssetEditorDialogs" in source
+    assert "useAssetEditor" in source
+
+
+def test_asset_list_sidebar_keeps_custom_asset_actions() -> None:
+    source = ASSET_LIST_SIDEBAR.read_text(encoding="utf-8")
+    assert "导入名词解释" in source
+    assert "onBulkImportToTerminology" in source
+    assert "onContextCommand" in source
 
 
 def test_dashboard_auto_accepts_pending_state_candidates() -> None:
@@ -117,13 +147,15 @@ def test_dashboard_auto_accepts_pending_state_candidates() -> None:
 
 
 def test_pet_abort_button_uses_short_label() -> None:
-    source = PET_BUBBLE.read_text(encoding="utf-8")
+    bubble_source = PET_BUBBLE.read_text(encoding="utf-8")
+    status_source = PET_BUBBLE_STATUS.read_text(encoding="utf-8")
+    source = bubble_source + status_source
     assert "中止当前章节生成" not in source
     assert ">中止<" in source.replace("\n", "").replace(" ", "")
 
 
 def test_shanshan_status_does_not_repeat_work_progress_line() -> None:
-    source = PET_BUBBLE.read_text(encoding="utf-8")
+    source = PET_BUBBLE_STATUS.read_text(encoding="utf-8")
     assert 'class="status-detail-desc"' in source
     assert "work-progress-line" not in source
     assert "pet.workProgressLine" not in source
@@ -299,9 +331,12 @@ def test_llm_config_exposes_daily_and_reasoning_tier_selectors() -> None:
 
 
 def test_pet_monitor_navigation_uses_short_label() -> None:
-    source = PET_BUBBLE.read_text(encoding="utf-8")
+    status_source = PET_BUBBLE_STATUS.read_text(encoding="utf-8")
+    composable_source = PET_BUBBLE_VIEW.read_text(encoding="utf-8")
+    source = status_source + composable_source
     assert "<span>🔧 修章</span>" in source
-    assert "navigate('/chapters/maintenance')" in source
+    assert "navigate('/chapters/maintenance')" in composable_source
+    assert "onNavigate('/chapters/maintenance')" in status_source
     assert "<span>📊 运行监控</span>" not in source
 
 
@@ -490,10 +525,12 @@ def test_batch_run_form_persists_per_project() -> None:
 
 def test_shanshan_chat_opens_with_compact_editor_welcome_card() -> None:
     bubble_source = PET_BUBBLE.read_text(encoding="utf-8")
+    chat_source = PET_BUBBLE_CHAT.read_text(encoding="utf-8")
     copy_source = SHANSHAN_COPY.read_text(encoding="utf-8")
 
-    assert ":class=\"{ welcome: index === 0 && msg.role === 'assistant' }\"" in bubble_source
-    assert ".chat-row.assistant .msg-bubble.welcome" in bubble_source
+    assert "PetBubbleChatTab" in bubble_source
+    assert ":class=\"{ welcome: index === 0 && msg.role === 'assistant' }\"" in chat_source
+    assert ".chat-row.assistant .msg-bubble.welcome" in chat_source
     assert "结合当前作品体量与门禁摘要排障" in copy_source
     assert "嗨，我是山山，栖墨里的驻场小编辑。" in copy_source
     assert "查任务进度、体量与已写章数" in copy_source
