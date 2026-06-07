@@ -47,10 +47,19 @@ export function formatTokenEstimate(tokens: number): string {
   return `约 ${tokens} tokens`
 }
 
+/** Display amount in yuan (元). Avoids mixing ¥ with 分 which reads like "¥30.9 分". */
+export function formatCnyYuan(cny: number): string {
+  const n = Number(cny || 0)
+  if (n <= 0) return '—'
+  if (n >= 100) return `¥${n.toFixed(1)}`
+  if (n >= 1) return `¥${n.toFixed(2)}`
+  if (n >= 0.01) return `¥${n.toFixed(2)}`
+  return `¥${n.toFixed(4)}`
+}
+
 export function formatCnyEstimate(cny: number): string {
-  if (cny <= 0) return '—'
-  if (cny >= 1) return `约 ¥${cny.toFixed(1)}`
-  return `约 ¥${(cny * 100).toFixed(0)} 分`
+  const label = formatCnyYuan(cny)
+  return label === '—' ? '—' : `约 ${label}`
 }
 
 export function estimateBatchTokenCost(

@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getCostSummary } from '../api'
+import { formatCnyYuan } from '../utils/tokenCostEstimate'
 
 type CostSummary = {
   project_id?: string
@@ -20,13 +21,6 @@ type CostSummary = {
 const loading = ref(false)
 const summary = ref<CostSummary | null>(null)
 const loadError = ref('')
-
-const formatCny = (value?: number) => {
-  const n = Number(value || 0)
-  if (n <= 0) return '—'
-  if (n >= 1) return `¥${n.toFixed(2)}`
-  return `¥${(n * 100).toFixed(1)} 分`
-}
 
 const load = async () => {
   loading.value = true
@@ -70,12 +64,12 @@ onMounted(load)
       <div class="cost-stat">
         <span class="label">今日 tokens</span>
         <strong>{{ summary.persisted?.today_tokens ?? 0 }}</strong>
-        <small>{{ formatCny(summary.persisted?.today_cost_cny) }}</small>
+        <small>{{ formatCnyYuan(summary.persisted?.today_cost_cny ?? 0) }}</small>
       </div>
       <div class="cost-stat">
         <span class="label">本书累计 tokens</span>
         <strong>{{ summary.persisted?.total_tokens ?? 0 }}</strong>
-        <small>{{ formatCny(summary.persisted?.total_cost_cny) }}</small>
+        <small>{{ formatCnyYuan(summary.persisted?.total_cost_cny ?? 0) }}</small>
       </div>
       <div class="cost-stat">
         <span class="label">落库调用次数</span>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   estimateBatchTokenCost,
   formatCnyEstimate,
+  formatCnyYuan,
   formatTokenEstimate,
   resolveDailyModelPricePer1k,
   resolveDailyModelRef,
@@ -34,10 +35,17 @@ describe('tokenCostEstimate', () => {
     expect(formatTokenEstimate(2_000_000)).toContain('M')
   })
 
-  it('formats cny estimates', () => {
+  it('formats cny in yuan', () => {
+    expect(formatCnyYuan(0)).toBe('—')
+    expect(formatCnyYuan(2.4)).toBe('¥2.40')
+    expect(formatCnyYuan(0.309)).toBe('¥0.31')
+    expect(formatCnyYuan(0.005)).toBe('¥0.0050')
+  })
+
+  it('formats cny estimates with prefix', () => {
     expect(formatCnyEstimate(0)).toBe('—')
-    expect(formatCnyEstimate(2.4)).toContain('¥')
-    expect(formatCnyEstimate(0.05)).toContain('分')
+    expect(formatCnyEstimate(2.4)).toBe('约 ¥2.40')
+    expect(formatCnyEstimate(0.05)).toBe('约 ¥0.05')
   })
 
   it('estimates batch cost from chapters', () => {
