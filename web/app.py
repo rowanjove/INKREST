@@ -100,6 +100,11 @@ app.include_router(agent_api_router)
 app.include_router(system_router)
 app.include_router(auth_router)
 
+if os.environ.get("E2E_FIXTURES", "").strip() in ("1", "true", "yes"):
+    from web.routes.e2e_fixtures import router as e2e_fixtures_router
+
+    app.include_router(e2e_fixtures_router)
+
 
 def _require_enabled_web_extension(loaded_plugin) -> None:
     if not loaded_plugin.enabled:

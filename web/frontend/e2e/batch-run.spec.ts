@@ -1,15 +1,17 @@
 import { test, expect } from '@playwright/test'
+import { ensureActiveProject } from './helpers/fixtures'
 
 test.describe('batch run dialog', () => {
   test.skip(!process.env.E2E_RUN, 'Set E2E_RUN=1 with backend running to execute')
 
-  test('library loads and workbench shows batch start entry', async ({ page }) => {
-    await page.goto('/')
-    await expect(page.getByRole('button', { name: '新建小说' })).toBeVisible({
+  test('library loads and workbench shows batch start entry', async ({ page, request }) => {
+    await ensureActiveProject(page, request)
+    await page.getByRole('button', { name: /栖墨/ }).click()
+    await expect(page.getByRole('heading', { name: '我的书库' })).toBeVisible({
       timeout: 15_000,
     })
-    await page.goto('/workspace')
-    await expect(page.getByRole('button', { name: /连写启动|继续写书/ })).toBeVisible({
+    await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '工作台' }).click()
+    await expect(page.getByRole('button', { name: '连写启动' })).toBeVisible({
       timeout: 15_000,
     })
   })

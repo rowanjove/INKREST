@@ -50,5 +50,6 @@ jobs:
         working-directory: web/frontend
         env:
           E2E_RUN: "1"
+          E2E_FIXTURES: "1"
           E2E_SKIP_SERVER: ""
         run: npm run test:e2e

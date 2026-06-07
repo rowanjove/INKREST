@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useNovelProgress } from '../composables/useNovelProgress'
+import { EXTERNAL_AUDIT_HINT, INTERNAL_GATE_HINT } from '../constants/repairWorkflow'
 
 const { snapshot, loading, refresh } = useNovelProgress({ pollMs: 12000 })
 
@@ -58,6 +59,8 @@ const progress = computed(() => snapshot.value)
       </ul>
       <p class="footnote">
         若三处数字不一致，以章节维护「待处理」+ 批量断点为准排查；连写续跑请用「继续写书」弹窗，勿裸调 API。
+        {{ INTERNAL_GATE_HINT }}
+        {{ EXTERNAL_AUDIT_HINT }}
       </p>
     </div>
   </details>

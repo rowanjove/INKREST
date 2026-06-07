@@ -336,6 +336,20 @@ def test_batch_banner_prioritizes_repair_before_force_resume() -> None:
     assert "formatBatchPauseReason" in source
 
 
+def test_novel_progress_help_includes_dual_audit_footnote() -> None:
+    source = (
+        ROOT / "web" / "frontend" / "src" / "components" / "NovelProgressHelp.vue"
+    ).read_text(encoding="utf-8")
+    assert "INTERNAL_GATE_HINT" in source
+    assert "EXTERNAL_AUDIT_HINT" in source
+
+
+def test_e2e_fixture_route_gated_by_env() -> None:
+    app_source = (ROOT / "web" / "app.py").read_text(encoding="utf-8")
+    assert "E2E_FIXTURES" in app_source
+    assert "e2e_fixtures_router" in app_source
+
+
 def test_dual_audit_copy_splits_internal_and_external() -> None:
     source = (
         ROOT / "web" / "frontend" / "src" / "constants" / "repairWorkflow.ts"
