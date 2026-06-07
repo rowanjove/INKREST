@@ -30,6 +30,29 @@ CHAPTER_MAINTENANCE = ROOT / "web" / "frontend" / "src" / "views" / "ChapterMain
 OUTLINE_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "OutlineView.vue"
 CONFIG_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "ConfigView.vue"
 LIBRARY_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "LibraryView.vue"
+LIBRARY_BOOK_GRID = (
+    ROOT / "web" / "frontend" / "src" / "components" / "library" / "LibraryBookGrid.vue"
+)
+LIBRARY_PROJECTS = ROOT / "web" / "frontend" / "src" / "composables" / "useLibraryProjects.ts"
+STATE_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "StateView.vue"
+STATE_SETTINGS_TAB = (
+    ROOT / "web" / "frontend" / "src" / "components" / "state" / "StateSettingsTab.vue"
+)
+STATE_CHRONICLE_TAB = (
+    ROOT / "web" / "frontend" / "src" / "components" / "state" / "StateChronicleTab.vue"
+)
+WRITER_CHAPTER_SIDEBAR = (
+    ROOT / "web" / "frontend" / "src" / "components" / "writing" / "WritingChapterSidebar.vue"
+)
+WRITER_RIGHT_SIDEBAR = (
+    ROOT / "web" / "frontend" / "src" / "components" / "writing" / "WritingRightSidebar.vue"
+)
+OUTLINE_GENES = (
+    ROOT / "web" / "frontend" / "src" / "components" / "outline" / "OutlineGenesPanel.vue"
+)
+OUTLINE_MINDMAP = (
+    ROOT / "web" / "frontend" / "src" / "components" / "outline" / "OutlineMindmapPane.vue"
+)
 EMPTY_STATE = ROOT / "web" / "frontend" / "src" / "components" / "EmptyStatePanel.vue"
 READINESS_CARD = (
     ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "ProjectReadinessCard.vue"
@@ -114,7 +137,7 @@ def test_shanshan_chat_keeps_four_suggested_questions() -> None:
 
 
 def test_library_book_cards_use_spine_without_tick_overlay() -> None:
-    source = LIBRARY_VIEW.read_text(encoding="utf-8")
+    source = LIBRARY_BOOK_GRID.read_text(encoding="utf-8")
     assert 'class="book-spine-shadow"' in source
     assert 'class="book-spine"' in source
     assert "aria-hidden=\"true\"" in source
@@ -128,12 +151,13 @@ def test_project_manager_uses_cached_pipeline_alert_count() -> None:
 
 
 def test_library_cards_show_pending_alert_badge() -> None:
-    source = LIBRARY_VIEW.read_text(encoding="utf-8")
-    assert "pending_alert_count" in source
-    assert 'class="pending-badge"' in source
-    assert "待处理" in source
-    assert "openPendingMaintenance" in source
-    assert "expand=alerts" in source
+    grid_source = LIBRARY_BOOK_GRID.read_text(encoding="utf-8")
+    projects_source = LIBRARY_PROJECTS.read_text(encoding="utf-8")
+    assert "pending_alert_count" in grid_source
+    assert 'class="pending-badge"' in grid_source
+    assert "待处理" in grid_source
+    assert "openPendingMaintenance" in projects_source
+    assert "expand=alerts" in projects_source
 
 
 def test_empty_state_panel_used_in_key_views() -> None:
@@ -235,7 +259,7 @@ def test_embedding_config_stays_collapsed_by_default() -> None:
 
 def test_api_errors_prefer_backend_detail_over_status_text() -> None:
     api_source = FRONTEND_API.read_text(encoding="utf-8")
-    library_source = LIBRARY_VIEW.read_text(encoding="utf-8")
+    library_source = LIBRARY_PROJECTS.read_text(encoding="utf-8")
     chapter_list_source = CHAPTER_LIST.read_text(encoding="utf-8")
     writer_chapter_source = WRITER_CHAPTER.read_text(encoding="utf-8")
 
@@ -479,3 +503,58 @@ def test_shanshan_chat_opens_with_compact_editor_welcome_card() -> None:
     assert "你现在想先处理哪一件？" in copy_source
     assert "'全书暂停了，怎么续跑？'" in copy_source
     assert "'日常档和逻辑档怎么选？'" in copy_source
+
+
+def test_writer_shell_delegates_to_subcomponents() -> None:
+    source = WRITER.read_text(encoding="utf-8")
+    assert "WritingChapterSidebar" in source
+    assert "WritingEditorMain" in source
+    assert "WritingRightSidebar" in source
+    assert "WritingWorkspaceDialogs" in source
+
+
+def test_writer_chapter_sidebar_supports_collapse_and_delete() -> None:
+    source = WRITER_CHAPTER_SIDEBAR.read_text(encoding="utf-8")
+    assert "章节目录" in source
+    assert "onDeleteChapter" in source
+    assert "defineModel<boolean>('collapsed'" in source.replace(" ", "")
+
+
+def test_state_view_shell_delegates_to_tab_components() -> None:
+    source = STATE_VIEW.read_text(encoding="utf-8")
+    assert "StateSettingsTab" in source
+    assert "StateChronicleTab" in source
+
+
+def test_state_chronicle_tab_keeps_relation_graph_contract() -> None:
+    source = STATE_CHRONICLE_TAB.read_text(encoding="utf-8")
+    assert "NODE_CIRCLE_R" in source
+    assert "RELATION_TYPE_COLORS" in source
+    assert "relations-svg" in source
+
+
+def test_state_settings_tab_keeps_foreshadow_collect() -> None:
+    source = STATE_SETTINGS_TAB.read_text(encoding="utf-8")
+    assert "伏笔债务" in source
+    assert "onCollect" in source
+    assert "强行催收" in source
+
+
+def test_outline_shell_delegates_to_pane_components() -> None:
+    source = OUTLINE_VIEW.read_text(encoding="utf-8")
+    assert "OutlineMindmapPane" in source
+    assert "OutlineClassicPane" in source
+    assert "OutlineDialogs" in source
+    assert "OutlineGenesPanel" in source
+
+
+def test_outline_genes_panel_exposes_edit_action() -> None:
+    source = OUTLINE_GENES.read_text(encoding="utf-8")
+    assert "类型基因" in source
+    assert "onOpenEditGenes" in source
+
+
+def test_outline_mindmap_pane_exposes_canvas() -> None:
+    source = OUTLINE_MINDMAP.read_text(encoding="utf-8")
+    assert "mindmap-canvas" in source
+    assert "setNodeRef" in source
