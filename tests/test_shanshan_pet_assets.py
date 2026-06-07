@@ -83,15 +83,18 @@ def test_ignored_failed_tasks_sync_across_pet_windows() -> None:
 
 
 def test_shanshan_pipeline_state_maps_working_and_question() -> None:
-    source = PET_STORE.read_text(encoding="utf-8")
+    pet_state = ROOT / "web" / "frontend" / "src" / "utils" / "petState.ts"
+    source = pet_state.read_text(encoding="utf-8")
+    store_source = PET_STORE.read_text(encoding="utf-8")
 
     assert "hasPipelineProblem" in source
     assert "isPipelineRunning" in source
-    assert "pipeline_pending" in source
-    assert "bubblePulseState" in source
-    assert "return 'question'" in source
+    assert "mapContextToPetState" in source
     assert "return 'working'" in source
-    assert "疑惑" in source
+    assert "return 'question'" in source
+    assert "mapContextToPetState" in store_source
+    assert "bubblePulseState" in store_source
+    assert "疑惑" in store_source
 
 
 def test_pet_bubble_pulse_uses_effective_state_not_hide_sprite() -> None:

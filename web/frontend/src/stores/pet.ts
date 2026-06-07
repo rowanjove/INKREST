@@ -11,8 +11,9 @@ import {
   SHANSHAN_FIX_REPLY,
   SHANSHAN_WELCOME_CHAT,
 } from '../constants/shanshanCopy'
+import { mapContextToPetState, type PetState } from '../utils/petState'
 
-export type PetState = 'idle' | 'working' | 'success' | 'error' | 'offline' | 'dragging' | 'question' | 'hide-left' | 'hide-right' | 'hide-top' | 'hide-bottom'
+export type { PetState }
 
 export interface PetSettings {
   enabled: boolean
@@ -198,29 +199,8 @@ export const usePetStore = defineStore('pet', () => {
     return current
   })
 
-  function isPipelineRunning(next: AssistantContext): boolean {
-    return Boolean(next.pipeline_active || (next.running_tasks?.length ?? 0) > 0)
-  }
-
-  function hasPipelineProblem(next: AssistantContext): boolean {
-    const activeFailed = (next.failed_tasks || []).filter(
-      (t) => t.id && !ignoredFailedTaskIds.value.includes(t.id),
-    )
-    if (activeFailed.length > 0) return true
-    if (next.novel_batch?.paused) return true
-    const pending = next.pipeline_pending
-    if (pending && (pending.pending_total ?? 0) > 0 && !isPipelineRunning(next)) return true
-    return false
-  }
-
   function mapContextToState(next: AssistantContext | null): PetState {
-    if (!next || next.backend_health !== 'ok') return 'offline'
-
-    if (hasPipelineProblem(next)) return 'question'
-
-    if (next.pipeline_active || (next.running_tasks?.length ?? 0) > 0) return 'working'
-
-    return 'idle'
+    return mapContextToPetState(next, ignoredFailedTaskIds.value)
   }
 
   function ignoreFailedTask(taskId: string) {
