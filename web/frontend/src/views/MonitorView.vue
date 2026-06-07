@@ -101,7 +101,7 @@ function dismissTaskFailure() {
           </div>
         </el-tab-pane>
 
-        <el-tab-pane name="agent_logs">
+        <el-tab-pane name="agent_logs" lazy>
           <template #label>
             <span class="tab-label-custom">
               <el-icon><Cpu /></el-icon>
@@ -113,7 +113,7 @@ function dismissTaskFailure() {
           </div>
         </el-tab-pane>
 
-        <el-tab-pane name="logs">
+        <el-tab-pane name="logs" lazy>
           <template #label>
             <span class="tab-label-custom">
               <el-icon><Connection /></el-icon>

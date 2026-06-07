@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import { listTasks, abortTask as apiAbortTask, getRuntimeLogs, clearRuntimeLogs } from '../api'
 import { errorCodeHint } from '../utils/errorCodes'
+import { shouldPoll } from '../utils/pollingGate'
 import { usePipelineAlertsStore } from './pipelineAlerts'
 
 export interface LogEntry {
@@ -18,6 +19,31 @@ export interface ProgressEntry {
   chapter_id: string
   data?: Record<string, any>
   timestamp: number
+}
+
+export interface TaskSummary {
+  task_id: string
+  chapter_id?: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  goal?: string
+  error?: string
+  created_at?: string
+  updated_at?: string
+  progress?: {
+    step: string
+    status: ProgressEntry['status']
+    chapter_id?: string
+    data?: Record<string, any>
+    timestamp?: number
+  }
+  result?: {
+    code?: string
+    failure_kind?: string
+    failure_hint?: string
+    message?: string
+  }
+  failure_kind?: string
+  error_code?: string
 }
 
 const STEP_LABELS: Record<string, string> = {
@@ -106,7 +132,8 @@ const PIPELINE_ORDER = [
 ]
 
 export const useTasksStore = defineStore('tasks', () => {
-  const logs = ref<LogEntry[]>([])
+  const logs = shallowRef<LogEntry[]>([])
+  const taskList = shallowRef<TaskSummary[]>([])
   const progress = ref<ProgressEntry[]>([])
   const currentChapterId = ref<string>('')
   const currentTaskId = ref<string>('')
@@ -114,10 +141,8 @@ export const useTasksStore = defineStore('tasks', () => {
   const lastTaskFailure = ref<{ task_id: string; hint: string; code: string } | null>(null)
 
   function addLog(entry: LogEntry) {
-    logs.value.push(entry)
-    if (logs.value.length > 500) {
-      logs.value = logs.value.slice(-500)
-    }
+    const next = [...logs.value, entry]
+    logs.value = next.length > 500 ? next.slice(-500) : next
   }
 
   const lastProgressLogKey = ref('')
@@ -237,6 +262,7 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   async function pollRuntimeLogs() {
+    if (!shouldPoll()) return
     try {
       const { data } = await getRuntimeLogs(lastRuntimeLogId.value, 200)
       for (const row of data.logs || []) {
@@ -253,7 +279,7 @@ export const useTasksStore = defineStore('tasks', () => {
   function startRuntimeLogPolling() {
     if (runtimeLogTimer) return
     pollRuntimeLogs()
-    runtimeLogTimer = window.setInterval(pollRuntimeLogs, 1500)
+    runtimeLogTimer = window.setInterval(pollRuntimeLogs, 3000)
   }
 
   function stopRuntimeLogPolling() {
@@ -292,7 +318,8 @@ export const useTasksStore = defineStore('tasks', () => {
     return `${proto}//${window.location.host}/ws/tasks`
   }
 
-  function processTasksList(data: any[]) {
+  function processTasksList(data: TaskSummary[]) {
+      taskList.value = data.slice()
       let runningFound = false
       for (const task of data) {
         if (task.status === 'running') {
@@ -306,9 +333,9 @@ export const useTasksStore = defineStore('tasks', () => {
             addProgress({
               step: task.progress.step,
               status: task.progress.status,
-              chapter_id: task.progress.chapter_id,
+              chapter_id: task.progress.chapter_id || task.chapter_id || '',
               data: task.progress.data,
-              timestamp: task.progress.timestamp * 1000,
+              timestamp: (task.progress.timestamp ?? 0) * 1000,
             })
           }
         } else if (task.status === 'completed') {
@@ -341,7 +368,7 @@ export const useTasksStore = defineStore('tasks', () => {
               fr.message ||
               task.error ||
               '任务执行失败'
-            lastTaskFailure.value = { task_id: task.task_id, hint, code }
+            lastTaskFailure.value = { task_id: task.task_id, hint: String(hint), code: String(code) }
             if (isRunning.value && currentChapterId.value === task.chapter_id) {
               markError(task.chapter_id || '', hint)
             }
@@ -357,11 +384,21 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   async function pollTasks() {
+    if (!shouldPoll()) return
     try {
       const { data } = await listTasks()
       processTasksList(data)
     } catch (e) {
       console.error('Error polling tasks:', e)
+    }
+  }
+
+  async function refreshTaskList() {
+    try {
+      const { data } = await listTasks()
+      processTasksList(data)
+    } catch (e) {
+      console.error('Error refreshing tasks:', e)
     }
   }
 
@@ -484,6 +521,7 @@ export const useTasksStore = defineStore('tasks', () => {
 
   return {
     logs,
+    taskList,
     progress,
     currentChapterId,
     currentTaskId,
@@ -500,5 +538,6 @@ export const useTasksStore = defineStore('tasks', () => {
     startRuntimeLogPolling,
     stopRuntimeLogPolling,
     abortCurrentTask,
+    refreshTaskList,
   }
 })

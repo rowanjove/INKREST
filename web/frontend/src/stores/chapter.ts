@@ -31,9 +31,9 @@ export const useChapterStore = defineStore('chapter', () => {
   const totalWords = computed(() => chapters.value.reduce((sum, c) => sum + (c.word_count || 0), 0))
   const latestChapter = computed(() => chapters.value[chapters.value.length - 1])
 
-  async function fetchChapters() {
+  async function fetchChapters(sync = false) {
     try {
-      const { data } = await listChapters({ offset: 0, limit: 500, sync: true, include_gaps: true })
+      const { data } = await listChapters({ offset: 0, limit: 500, sync, include_gaps: true })
       chapters.value = data.items ?? data
     } catch { /* backend warming up */ }
   }
@@ -55,7 +55,7 @@ export const useChapterStore = defineStore('chapter', () => {
     loading.value = true
     try {
       await runChapter(form)
-      await Promise.all([fetchChapters(), fetchTasks()])
+      await Promise.all([fetchChapters(true), fetchTasks()])
     } finally {
       loading.value = false
     }

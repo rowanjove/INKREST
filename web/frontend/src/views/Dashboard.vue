@@ -51,6 +51,7 @@ import { useNovelBatchRun } from '../composables/useNovelBatchRun'
 import { useChapterStore } from '../stores/chapter'
 import { useProjectStore } from '../stores/project'
 import { useTasksStore } from '../stores/tasks'
+import { shouldPoll } from '../utils/pollingGate'
 
 const router = useRouter()
 const chapterStore = useChapterStore()
@@ -526,14 +527,24 @@ const downloadSerial = async (format: string) => {
 
 
 
-onMounted(async () => {
-  await loadWorkbench()
+const restartDashboardTimer = () => {
+  if (timer) window.clearInterval(timer)
+  const intervalMs = tasksStore.isRunning ? 3000 : 15000
   timer = window.setInterval(() => {
-    chapterStore.refreshAll()
+    if (!shouldPoll()) return
+    if (tasksStore.isRunning) {
+      chapterStore.refreshAll()
+    }
     if (activeTab.value === 'serialization') {
       loadSerialData()
     }
-  }, 3000)
+  }, intervalMs)
+}
+
+onMounted(async () => {
+  await loadWorkbench()
+  restartDashboardTimer()
+  watch(() => tasksStore.isRunning, restartDashboardTimer)
   tasksStore.startPolling()
 })
 

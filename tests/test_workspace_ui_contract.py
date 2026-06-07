@@ -233,14 +233,14 @@ def test_api_errors_prefer_backend_detail_over_status_text() -> None:
     assert "apiErrorMessage(e" in writer_source
 
 
-def test_task_log_keeps_polling_store_and_adds_manual_refresh() -> None:
+def test_task_log_uses_tasks_store_with_manual_refresh() -> None:
     source = TASK_LOG.read_text(encoding="utf-8")
     assert "Refresh" in source
     assert "refreshing" in source
-    assert "await store.fetchTasks()" in source
+    assert "useTasksStore" in source
+    assert "refreshTaskList" in source
     assert "@click=\"handleRefresh\"" in source
-    assert "window.setInterval(refreshTasks, 2000)" in source
-    assert "window.clearInterval(refreshTimer)" in source
+    assert "window.setInterval(refreshTasks, 2000)" not in source
 
 
 def test_sidebar_brand_uses_single_line_inkrest_lockup() -> None:

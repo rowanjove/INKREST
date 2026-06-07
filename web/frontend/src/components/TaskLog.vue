@@ -1,19 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { Clock, DataLine, Refresh } from '@element-plus/icons-vue'
 import EmptyStatePanel from './EmptyStatePanel.vue'
-import { useChapterStore } from '../stores/chapter'
+import { useTasksStore } from '../stores/tasks'
 import { formatTaskStep } from '../utils/taskStepLabels'
 
-const store = useChapterStore()
-const { tasks } = storeToRefs(store)
+const tasksStore = useTasksStore()
+const { taskList: tasks } = storeToRefs(tasksStore)
 const refreshing = ref(false)
-let refreshTimer: number | null = null
 
 async function refreshTasks() {
-  await store.fetchTasks()
+  await tasksStore.refreshTaskList()
 }
 
 async function handleRefresh() {
@@ -26,15 +25,7 @@ async function handleRefresh() {
 }
 
 onMounted(() => {
-  refreshTasks()
-  refreshTimer = window.setInterval(refreshTasks, 2000)
-})
-
-onUnmounted(() => {
-  if (refreshTimer) {
-    window.clearInterval(refreshTimer)
-    refreshTimer = null
-  }
+  void refreshTasks()
 })
 
 const router = useRouter()

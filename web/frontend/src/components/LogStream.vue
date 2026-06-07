@@ -69,13 +69,12 @@ watch(followTail, (on) => {
 })
 
 watch(
-  logs,
+  () => logs.value.length,
   async () => {
     if (!followTail.value) return
     await nextTick()
     scrollToBottom()
   },
-  { deep: true },
 )
 
 const handleClear = async () => {
@@ -119,7 +118,11 @@ onBeforeUnmount(() => {
       <div v-if="logs.length === 0" class="log-empty">
         等待日志输出…
       </div>
-      <div v-for="(entry, idx) in logs" :key="idx" class="log-line">
+      <div
+        v-for="(entry, idx) in logs"
+        :key="`${entry.timestamp}-${entry.step}-${idx}`"
+        class="log-line"
+      >
         <span class="log-time">{{ formatTime(entry.timestamp) }}</span>
         <span class="log-level" :style="{ color: levelColors[entry.level] || '#909399' }">
           [{{ entry.level.toUpperCase() }}]

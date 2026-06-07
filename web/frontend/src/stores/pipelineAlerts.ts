@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { getPipelineAlerts } from '../api'
+import { shouldPoll } from '../utils/pollingGate'
 
 export type PipelineAlert = {
   chapter_id: string
@@ -31,6 +32,7 @@ export const usePipelineAlertsStore = defineStore('pipelineAlerts', () => {
   let subscribers = 0
 
   async function fetchAlerts() {
+    if (!shouldPoll()) return
     loading.value = true
     try {
       const { data } = await getPipelineAlerts()

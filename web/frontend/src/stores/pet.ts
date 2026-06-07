@@ -11,6 +11,7 @@ import {
   SHANSHAN_FIX_REPLY,
   SHANSHAN_WELCOME_CHAT,
 } from '../constants/shanshanCopy'
+import { shouldPoll } from '../utils/pollingGate'
 import { isPipelineRunning, mapContextToPetState, type PetState } from '../utils/petState'
 import { formatTaskStep } from '../utils/taskStepLabels'
 
@@ -333,6 +334,7 @@ export const usePetStore = defineStore('pet', () => {
   }
 
   async function refreshContext() {
+    if (!shouldPoll()) return
     loading.value = true
     try {
       const { data } = await getAssistantContext()

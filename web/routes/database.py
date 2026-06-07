@@ -21,6 +21,7 @@ from web.models import (
     TimelineView,
 )
 from novel_agent.state.sqlite_store import SQLiteStateStore
+from novel_agent.services.chapter_index_sync import sync_chapters_from_disk
 from novel_agent.control.narrative_debt import classify_debt
 from novel_agent.control.scale_profile import build_upgrade_pressure, resolve_scale_profile
 from novel_agent.dashboard import build_dashboard_html
@@ -312,7 +313,19 @@ def collect_debt(req: CollectDebtRequest) -> Dict[str, Any]:
 @router.get("/api/control/calibration")
 def get_calibration_report() -> Dict[str, Any]:
     outline = ws_server.get_outline()
-    chapters = [item.model_dump() for item in ws_server.list_chapters()]
+    root = ws_server.get_root_dir()
+    store = SQLiteStateStore(root)
+    if store.count_chapters_indexed() == 0:
+        sync_chapters_from_disk(root, store)
+    rows = store.list_chapters_page(offset=0, limit=500)
+    chapters = [
+        {
+            "chapter_id": row.get("id"),
+            "title": row.get("title") or "",
+            "word_count": int(row.get("word_count") or 0),
+        }
+        for row in rows
+    ]
     current = chapters[-1]["chapter_id"] if chapters else "000"
     debt = get_narrative_debt(current_chapter=current)
     return ws_server.build_calibration_report(outline, chapters, debt)
@@ -321,14 +334,18 @@ def get_calibration_report() -> Dict[str, Any]:
 @router.get("/api/control/scale-profile")
 def get_scale_profile() -> Dict[str, Any]:
     outline = ws_server.get_outline()
-    chapters = ws_server.list_chapters()
+    root = ws_server.get_root_dir()
+    store = SQLiteStateStore(root)
+    if store.count_chapters_indexed() == 0:
+        sync_chapters_from_disk(root, store)
+    chapter_count = store.count_chapters_indexed()
     profile = outline.get("scale_profile") or resolve_scale_profile(
-        target_chapters=outline.get("target_chapters") or len(chapters) or 20
+        target_chapters=outline.get("target_chapters") or chapter_count or 20
     )
     return {
         "profile": profile,
-        "current_chapter_count": len(chapters),
-        "upgrade_pressure": build_upgrade_pressure(profile, len(chapters)),
+        "current_chapter_count": chapter_count,
+        "upgrade_pressure": build_upgrade_pressure(profile, chapter_count),
     }
 
 

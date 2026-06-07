@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
+
+_SUMMARY_CACHE_TTL_SEC = 3.0
+_summary_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+
+
+def invalidate_progress_summary_cache(root: Path) -> None:
+    _summary_cache.pop(str(root.resolve()), None)
 
 from novel_agent.services.arc_queue import load_arc_progress
 from novel_agent.services.pipeline_pending import summarize_pipeline_pending
@@ -60,6 +68,20 @@ def _count_pipeline_complete_on_disk(root: Path) -> int:
 
 
 def build_progress_summary(root: Path, *, reconcile: bool = False) -> Dict[str, Any]:
+    cache_key = str(root.resolve())
+    if not reconcile:
+        cached = _summary_cache.get(cache_key)
+        if cached is not None:
+            ts, payload = cached
+            if time.monotonic() - ts < _SUMMARY_CACHE_TTL_SEC:
+                return dict(payload)
+
+    payload = _build_progress_summary_uncached(root, reconcile=reconcile)
+    _summary_cache[cache_key] = (time.monotonic(), payload)
+    return payload
+
+
+def _build_progress_summary_uncached(root: Path, *, reconcile: bool = False) -> Dict[str, Any]:
     if reconcile:
         try:
             from novel_agent.services.progress_sync import reconcile_progress_ledger

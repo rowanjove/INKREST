@@ -380,13 +380,11 @@ def get_outline_queue_status() -> Dict[str, Any]:
 def get_novel_batch_status() -> Dict[str, Any]:
     from novel_agent.services.arc_queue import load_arc_progress, load_workspace_arcs
 
-    from novel_agent.services.pipeline_pending import summarize_pipeline_pending
     from novel_agent.services.progress_summary import build_progress_summary
 
     root = ws_server.get_root_dir()
     progress = load_arc_progress(root)
     arcs = load_workspace_arcs(root)
-    pending = summarize_pipeline_pending(root)
     summary = build_progress_summary(root)
     return {
         "status": progress.get("status", "idle"),
@@ -398,9 +396,9 @@ def get_novel_batch_status() -> Dict[str, Any]:
         "completed_chapters": progress.get("completed_chapters", 0),
         "arc_count": len(arcs),
         "progress": progress,
-        "pending_retry_count": pending.get("pending_retry_count", 0),
-        "pending_gate_count": pending.get("pending_gate_count", 0),
-        "pending_total": pending.get("pending_total", 0),
+        "pending_retry_count": summary.get("pending_retry_count", 0),
+        "pending_gate_count": summary.get("pending_gate_count", 0),
+        "pending_total": summary.get("pending_total", 0),
         "authoritative_progress_note": summary.get("progress_note", ""),
         "progress_summary": summary,
     }

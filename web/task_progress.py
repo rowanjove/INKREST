@@ -3,7 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, Callable, Dict, Optional
+
+_PROGRESS_DEBOUNCE_SEC = 0.5
+_last_progress_write: Dict[str, float] = {}
+
+
+def _should_write_progress(task_id: str, msg: Dict[str, Any]) -> bool:
+    step = str(msg.get("step") or "")
+    key = f"{task_id}:{step}"
+    now = time.monotonic()
+    last = _last_progress_write.get(key, 0.0)
+    if now - last < _PROGRESS_DEBOUNCE_SEC:
+        return False
+    _last_progress_write[key] = now
+    return True
 
 
 def handle_progress_message(
@@ -48,11 +63,13 @@ def handle_progress_message(
     try:
         loop = asyncio.get_running_loop()
         if msg_type == "progress":
-            loop.run_in_executor(None, update_task_progress, task_id, msg)
+            if _should_write_progress(task_id, msg):
+                loop.run_in_executor(None, update_task_progress, task_id, msg)
         elif msg_type == "complete" and task_id.startswith("novel-") and chapter_id:
             loop.run_in_executor(None, update_task_chapter_id, task_id, chapter_id)
     except RuntimeError:
         if msg_type == "progress":
-            update_task_progress(task_id, msg)
+            if _should_write_progress(task_id, msg):
+                update_task_progress(task_id, msg)
         elif msg_type == "complete" and task_id.startswith("novel-") and chapter_id:
             update_task_chapter_id(task_id, chapter_id)

@@ -12,6 +12,7 @@ from novel_agent.services.batch_retry_queue import list_pending_retries
 logger = get_logger("services.pipeline_pending")
 
 _ALERT_COUNT_CACHE_REL = "workspace/reports/pending_alert_count.cache.json"
+_ALERT_LIST_CACHE_REL = "workspace/reports/pipeline_alerts.cache.json"
 
 _CHECKPOINT_ALERT_STAGES = frozenset({"quality_blocked", "approval_rejected"})
 
@@ -183,12 +184,42 @@ def pipeline_alerts_cache_signature(root_dir: Path) -> Dict[str, Any]:
 
 
 def invalidate_pipeline_alerts_cache(root_dir: Path) -> None:
-    path = root_dir / _ALERT_COUNT_CACHE_REL
+    for rel in (_ALERT_COUNT_CACHE_REL, _ALERT_LIST_CACHE_REL):
+        path = root_dir / rel
+        try:
+            if path.is_file():
+                path.unlink()
+        except OSError as exc:
+            logger.debug("Failed to invalidate pipeline alert cache %s: %s", rel, exc)
     try:
-        if path.is_file():
-            path.unlink()
+        from novel_agent.services.progress_summary import invalidate_progress_summary_cache
+
+        invalidate_progress_summary_cache(root_dir)
+    except Exception:
+        pass
+
+
+def collect_pipeline_alerts_cached(root_dir: Path) -> List[Dict[str, Any]]:
+    """Disk-backed cache for full alert list (mtime signature)."""
+    cache_path = root_dir / _ALERT_LIST_CACHE_REL
+    sig = pipeline_alerts_cache_signature(root_dir)
+    if cache_path.is_file():
+        try:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            if cached.get("signature") == sig and isinstance(cached.get("alerts"), list):
+                return list(cached["alerts"])
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+            pass
+    alerts = collect_pipeline_alerts(root_dir)
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(
+            json.dumps({"signature": sig, "alerts": alerts}, ensure_ascii=False),
+            encoding="utf-8",
+        )
     except OSError as exc:
-        logger.debug("Failed to invalidate pipeline alert cache: %s", exc)
+        logger.debug("Failed to write pipeline alerts list cache: %s", exc)
+    return alerts
 
 
 def count_pipeline_alerts_cached(root_dir: Path) -> int:
@@ -237,7 +268,7 @@ def count_pipeline_alerts(root_dir: Path) -> int:
 
 
 def summarize_pipeline_pending(root_dir: Path) -> Dict[str, Any]:
-    alerts = collect_pipeline_alerts(root_dir)
+    alerts = collect_pipeline_alerts_cached(root_dir)
     retries = [a for a in alerts if a.get("last_stage") == "batch_retry"]
     gate_blocked = [a for a in alerts if a.get("last_stage") in _CHECKPOINT_ALERT_STAGES]
     external = [a for a in alerts if a.get("last_stage") == "external_review_pending"]

@@ -172,13 +172,13 @@ def golden_check(pid: str) -> Dict[str, Any]:
 @router.get("/api/pipeline-alerts")
 def list_pipeline_alerts() -> Dict[str, Any]:
     """Chapters whose checkpoint indicates a blocked or rejected pipeline gate."""
-    from novel_agent.services.pipeline_pending import collect_pipeline_alerts
+    from novel_agent.services.pipeline_pending import collect_pipeline_alerts_cached
 
     root = ws_server.require_project_root()
     chapters_root = root / "workspace" / "chapters"
     if not chapters_root.exists():
         chapters_root.mkdir(parents=True, exist_ok=True)
-    return {"alerts": collect_pipeline_alerts(root)}
+    return {"alerts": collect_pipeline_alerts_cached(root)}
 
 
 @router.patch("/api/chapters/{chapter_id}/external-review")

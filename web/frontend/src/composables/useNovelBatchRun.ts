@@ -168,7 +168,7 @@ export function useNovelBatchRun() {
       await withRefreshTimeout(
         Promise.all([
           listAssets().catch(() => ({ data: [] })),
-          getChapterCount(true).catch(() => ({ data: { total: 0 } })),
+          getChapterCount(false).catch(() => ({ data: { total: 0 } })),
           getOutline().catch(() => ({ data: {} })),
           listModels().catch(() => ({ data: [] })),
           getConfig().catch(() => ({ data: {} })),
@@ -187,7 +187,10 @@ export function useNovelBatchRun() {
     ctx.value = {
       outline: outlineData && Object.keys(outlineData).length > 0 ? outlineData : null,
       assets: assetRes.data || [],
-      chapterCountTotal: countRes.data?.total ?? 0,
+      chapterCountTotal:
+        batchRes.data?.progress_summary?.authoritative_completed ??
+        countRes.data?.total ??
+        0,
       engineReady: resolveEngine(configRes.data, modelsRes.data || []).ready,
       semanticSearchEffective: Boolean(embRes.data?.semantic_search_effective),
       vectorEnabled: embRes.data?.vector_enabled !== false,
@@ -236,9 +239,12 @@ export function useNovelBatchRun() {
   function startChapterCountPoll() {
     stopChapterCountPoll()
     chapterCountPollTimer = setInterval(() => {
-      getChapterCount(true)
+      getNovelBatchStatus()
         .then((res) => {
-          ctx.value.chapterCountTotal = res.data?.total ?? ctx.value.chapterCountTotal
+          const n = res.data?.progress_summary?.authoritative_completed
+          if (typeof n === 'number') {
+            ctx.value.chapterCountTotal = n
+          }
         })
         .catch(() => {
           /* ignore poll errors */
