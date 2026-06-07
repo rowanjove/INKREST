@@ -93,6 +93,18 @@ def is_batch_circuit_paused(root_dir: Path) -> bool:
     )
 
 
+def is_novel_batch_paused(root_dir: Path) -> bool:
+    progress = load_arc_progress(root_dir)
+    return progress.get("status") == "paused"
+
+
+def novel_batch_pause_reason(root_dir: Path) -> str:
+    progress = load_arc_progress(root_dir)
+    if progress.get("status") != "paused":
+        return ""
+    return str(progress.get("pause_reason") or "paused")
+
+
 def has_more_batch_work(root_dir: Path, complete_fn) -> bool:
     from novel_agent.services.rolling_planner import count_pending_briefs as _count_pending
 
@@ -140,8 +152,8 @@ async def run_novel_autopilot(
     )
 
     for round_idx in range(1, rounds_limit + 1):
-        if is_batch_circuit_paused(root):
-            outcome.stopped_reason = "circuit_breaker"
+        if is_novel_batch_paused(root):
+            outcome.stopped_reason = novel_batch_pause_reason(root) or "paused"
             outcome.paused = True
             break
 
@@ -213,8 +225,8 @@ async def run_novel_autopilot(
             },
         )
 
-        if is_batch_circuit_paused(root):
-            outcome.stopped_reason = "circuit_breaker"
+        if is_novel_batch_paused(root):
+            outcome.stopped_reason = novel_batch_pause_reason(root) or "paused"
             outcome.paused = True
             break
 

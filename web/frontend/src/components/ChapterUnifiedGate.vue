@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { CircleCheck, InfoFilled, Warning } from '@element-plus/icons-vue'
 import ChapterArtifactStatus from './ChapterArtifactStatus.vue'
+import { EXTERNAL_AUDIT_HINT, INTERNAL_GATE_HINT } from '../constants/repairWorkflow'
 
 const props = defineProps<{
   unifiedGate: Record<string, any>
@@ -39,6 +40,11 @@ const statusTagType = computed(() => (overallPass.value ? 'success' : blocked.va
     </div>
 
     <template v-else>
+      <el-alert type="info" :closable="false" show-icon class="dual-audit-hint" title="两道审核">
+        <p>{{ INTERNAL_GATE_HINT }}</p>
+        <p>{{ EXTERNAL_AUDIT_HINT }}</p>
+      </el-alert>
+
       <el-alert
         v-if="blocked"
         type="error"
@@ -119,6 +125,12 @@ const statusTagType = computed(() => (overallPass.value ? 'success' : blocked.va
   padding: 40px;
   color: #909399;
   text-align: center;
+}
+
+.dual-audit-hint p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .gate-summary-card {

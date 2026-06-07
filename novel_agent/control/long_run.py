@@ -11,7 +11,7 @@ from novel_agent.control.scale_profile import load_outline_scale_profile
 from novel_agent.pipeline import load_pipeline_settings
 
 _DEFAULT_FAIL_STREAK = 5
-_DEFAULT_SKIP_PAUSE = 3
+_DEFAULT_SKIP_PAUSE = 1
 _DEFAULT_CHAPTER_RETRY_MAX = 3
 _DEFAULT_VECTOR_WINDOW = 80
 _DEFAULT_HNSW_REBUILD_EVERY = 0
@@ -68,6 +68,15 @@ def resolve_batch_skip_pause_max(root_dir: Path) -> int:
         return max(0, int(raw))
     except (TypeError, ValueError):
         return _DEFAULT_SKIP_PAUSE
+
+
+def resolve_pause_on_quality_block(root_dir: Path) -> bool:
+    """When True, first quality/gate failure pauses the batch (no silent skip-ahead)."""
+    runtime = load_pipeline_settings(root_dir).get("runtime", {}) or {}
+    raw = runtime.get("pause_on_quality_block", True)
+    if isinstance(raw, str):
+        return raw.strip().lower() not in ("0", "false", "no", "off")
+    return bool(raw)
 
 
 def should_merge_review_stages(root_dir: Path) -> bool:

@@ -10,7 +10,11 @@ from typing import Any, Dict, List, Optional, Tuple
 _logger = logging.getLogger(__name__)
 
 from novel_agent.services.arc_queue import load_workspace_arcs
-from novel_agent.services.novel_autopilot import chapters_remaining_to_target, is_batch_circuit_paused
+from novel_agent.services.novel_autopilot import (
+    chapters_remaining_to_target,
+    is_novel_batch_paused,
+    novel_batch_pause_reason,
+)
 from novel_agent.services.outline_sync import check_arc_queue_stale
 
 # Aligned with web/helpers.ASSET_FILES + CONFIG_ASSET_FILES and UI projectReadiness.
@@ -214,7 +218,7 @@ def validate_novel_continue(root: Path, *, force_resume: bool = False) -> Tuple[
         _logger.exception("external_review check failed for %s", root)
         return False, "外审状态检查失败，请检查 external_review 配置后重试。"
 
-    if is_batch_circuit_paused(root) and not force_resume:
+    if is_novel_batch_paused(root) and not force_resume:
         from novel_agent.services.arc_queue import load_arc_progress
 
         prog = load_arc_progress(root)
@@ -222,10 +226,18 @@ def validate_novel_continue(root: Path, *, force_resume: bool = False) -> Tuple[
         arc = prog.get("last_arc_id") or "—"
         streak = prog.get("fail_streak") or 0
         extra = f"，连续失败 {streak} 次" if streak else ""
+        reason = novel_batch_pause_reason(root) or "paused"
+        reason_msgs = {
+            "circuit_breaker": "全书批量因质量熔断已暂停",
+            "quality_blocked": "全书批量因统一门禁阻断已暂停",
+            "batch_skip_limit": "全书批量因连续跳章保护已暂停",
+            "chapter_retry_exhausted": "全书批量因单章重试次数耗尽已暂停",
+        }
+        head = reason_msgs.get(reason, f"全书批量已暂停（{reason}）")
         return (
             False,
-            f"全书批量因质量熔断已暂停（卷 {arc} / 章 {ch}{extra}）。"
-            "请先在章节详情或写作页处理阻断章，确认后使用 force_resume 续跑。",
+            f"{head}（卷 {arc} / 章 {ch}{extra}）。"
+            "请先在章节维护或写作页处理阻断章，确认后使用 force_resume 续跑。",
         )
 
     if report.get("remaining_chapters", 0) <= 0 and chapters_remaining_to_target(root) <= 0:

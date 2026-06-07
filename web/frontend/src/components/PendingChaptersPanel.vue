@@ -28,7 +28,7 @@ import {
   needsRepairActions,
   PENDING_STEP_CARDS,
 } from '../utils/pipelineAlertFilters'
-import { DUAL_AUDIT_HINT } from '../constants/repairWorkflow'
+import { DUAL_AUDIT_HINT, INTERNAL_GATE_HINT } from '../constants/repairWorkflow'
 import { useRepairChapterFocus } from '../composables/useRepairChapterFocus'
 import EmptyStatePanel from './EmptyStatePanel.vue'
 
@@ -443,6 +443,7 @@ const resumeAudit = async (chapterId: string) => {
       </article>
     </div>
 
+    <p v-if="!hideFootnote" class="pipeline-panel__footnote">{{ INTERNAL_GATE_HINT }}</p>
     <p v-if="!hideFootnote" class="pipeline-panel__footnote">{{ DUAL_AUDIT_HINT }}</p>
 
     <div v-show="expanded" class="pipeline-panel__body">

@@ -32,6 +32,7 @@ import {
 } from '../utils/tokenCostEstimate'
 import { useProjectStore } from '../stores/project'
 import { useTasksStore } from '../stores/tasks'
+import { needsRepairBeforeResume } from '../utils/batchPause'
 
 export type NovelBatchRunContext = {
   outline: Record<string, any> | null
@@ -126,9 +127,7 @@ export function useNovelBatchRun() {
   const canRun = computed(() => readinessAllOk(readinessItems.value))
 
   const isCircuitPaused = computed(
-    () =>
-      ctx.value.batchPaused &&
-      (ctx.value.pauseReason || 'circuit_breaker') === 'circuit_breaker',
+    () => ctx.value.batchPaused && needsRepairBeforeResume(ctx.value.pauseReason),
   )
 
   const isExternalBlockActive = computed(

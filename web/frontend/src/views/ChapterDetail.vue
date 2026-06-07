@@ -17,7 +17,7 @@ import {
   setChapterExternalReview,
   updateChapter,
 } from '../api'
-import { DUAL_AUDIT_HINT } from '../constants/repairWorkflow'
+import { EXTERNAL_AUDIT_HINT, INTERNAL_GATE_HINT } from '../constants/repairWorkflow'
 import ChapterContent from '../components/ChapterContent.vue'
 import ChapterPlan from '../components/ChapterPlan.vue'
 import ChapterAudit from '../components/ChapterAudit.vue'
@@ -243,7 +243,8 @@ const handleRewrite = async () => {
     title="两道审核说明"
     style="margin-bottom: 12px"
   >
-    {{ DUAL_AUDIT_HINT }}
+    <p>{{ INTERNAL_GATE_HINT }}</p>
+    <p>{{ EXTERNAL_AUDIT_HINT }}</p>
   </el-alert>
 
   <el-alert

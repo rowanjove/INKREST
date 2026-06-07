@@ -124,5 +124,16 @@ def test_validate_circuit_breaker_requires_force_resume(tmp_path: Path) -> None:
     ok, detail = validate_novel_continue(tmp_path, force_resume=False)
     assert not ok
     assert "熔断" in detail
+
+    record_novel_batch_paused(
+        tmp_path,
+        reason="quality_blocked",
+        last_chapter="004",
+        arc_id="A01",
+        streak=1,
+    )
+    ok3, detail3 = validate_novel_continue(tmp_path, force_resume=False)
+    assert not ok3
+    assert "门禁阻断" in detail3
     ok2, detail2 = validate_novel_continue(tmp_path, force_resume=True)
     assert ok2 or "模型" in detail2 or "Static" in detail2

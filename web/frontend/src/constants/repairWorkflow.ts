@@ -1,7 +1,12 @@
 /** 半自动修章 / 外站审核 — 全站一致文案 */
 
-export const DUAL_AUDIT_HINT =
-  '栖墨统一门禁通过 ≠ 网文平台 AI 审核通过。平台拒稿时：写作页改正文 → 复制试发 → 仍不过则重跑审校或查看统一门禁报告 → 通过后再在工作台「继续写书」。'
+export const INTERNAL_GATE_HINT =
+  '内部门禁（栖墨统一门禁）：检查正文质量、敏感词与连续性；未通过会阻断落库并暂停全书批量。'
+
+export const EXTERNAL_AUDIT_HINT =
+  '外站审核（平台试发）：网文平台 AI 审核与栖墨门禁独立；需复制正文试发，不过则改稿后再续跑。'
+
+export const DUAL_AUDIT_HINT = `${INTERNAL_GATE_HINT} ${EXTERNAL_AUDIT_HINT} 修章顺序：写作页改正文 → 复制试发 → 重跑审校或查统一门禁 → 通过后再「继续写书」。`
 
 export const SEMI_AUTO_STEPS = [
   '章节维护看待处理章节',

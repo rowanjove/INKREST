@@ -16,11 +16,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from novel_agent.control.long_run import resolve_batch_fail_streak_max
 from novel_agent.orchestrator import ChapterResult, NovelOrchestrator
 from novel_agent.pipeline import PipelineConfig
 from novel_agent.services.arc_queue import record_novel_batch_paused
-from novel_agent.services.novel_autopilot import is_batch_circuit_paused
+from novel_agent.services.batch_retry_queue import list_pending_retries
 from novel_agent.services.novel_run_guard import build_readiness_report, validate_novel_continue
 from novel_agent.services.outline_sync import check_arc_queue_stale, mark_arcs_synced_with_outline
 from novel_agent.agents.base import StaticLLM
@@ -229,7 +228,7 @@ def test_dismiss_storm_on_same_chapter(api_tmp: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_briefs_trip_circuit_after_exception_streak(tmp_path: Path) -> None:
+async def test_briefs_pause_after_first_exception_skip(tmp_path: Path) -> None:
     _seed_ready(tmp_path)
     llm = StaticLLM({})
     config = PipelineConfig(root_dir=tmp_path, llm=llm)
@@ -240,18 +239,22 @@ async def test_briefs_trip_circuit_after_exception_streak(tmp_path: Path) -> Non
     )
     orch.arun_chapter = AsyncMock(side_effect=RuntimeError("LLM exploded"))
 
-    max_streak = resolve_batch_fail_streak_max(tmp_path)
-    n_briefs = max_streak + 2
-    briefs = [{"chapter_id": f"{i:03d}", "goal": "g"} for i in range(1, n_briefs + 1)]
+    briefs = [{"chapter_id": f"{i:03d}", "goal": "g"} for i in range(1, 6)]
 
     results, stopped = await orch._run_chapter_briefs(briefs, arc_id="A01")
     assert stopped is True
-    assert is_batch_circuit_paused(tmp_path)
-    assert len(results) < n_briefs
+    from novel_agent.services.arc_queue import load_arc_progress
+
+    progress = load_arc_progress(tmp_path)
+    assert progress.get("status") == "paused"
+    assert progress.get("pause_reason") == "batch_skip_limit"
+    assert len(results) == 0
+    pending = list_pending_retries(tmp_path)
+    assert any(p["chapter_id"] == "001" for p in pending)
 
 
 @pytest.mark.asyncio
-async def test_briefs_trip_circuit_on_quality_failure_results(tmp_path: Path) -> None:
+async def test_briefs_pause_immediately_on_quality_failure(tmp_path: Path) -> None:
     _seed_ready(tmp_path)
     llm = StaticLLM({})
     config = PipelineConfig(root_dir=tmp_path, llm=llm)
@@ -268,13 +271,16 @@ async def test_briefs_trip_circuit_on_quality_failure_results(tmp_path: Path) ->
         )
 
     orch.arun_chapter = _fail_chapter
-    max_streak = resolve_batch_fail_streak_max(tmp_path)
-    briefs = [{"chapter_id": f"{i:03d}", "goal": "g"} for i in range(1, max_streak + 3)]
+    briefs = [{"chapter_id": f"{i:03d}", "goal": "g"} for i in range(1, 6)]
 
     results, stopped = await orch._run_chapter_briefs(briefs, arc_id="A01")
     assert stopped
-    assert is_batch_circuit_paused(tmp_path)
-    assert len(results) == max_streak
+    from novel_agent.services.arc_queue import load_arc_progress
+
+    progress = load_arc_progress(tmp_path)
+    assert progress.get("status") == "paused"
+    assert progress.get("pause_reason") == "quality_blocked"
+    assert len(results) == 1
 
 
 # --- 4. TaskManager ---

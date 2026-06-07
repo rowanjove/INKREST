@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { Warning } from '@element-plus/icons-vue'
 import { useNovelProgress } from '../composables/useNovelProgress'
 import { useNovelBatchRun } from '../composables/useNovelBatchRun'
+import { formatBatchPauseReason, needsRepairBeforeResume } from '../utils/batchPause'
 
 const router = useRouter()
 const { snapshot } = useNovelProgress({ pollMs: 5000 })
@@ -11,9 +12,10 @@ const { openDialog } = useNovelBatchRun()
 
 const status = computed(() => snapshot.value)
 
-const isCircuit = () =>
-  status.value?.batch_paused &&
-  (status.value?.pause_reason || 'circuit_breaker') === 'circuit_breaker'
+const needsRepairFirst = () =>
+  Boolean(status.value?.batch_paused && needsRepairBeforeResume(status.value.pause_reason))
+
+const pauseLabel = () => formatBatchPauseReason(status.value?.pause_reason)
 
 const goMaintenance = () => {
   router.push('/chapters/maintenance')
@@ -37,15 +39,14 @@ const goFixChapter = () => {
   <section v-if="status?.batch_paused" class="batch-status-banner">
     <el-icon class="icon"><Warning /></el-icon>
     <div class="body">
-      <strong>全书批量已暂停</strong>
+      <strong>全书批量已暂停（{{ pauseLabel() }}）</strong>
       <span>
-        原因：{{ status.pause_reason || 'circuit_breaker' }}；
         卷 {{ status.last_arc_id || '—' }} / 章 {{ status.last_chapter_id || '—' }}
         <template v-if="status.fail_streak">（连续失败 {{ status.fail_streak }} 次）</template>
       </span>
     </div>
     <div class="banner-actions">
-      <template v-if="isCircuit()">
+      <template v-if="needsRepairFirst()">
         <el-button size="small" type="primary" @click="goMaintenance">
           先处理待处理章
         </el-button>

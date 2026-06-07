@@ -102,7 +102,7 @@ def build_progress_summary(root: Path, *, reconcile: bool = False) -> Dict[str, 
         "fail_streak": int(progress.get("fail_streak") or 0),
         "remaining_chapters": remaining_chapters,
         "progress_note": (
-            "续跑与熔断以 novel_batch_progress.completed_chapters 为准；"
-            "书库章数为索引口径；待处理以 pending_total 为准。"
+            "续跑与熔断以 novel_batch_progress 为准；书库章数为索引口径；"
+            "待处理以 pending_total 为准。门禁阻断会立即暂停批量，不再静默跳章。"
         ),
     }

@@ -332,6 +332,20 @@ def test_batch_banner_prioritizes_repair_before_force_resume() -> None:
     assert "先处理待处理章" in source
     assert "仍继续写书" in source
     assert "useNovelBatchRun" in source
+    assert "needsRepairBeforeResume" in source
+    assert "formatBatchPauseReason" in source
+
+
+def test_dual_audit_copy_splits_internal_and_external() -> None:
+    source = (
+        ROOT / "web" / "frontend" / "src" / "constants" / "repairWorkflow.ts"
+    ).read_text(encoding="utf-8")
+    gate = (
+        ROOT / "web" / "frontend" / "src" / "components" / "ChapterUnifiedGate.vue"
+    ).read_text(encoding="utf-8")
+    assert "INTERNAL_GATE_HINT" in source
+    assert "EXTERNAL_AUDIT_HINT" in source
+    assert "INTERNAL_GATE_HINT" in gate
 
 
 def test_task_log_and_pet_share_task_step_labels() -> None:

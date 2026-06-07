@@ -33,6 +33,7 @@ async def run_chapter_briefs(
         resolve_batch_skip_pause_max,
         resolve_chapter_retry_max,
         resolve_compress_schedule,
+        resolve_pause_on_quality_block,
     )
     from novel_agent.services.batch_retry_queue import get_chapter_attempt_count
     from novel_agent.control.runtime_policy import (
@@ -44,6 +45,7 @@ async def run_chapter_briefs(
     fail_streak_max = resolve_batch_fail_streak_max(orch.root_dir)
     skip_pause_max = resolve_batch_skip_pause_max(orch.root_dir)
     chapter_retry_max = resolve_chapter_retry_max(orch.root_dir)
+    pause_on_quality_block = resolve_pause_on_quality_block(orch.root_dir)
     consecutive_failures = 0
     consecutive_skips = 0
     results: List[ChapterResult] = []
@@ -151,6 +153,33 @@ async def run_chapter_briefs(
                     message="; ".join(str(w) for w in (result.warnings or [])[:3]),
                     step="unified_gate",
                 )
+                emit_log(
+                    "warn",
+                    f"第 {chapter_id} 章未过统一门禁，已记入待重试队列。",
+                    "unified_gate",
+                    chapter_id,
+                )
+                if pause_on_quality_block:
+                    from novel_agent.services.arc_queue import record_novel_batch_paused
+
+                    record_novel_batch_paused(
+                        orch.root_dir,
+                        reason="quality_blocked",
+                        last_chapter=chapter_id,
+                        arc_id=arc_id,
+                        streak=consecutive_failures,
+                    )
+                    emit_progress(
+                        "novel_batch",
+                        "paused",
+                        {
+                            "reason": "quality_blocked",
+                            "last_chapter": chapter_id,
+                            "arc_id": arc_id,
+                        },
+                        chapter_id,
+                    )
+                    return results, True
                 if consecutive_failures >= fail_streak_max:
                     from novel_agent.services.arc_queue import record_novel_batch_paused
 
@@ -217,7 +246,15 @@ async def run_chapter_briefs(
             )
             emit_log(
                 "warn",
-                f"本章运行异常已跳过，将尝试后续章节（{consecutive_failures}/{fail_streak_max}）",
+                (
+                    f"第 {chapter_id} 章运行异常，已记入待重试队列"
+                    f"（{consecutive_failures}/{fail_streak_max}）。"
+                    + (
+                        "达到跳章保护阈值后将暂停全书批量。"
+                        if skip_pause_max > 0
+                        else "请尽快在章节维护处理后再续跑。"
+                    )
+                ),
                 "run_chapter",
                 chapter_id,
             )
