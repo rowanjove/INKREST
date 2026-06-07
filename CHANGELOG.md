@@ -19,13 +19,23 @@
 - PetBubbleView：拆出 `usePetBubbleView` composable（Tab 状态、对话发送、诊断折叠、导航、滚动）
 - PetBubbleView：`petMarkdown` 纯函数与 Vitest
 - PetBubbleView：2 个模板子组件（状态 Tab / 对话 Tab）
+- ChapterList：拆出 `useChapterList` composable（加载、筛选、门禁重跑、复制、删除、补齐流水线）
+- ChapterList：2 个模板子组件（章节表格 / 补齐对话框）
+- PluginManager：拆出 `usePluginManager` composable + `pluginManagerConfig` 常量/类型
+- PluginManager：4 个模板子组件（指标卡片 / 筛选栏 / 插件网格 / 对话框）
+- TropeWorkshop：拆出 `useTropeWorkshop` composable（元件加载、蓝图选择、compose 预览、应用到作品）
+- TropeWorkshop：2 个模板子组件（元件库 Tab / 蓝图工作台与预览）
+- ReaderView：拆出 `useReaderView` composable + 3 个模板子组件（工具栏 / 目录抽屉 / 正文阅读区）
+- ChapterDetail：拆出 `useChapterDetail` composable + 4 个模板子组件（告警 / 页头 / Tabs / 编辑对话框）
+- CreateWizard：拆出 `useCreateWizard` composable + 4 个模板子组件（模式 Tab / 快速 / 解析 / AI 引导）
 
 ### Tests
 
 - Vitest：`libraryFormatters` + `petMarkdown` + `viewSubcomponents` 子组件结构契约
-- 契约测试扩展：Writing / State / Outline / Library / AssetEditor / PetBubble 子组件路径
+- 契约测试扩展：Writing / State / Outline / Library / AssetEditor / PetBubble / ChapterList / PluginManager / TropeWorkshop / Reader / ChapterDetail / CreateWizard 子组件路径
 - E2E：`workspace-state.spec.ts`（写作页侧栏与工具栏、状态库双 Tab）
 - E2E：`assets-pet.spec.ts`（项目资产侧栏/面板、山山气泡状态与对话 Tab）
+- E2E：`chapters-plugins.spec.ts`（章节列表门禁重跑、插件管理网格）
 
 ### Performance (Phase 0–4)
 

@@ -129,4 +129,125 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('welcome: index === 0 && msg.role')
     expect(source).toContain('msg-bubble.welcome')
   })
+
+  it('ChapterList shell wires table, repair dialog, and composable', () => {
+    const source = read('views/ChapterList.vue')
+    expect(source).toContain('ChapterListTable')
+    expect(source).toContain('ChapterRepairDialog')
+    expect(source).toContain('useChapterList')
+  })
+
+  it('ChapterListTable keeps gate rerun and edit action contract', () => {
+    const source = read('components/chapter/ChapterListTable.vue')
+    expect(source).toContain('只重跑门禁')
+    expect(source).toContain('onRerunGateOnly')
+    expect(source).toContain('class="chapter-edit-btn"')
+    expect(source.replace(/\s/g, '')).toContain('>编辑<')
+    expect(source).toContain('v-if="!row.is_missing"')
+  })
+
+  it('ChapterRepairDialog keeps goal suggest and submit actions', () => {
+    const source = read('components/chapter/ChapterRepairDialog.vue')
+    expect(source).toContain('AI 读入大纲')
+    expect(source).toContain('运行章节流水线')
+    expect(source).toContain('onSuggestGoal')
+    expect(source).toContain('onSubmitRepair')
+  })
+
+  it('PluginManager shell wires metrics, filter, grid, and dialogs', () => {
+    const source = read('views/PluginManager.vue')
+    expect(source).toContain('PluginMetricsCards')
+    expect(source).toContain('PluginFilterBar')
+    expect(source).toContain('PluginGrid')
+    expect(source).toContain('PluginManagerDialogs')
+    expect(source).toContain('usePluginManager')
+    expect(source).toContain('PluginAuthorHelpDialog')
+  })
+
+  it('PluginGrid keeps status indicator and card actions', () => {
+    const source = read('components/plugin/PluginGrid.vue')
+    expect(source).toContain('status-indicator')
+    expect(source).toContain('pulse-dot')
+    expect(source).toContain('onShowDetail')
+    expect(source).toContain('onToggle')
+  })
+
+  it('PluginManagerDialogs keeps install dropzone and config schema form', () => {
+    const source = read('components/plugin/PluginManagerDialogs.vue')
+    expect(source).toContain('install-dropzone')
+    expect(source).toContain('inkrest.plugin.json')
+    expect(source).toContain('config_schema.properties')
+  })
+
+  it('TropeWorkshop shell wires component library and blueprint panel', () => {
+    const source = read('views/TropeWorkshop.vue')
+    expect(source).toContain('TropeComponentLibrary')
+    expect(source).toContain('TropeBlueprintPanel')
+    expect(source).toContain('useTropeWorkshop')
+    expect(source).toContain('网文套路设计工坊')
+  })
+
+  it('TropeComponentLibrary keeps draggable component cards', () => {
+    const source = read('components/trope/TropeComponentLibrary.vue')
+    expect(source).toContain("defineModel<TropeTab>('activeTab'")
+    expect(source).toContain('draggable="true"')
+    expect(source).toContain('card-add-btn')
+    expect(source).toContain('onAddToBlueprint')
+  })
+
+  it('TropeBlueprintPanel keeps blueprint slots and guide preview', () => {
+    const source = read('components/trope/TropeBlueprintPanel.vue')
+    expect(source).toContain('blueprint-slots')
+    expect(source).toContain('markdown-preview')
+    expect(source).toContain('以此新建作品')
+    expect(source).toContain('应用到当前作品')
+  })
+
+  it('ReaderView shell wires toolbar, catalog, and content pane', () => {
+    const source = read('views/ReaderView.vue')
+    expect(source).toContain('ReaderToolbar')
+    expect(source).toContain('ReaderCatalogDrawer')
+    expect(source).toContain('ReaderContentPane')
+    expect(source).toContain('useReaderView')
+  })
+
+  it('ReaderContentPane keeps bottom chapter navigation cards', () => {
+    const source = read('components/reader/ReaderContentPane.vue')
+    expect(source).toContain('bottom-navigator')
+    expect(source).toContain('去写作页改稿')
+    expect(source).toContain('novel-content-sheet')
+  })
+
+  it('ChapterDetail shell wires alerts, header, tabs, and edit dialog', () => {
+    const source = read('views/ChapterDetail.vue')
+    expect(source).toContain('ChapterDetailAlerts')
+    expect(source).toContain('ChapterDetailHeader')
+    expect(source).toContain('ChapterDetailTabs')
+    expect(source).toContain('ChapterDetailEditDialog')
+    expect(source).toContain('useChapterDetail')
+  })
+
+  it('ChapterDetailHeader hides rewrite actions without final text', () => {
+    const source = read('components/chapter/ChapterDetailHeader.vue')
+    expect(source).toContain('v-if="hasFinalText"')
+    expect(source).toContain('整章重写')
+    expect(source).toContain('编辑本章')
+  })
+
+  it('CreateWizard shell wires mode tabs and three creation panes', () => {
+    const source = read('views/CreateWizard.vue')
+    expect(source).toContain('CreateModeTabs')
+    expect(source).toContain('CreateQuickPane')
+    expect(source).toContain('CreateParsePane')
+    expect(source).toContain('CreateAiPane')
+    expect(source).toContain('useCreateWizard')
+  })
+
+  it('CreateModeTabs keeps default quick-create recommendation tag', () => {
+    const source = read('components/create/CreateModeTabs.vue')
+    expect(source).toContain('快速创建')
+    expect(source).toContain('内容分析导入')
+    expect(source).toContain('AI 创作引导')
+    expect(source).toContain('rec-tag')
+  })
 })

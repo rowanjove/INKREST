@@ -79,6 +79,13 @@ async function navigateInApp(page: Page, path: string): Promise<void> {
     return
   }
 
+  if (pathname === '/chapters/list' || pathname.startsWith('/chapters/list')) {
+    await nav.getByRole('button', { name: '章节' }).click()
+    await page.getByRole('link', { name: /章节列表/ }).click()
+    await expect(page.locator('.chapters-page')).toBeVisible({ timeout: 15_000 })
+    return
+  }
+
   if (pathname.startsWith('/chapters/maintenance')) {
     await nav.getByRole('button', { name: '章节' }).click()
     await page.getByRole('link', { name: /章节维护/ }).click()

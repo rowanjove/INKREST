@@ -67,18 +67,37 @@ OUTLINE_GENES = (
 OUTLINE_MINDMAP = (
     ROOT / "web" / "frontend" / "src" / "components" / "outline" / "OutlineMindmapPane.vue"
 )
+PLUGIN_MANAGER = ROOT / "web" / "frontend" / "src" / "views" / "PluginManager.vue"
+PLUGIN_GRID = ROOT / "web" / "frontend" / "src" / "components" / "plugin" / "PluginGrid.vue"
+PLUGIN_MANAGER_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "usePluginManager.ts"
+TROPE_WORKSHOP = ROOT / "web" / "frontend" / "src" / "views" / "TropeWorkshop.vue"
+TROPE_COMPONENT_LIBRARY = (
+    ROOT / "web" / "frontend" / "src" / "components" / "trope" / "TropeComponentLibrary.vue"
+)
+TROPE_BLUEPRINT_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "trope" / "TropeBlueprintPanel.vue"
+)
+TROPE_WORKSHOP_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "useTropeWorkshop.ts"
 EMPTY_STATE = ROOT / "web" / "frontend" / "src" / "components" / "EmptyStatePanel.vue"
 READINESS_CARD = (
     ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "ProjectReadinessCard.vue"
 )
 COST_PANEL = ROOT / "web" / "frontend" / "src" / "components" / "CostSummaryPanel.vue"
 CHAPTER_LIST = ROOT / "web" / "frontend" / "src" / "views" / "ChapterList.vue"
+CHAPTER_LIST_TABLE = (
+    ROOT / "web" / "frontend" / "src" / "components" / "chapter" / "ChapterListTable.vue"
+)
+CHAPTER_LIST_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "useChapterList.ts"
 NOVEL_PROGRESS_HELP = ROOT / "web" / "frontend" / "src" / "components" / "NovelProgressHelp.vue"
 BATCH_BANNER = ROOT / "web" / "frontend" / "src" / "components" / "BatchRunStatusBanner.vue"
 AGENT_PRODUCTION_LINE = (
     ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "AgentProductionLine.vue"
 )
 CHAPTER_DETAIL = ROOT / "web" / "frontend" / "src" / "views" / "ChapterDetail.vue"
+CHAPTER_DETAIL_HEADER = (
+    ROOT / "web" / "frontend" / "src" / "components" / "chapter" / "ChapterDetailHeader.vue"
+)
+CHAPTER_DETAIL_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "useChapterDetail.ts"
 EMBEDDING_CONFIG = ROOT / "web" / "frontend" / "src" / "components" / "EmbeddingConfig.vue"
 PIPELINE_RUNTIME = ROOT / "web" / "frontend" / "src" / "components" / "PipelineRuntimeConfig.vue"
 SHANSHAN_COPY = ROOT / "web" / "frontend" / "src" / "constants" / "shanshanCopy.ts"
@@ -211,9 +230,10 @@ def test_readiness_card_exposes_progress_bar() -> None:
 
 
 def test_chapter_list_exposes_gate_only_rerun() -> None:
-    source = CHAPTER_LIST.read_text(encoding="utf-8")
-    assert "只重跑门禁" in source
-    assert "rerunGateOnly" in source
+    table_source = CHAPTER_LIST_TABLE.read_text(encoding="utf-8")
+    composable_source = CHAPTER_LIST_COMPOSABLE.read_text(encoding="utf-8")
+    assert "只重跑门禁" in table_source
+    assert "rerunGateOnly" in composable_source
 
 
 def test_monitor_includes_cost_summary_panel() -> None:
@@ -273,14 +293,15 @@ def test_cost_summary_panel_handles_load_error() -> None:
 
 
 def test_chapter_pages_hide_rewrite_actions_without_final_text() -> None:
-    list_source = CHAPTER_LIST.read_text(encoding="utf-8")
-    detail_source = CHAPTER_DETAIL.read_text(encoding="utf-8")
+    list_source = CHAPTER_LIST_TABLE.read_text(encoding="utf-8")
+    detail_header_source = CHAPTER_DETAIL_HEADER.read_text(encoding="utf-8")
+    detail_composable_source = CHAPTER_DETAIL_COMPOSABLE.read_text(encoding="utf-8")
 
     assert 'v-if="!row.is_missing"' in list_source
     assert 'class="chapter-edit-btn"' in list_source
     assert ">编辑<" in list_source.replace("\n", "").replace(" ", "")
-    assert 'v-if="hasFinalText"' in detail_source
-    assert "const hasFinalText = computed" in detail_source
+    assert 'v-if="hasFinalText"' in detail_header_source
+    assert "const hasFinalText = computed" in detail_composable_source
 
 
 def test_embedding_config_stays_collapsed_by_default() -> None:
@@ -292,7 +313,7 @@ def test_embedding_config_stays_collapsed_by_default() -> None:
 def test_api_errors_prefer_backend_detail_over_status_text() -> None:
     api_source = FRONTEND_API.read_text(encoding="utf-8")
     library_source = LIBRARY_PROJECTS.read_text(encoding="utf-8")
-    chapter_list_source = CHAPTER_LIST.read_text(encoding="utf-8")
+    chapter_list_source = CHAPTER_LIST_COMPOSABLE.read_text(encoding="utf-8")
     writer_chapter_source = WRITER_CHAPTER.read_text(encoding="utf-8")
 
     assert "export const apiErrorMessage" in api_source
@@ -595,3 +616,51 @@ def test_outline_mindmap_pane_exposes_canvas() -> None:
     source = OUTLINE_MINDMAP.read_text(encoding="utf-8")
     assert "mindmap-canvas" in source
     assert "setNodeRef" in source
+
+
+def test_plugin_manager_shell_delegates_to_subcomponents() -> None:
+    source = PLUGIN_MANAGER.read_text(encoding="utf-8")
+    composable_source = PLUGIN_MANAGER_COMPOSABLE.read_text(encoding="utf-8")
+    assert "PluginMetricsCards" in source
+    assert "PluginFilterBar" in source
+    assert "PluginGrid" in source
+    assert "PluginManagerDialogs" in source
+    assert "usePluginManager" in source
+    assert "PluginAuthorHelpDialog" in source
+    assert "trustPlugin" in composable_source
+    assert "installPluginZip" in composable_source
+
+
+def test_plugin_grid_keeps_trust_toggle_actions() -> None:
+    source = PLUGIN_GRID.read_text(encoding="utf-8")
+    assert "status-indicator" in source
+    assert "待信任" in source
+    assert "onToggle" in source
+    assert "onDelete" in source
+
+
+def test_trope_workshop_shell_delegates_to_subcomponents() -> None:
+    source = TROPE_WORKSHOP.read_text(encoding="utf-8")
+    composable_source = TROPE_WORKSHOP_COMPOSABLE.read_text(encoding="utf-8")
+    assert "TropeComponentLibrary" in source
+    assert "TropeBlueprintPanel" in source
+    assert "useTropeWorkshop" in source
+    assert "listComponents" in composable_source
+    assert "composePreset" in composable_source
+    assert "parsedGuideHtml" in composable_source
+
+
+def test_trope_component_library_keeps_draggable_cards() -> None:
+    source = TROPE_COMPONENT_LIBRARY.read_text(encoding="utf-8")
+    assert "defineModel<TropeTab>('activeTab'" in source
+    assert 'draggable="true"' in source
+    assert "card-add-btn" in source
+    assert "onAddToBlueprint" in source
+
+
+def test_trope_blueprint_panel_keeps_slots_and_preview() -> None:
+    source = TROPE_BLUEPRINT_PANEL.read_text(encoding="utf-8")
+    assert "blueprint-slots" in source
+    assert "markdown-preview" in source
+    assert "以此新建作品" in source
+    assert "应用到当前作品" in source
