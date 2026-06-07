@@ -21,6 +21,8 @@ jobs:
           pip install -r requirements.txt pytest pytest-asyncio fastapi httpx
       - name: Run full pytest suite (no real LLM)
         run: python -m pytest tests/ -q --tb=line -x --ignore=tests/smoke/test_llm_one_chapter.py
+      - name: API perf baseline
+        run: python scripts/perf_api_baseline.py --check
 
   e2e:
     runs-on: ubuntu-latest
@@ -43,6 +45,10 @@ jobs:
       - name: Build frontend
         working-directory: web/frontend
         run: npm run build
+      - name: Check frontend bundle budget
+        run: python scripts/check_frontend_bundle.py web/frontend/dist
+      - name: API perf baseline
+        run: python scripts/perf_api_baseline.py --check
       - name: Install Playwright browsers
         working-directory: web/frontend
         run: npx playwright install chromium --with-deps
