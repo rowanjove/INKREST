@@ -49,6 +49,35 @@ export type NovelBatchRunContext = {
 }
 
 const dialogVisible = ref(false)
+/** 弹窗刚打开时禁止遮罩/误触关闭 */
+let dialogCloseGuardUntil = 0
+const dialogInteractReady = ref(false)
+let dialogInteractTimer: ReturnType<typeof setTimeout> | null = null
+
+function closeBatchDialog() {
+  dialogCloseGuardUntil = 0
+  dialogInteractReady.value = false
+  if (dialogInteractTimer) {
+    clearTimeout(dialogInteractTimer)
+    dialogInteractTimer = null
+  }
+  dialogVisible.value = false
+}
+
+function armDialogOpenGuard() {
+  dialogInteractReady.value = false
+  dialogCloseGuardUntil = Date.now() + 700
+  if (dialogInteractTimer) clearTimeout(dialogInteractTimer)
+  dialogInteractTimer = setTimeout(() => {
+    dialogInteractReady.value = true
+    dialogInteractTimer = null
+  }, 400)
+}
+
+function beforeDialogClose(done: () => void) {
+  if (Date.now() < dialogCloseGuardUntil) return
+  done()
+}
 /** 打开弹窗前拉取开书清单上下文 */
 const opening = ref(false)
 /** 同步卷队列 + 提交连写任务（可能多次 LLM，耗时较长） */
@@ -295,7 +324,9 @@ export function useNovelBatchRun() {
     try {
       await refreshContext()
       applyFormDefaults()
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
       dialogVisible.value = true
+      armDialogOpenGuard()
       if (!canRun.value) {
         const pending = readinessItems.value.filter((i) => !i.ok).map((i) => i.label)
         ElMessage.warning(
@@ -313,13 +344,13 @@ export function useNovelBatchRun() {
   }
 
   function goMonitorAlerts() {
-    dialogVisible.value = false
+    closeBatchDialog()
     router.push('/chapters/maintenance')
   }
 
   function goChapterRepair() {
     const ch = ctx.value.lastChapterId
-    dialogVisible.value = false
+    closeBatchDialog()
     if (ch) {
       router.push(`/chapters/${ch}`)
       return
@@ -347,7 +378,6 @@ export function useNovelBatchRun() {
       ElMessage.warning(
         `尚有 ${ctx.value.externalPendingCount} 章待外审通过。请先到章节维护标记「外审已通过」，或在设置关闭「外审未过禁止续跑」。`,
       )
-      goMonitorAlerts()
       return
     }
 
@@ -412,7 +442,8 @@ export function useNovelBatchRun() {
       ElMessage.success(
         `已启动${mode}（上限 ${cap} 章，任务 ${data?.task_id || ''}），请到日志中心查看任务流水。`,
       )
-      dialogVisible.value = false
+      closeBatchDialog()
+      window.dispatchEvent(new CustomEvent('inkrest-batch-finished'))
       return data
     } catch (error: any) {
       if (signal.aborted || error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError') {
@@ -451,6 +482,9 @@ export function useNovelBatchRun() {
 
   return {
     dialogVisible,
+    dialogInteractReady,
+    beforeDialogClose,
+    closeBatchDialog,
     opening,
     running,
     busy,

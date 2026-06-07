@@ -46,7 +46,7 @@ export const useProjectStore = defineStore('project', () => {
       const { data } = await getCurrentProject()
       if (data.id && data.name) {
         currentProject.value = data
-      } else {
+      } else if (!currentProject.value?.id) {
         currentProject.value = null
       }
     } catch {

@@ -22,6 +22,9 @@ const {
   tokenEstimate,
   submit,
   cancelBatchRun,
+  closeBatchDialog,
+  beforeDialogClose,
+  dialogInteractReady,
   busy,
   busyPhaseLabel,
   goMonitorAlerts,
@@ -46,6 +49,9 @@ const showVectorAlert = computed(() =>
     :title="dialogTitle"
     width="500px"
     append-to-body
+    :close-on-click-modal="false"
+    :close-on-press-escape="dialogInteractReady"
+    :before-close="beforeDialogClose"
   >
     <div class="batch-run-body">
       <el-alert
@@ -146,12 +152,12 @@ const showVectorAlert = computed(() =>
     <template #footer>
       <p v-if="busy && busyPhaseLabel" class="busy-phase-hint">{{ busyPhaseLabel }}</p>
       <el-button v-if="busy" type="danger" plain @click="cancelBatchRun">取消连写</el-button>
-      <el-button v-else @click="dialogVisible = false">关闭</el-button>
+      <el-button v-else :disabled="!dialogInteractReady" @click="closeBatchDialog">关闭</el-button>
       <template v-if="isCircuitPaused && !busy">
         <el-button type="warning" plain @click="goMonitorAlerts">先处理待处理章</el-button>
         <el-button
           type="primary"
-          :disabled="!canRun || isExternalBlockActive"
+          :disabled="!dialogInteractReady || !canRun || isExternalBlockActive"
           @click="submit(true)"
         >
           仍继续写书
@@ -161,7 +167,7 @@ const showVectorAlert = computed(() =>
         v-else
         type="primary"
         :loading="running"
-        :disabled="!canRun || running || isExternalBlockActive"
+        :disabled="!dialogInteractReady || !canRun || running || isExternalBlockActive"
         @click="submit(false)"
       >
         {{ running ? '同步卷队列 / 连写启动中…' : '确认连写' }}

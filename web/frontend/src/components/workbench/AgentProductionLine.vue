@@ -232,7 +232,7 @@ onUnmounted(() => {
           type="success"
           class="batch-run-primary"
           :disabled="!readinessOk || batchOpening || ((batchRunning || isRunning) && !userPaused)"
-          @click="handlePrimaryStart"
+          @click.stop="handlePrimaryStart"
         >
           <el-icon v-if="batchOpening" class="batch-run-icon is-loading"><Loading /></el-icon>
           <el-icon v-else-if="(batchRunning || isRunning) && !userPaused" class="batch-run-icon is-loading"><Loading /></el-icon>

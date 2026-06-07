@@ -8,7 +8,6 @@ import DashboardMetricsPane from '../components/dashboard/DashboardMetricsPane.v
 import DashboardSerializationPane from '../components/dashboard/DashboardSerializationPane.vue'
 import DashboardOutlineDiffDialog from '../components/dashboard/DashboardOutlineDiffDialog.vue'
 import DashboardAddChapterDialog from '../components/dashboard/DashboardAddChapterDialog.vue'
-import { useNovelBatchRun } from '../composables/useNovelBatchRun'
 import { useDashboardWorkbench } from '../composables/useDashboardWorkbench'
 import { useDashboardSerial } from '../composables/useDashboardSerial'
 import { useDashboardBatchDialog } from '../composables/useDashboardBatchDialog'
@@ -80,14 +79,9 @@ const { restartDashboardTimer, stopDashboardPolling, tasksStore } = useDashboard
   loadSerialData,
 })
 
-const { running: autoRunRunning, dialogVisible: autoRunDialogVisible } = useNovelBatchRun()
-
-// 仅在实际连写任务结束时刷新工作台；勿监听 busy/opening，否则开弹窗时会误触发 loadWorkbench
-watch(autoRunRunning, async (now, prev) => {
-  if (prev && !now && !autoRunDialogVisible.value) {
-    await loadWorkbench(loadSerialData)
-  }
-})
+function onBatchFinished() {
+  void loadWorkbench(loadSerialData)
+}
 
 onMounted(async () => {
   await loadWorkbench(loadSerialData)
@@ -96,9 +90,11 @@ onMounted(async () => {
   tasksStore.connectElectronEvents()
   tasksStore.startPolling()
   tasksStore.startRuntimeLogPolling()
+  window.addEventListener('inkrest-batch-finished', onBatchFinished)
 })
 
 onUnmounted(() => {
+  window.removeEventListener('inkrest-batch-finished', onBatchFinished)
   stopDashboardPolling()
   tasksStore.stopPolling()
   tasksStore.stopRuntimeLogPolling()

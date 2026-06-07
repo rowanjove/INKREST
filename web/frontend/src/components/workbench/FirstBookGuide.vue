@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getOutline } from '../../api'
 import { isLongFormScale } from '../../utils/projectReadiness'
+import { useNovelBatchRun } from '../../composables/useNovelBatchRun'
 
 const PENDING_KEY = 'inkrest_pending_guide'
 
@@ -12,6 +13,7 @@ const props = defineProps<{
 
 const router = useRouter()
 const route = useRoute()
+const { dialogVisible: batchDialogVisible } = useNovelBatchRun()
 const dialogVisible = ref(false)
 
 const storageKey = computed(() => `first_book_guide_${props.projectId}`)
@@ -47,6 +49,7 @@ const clearPendingFlags = () => {
 }
 
 const tryOpen = () => {
+  if (batchDialogVisible.value) return
   if (!shouldOpen()) return
   dialogVisible.value = true
   clearPendingFlags()
