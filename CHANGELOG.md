@@ -7,7 +7,9 @@
 - Dashboard：composable 拆分（workbench / serial / batch / polling）+ 5 个子组件（Workbench / Metrics / Serialization / 两个 Dialog）
 - Dashboard 纯函数抽至 `dashboardEngine` / `dashboardChapterGoal` 并补 Vitest
 - WritingWorkspace：拆出 8 个 composable（章节编辑 / 版本 / 废稿 / 编辑器辅助 / AI 写作 / 快照 / 平台反馈 + visual settings）
+- WritingWorkspace：4 个模板子组件（章节侧栏 / 编辑器主区 / 右侧栏 / 对话框）
 - StateView：拆出 settings / chronicle / relation-graph composable + `stateViewFilters` 纯函数与 Vitest
+- StateView：2 个模板子组件（剧情设定库 Tab / 时空编年史 Tab）
 
 ### Performance (Phase 0–4)
 

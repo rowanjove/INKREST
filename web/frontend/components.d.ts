@@ -112,6 +112,8 @@ declare module 'vue' {
     SemiAutoRepairHint: typeof import('./src/components/SemiAutoRepairHint.vue')['default']
     SensitiveWordsConfig: typeof import('./src/components/SensitiveWordsConfig.vue')['default']
     SetupWizard: typeof import('./src/components/SetupWizard.vue')['default']
+    StateChronicleTab: typeof import('./src/components/state/StateChronicleTab.vue')['default']
+    StateSettingsTab: typeof import('./src/components/state/StateSettingsTab.vue')['default']
     SystemReadinessPanel: typeof import('./src/components/SystemReadinessPanel.vue')['default']
     TaskLog: typeof import('./src/components/TaskLog.vue')['default']
     TrialPublishExport: typeof import('./src/components/TrialPublishExport.vue')['default']
