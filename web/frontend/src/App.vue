@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowRight,
@@ -27,7 +27,9 @@ import {
 } from './api'
 import SetupWizard from './components/SetupWizard.vue'
 import FirstBookGuide from './components/workbench/FirstBookGuide.vue'
-import NovelBatchRunDialog from './components/NovelBatchRunDialog.vue'
+const NovelBatchRunDialog = defineAsyncComponent(
+  () => import('./components/NovelBatchRunDialog.vue'),
+)
 
 import { provide } from 'vue'
 

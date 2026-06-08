@@ -36,14 +36,11 @@ export function useMonitorView() {
   })
 
   onMounted(() => {
-    tasksStore.connectElectronEvents()
-    tasksStore.startPolling()
     tasksStore.startRuntimeLogPolling()
     syncTab()
   })
 
   onUnmounted(() => {
-    tasksStore.stopPolling()
     tasksStore.stopRuntimeLogPolling()
   })
 

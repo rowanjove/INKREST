@@ -11,13 +11,10 @@ useChapterMaintenance()
 const tasksStore = useTasksStore()
 
 onMounted(() => {
-  tasksStore.connectElectronEvents()
-  tasksStore.startPolling()
   tasksStore.startRuntimeLogPolling()
 })
 
 onUnmounted(() => {
-  tasksStore.stopPolling()
   tasksStore.stopRuntimeLogPolling()
 })
 </script>

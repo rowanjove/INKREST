@@ -571,7 +571,9 @@ def test_batch_run_primary_button_opens_dialog_not_split_menu() -> None:
     assert "设置章数与选项" not in source
     assert "await openDialog()" in source
     assert "roundProgress" in source
-    assert "NovelBatchRunDialog" in DASHBOARD.read_text(encoding="utf-8")
+    app_source = APP.read_text(encoding="utf-8")
+    assert "NovelBatchRunDialog" in app_source
+    assert "NovelBatchRunDialog" not in DASHBOARD.read_text(encoding="utf-8")
 
 
 def test_longform_vector_warn_surfaces_in_readiness_and_dialog() -> None:

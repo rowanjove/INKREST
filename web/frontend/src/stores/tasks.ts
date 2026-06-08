@@ -329,6 +329,12 @@ export const useTasksStore = defineStore('tasks', () => {
     return `${proto}//${window.location.host}/ws/tasks`
   }
 
+  function isNovelPipelineTask(task: TaskSummary): boolean {
+    const tid = String(task.task_id || '')
+    const goal = String(task.goal || '')
+    return tid.startsWith('novel-') || goal.startsWith('Novel')
+  }
+
   function processTasksList(data: TaskSummary[]) {
       taskList.value = data.slice()
       let runningFound = false
@@ -349,6 +355,10 @@ export const useTasksStore = defineStore('tasks', () => {
               timestamp: (task.progress.timestamp ?? 0) * 1000,
             })
           }
+        } else if (task.status === 'pending' && isNovelPipelineTask(task)) {
+          runningFound = true
+          currentTaskId.value = task.task_id
+          isRunning.value = true
         } else if (task.status === 'completed') {
           if (task.task_id === currentTaskId.value) {
             if (task.chapter_id) {
@@ -386,7 +396,8 @@ export const useTasksStore = defineStore('tasks', () => {
           }
         }
       }
-      if (!runningFound) {
+      const hasLocalRunningProgress = progress.value.some((p) => p.status === 'running')
+      if (!runningFound && !hasLocalRunningProgress) {
         if (isRunning.value) {
           isRunning.value = false
         }

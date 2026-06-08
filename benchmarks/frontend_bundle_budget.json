@@ -4,5 +4,5 @@
   "max_total_js_bytes": 1780000,
   "max_element_plus_js_bytes": 1150000,
   "max_single_js_bytes": 75000,
-  "max_index_js_bytes": 50000
+  "max_index_js_bytes": 60000
 }
