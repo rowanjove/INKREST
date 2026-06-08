@@ -45,16 +45,28 @@ describe('mapContextToPetState', () => {
     expect(state).toBe('question')
   })
 
-  it('shows question when batch is paused', () => {
+  it('shows working when batch paused but pipeline still running', () => {
     const state = mapContextToPetState(
       {
         ...baseContext,
         novel_batch: { paused: true },
         running_tasks: [{ id: 'task-running' }],
+        pipeline_active: true,
       },
       [],
     )
-    expect(state).toBe('question')
+    expect(state).toBe('working')
+  })
+
+  it('stays idle when batch is paused without active pipeline', () => {
+    const state = mapContextToPetState(
+      {
+        ...baseContext,
+        novel_batch: { paused: true },
+      },
+      [],
+    )
+    expect(state).toBe('idle')
   })
 })
 

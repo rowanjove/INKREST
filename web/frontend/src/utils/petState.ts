@@ -40,8 +40,9 @@ export function mapContextToPetState(
   ignoredFailedTaskIds: string[],
 ): PetState {
   if (!ctx || ctx.backend_health !== 'ok') return 'offline'
-  if (ctx.novel_batch?.paused) return 'question'
   if (isPipelineRunning(ctx)) return 'working'
   if (hasPipelineProblem(ctx, ignoredFailedTaskIds)) return 'question'
+  // 批量暂停是正常业务态，用 idle + statusLabel「全书已暂停」，不用疑惑脸
+  if (ctx.novel_batch?.paused) return 'idle'
   return 'idle'
 }

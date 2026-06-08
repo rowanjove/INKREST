@@ -51,7 +51,8 @@ const showVectorAlert = computed(() =>
   <el-dialog
     v-model="dialogVisible"
     :title="dialogTitle"
-    width="500px"
+    width="560px"
+    class="batch-run-dialog"
     append-to-body
     :close-on-click-modal="false"
     :close-on-press-escape="dialogInteractReady"
@@ -165,32 +166,38 @@ const showVectorAlert = computed(() =>
       <p class="audit-hint">{{ DUAL_AUDIT_HINT }}</p>
     </div>
     <template #footer>
-      <p v-if="busy && busyPhaseLabel" class="busy-phase-hint">{{ busyPhaseLabel }}</p>
-      <el-button v-if="busy" type="danger" plain @click="cancelBatchRun">取消连写</el-button>
-      <template v-else-if="openError">
-        <el-button :disabled="!dialogInteractReady" @click="closeBatchDialog">关闭</el-button>
-        <el-button type="primary" :loading="opening" @click="retryDialogContext">重试加载</el-button>
-      </template>
-      <el-button v-else :disabled="!dialogInteractReady" @click="closeBatchDialog">关闭</el-button>
-      <template v-if="!openError && isCircuitPaused && !busy">
-        <el-button type="warning" plain @click="goMonitorAlerts">先处理待处理章</el-button>
-        <el-button
-          type="primary"
-          :disabled="!dialogInteractReady || !canRun || isExternalBlockActive"
-          @click="submit(true)"
-        >
-          仍继续写书
-        </el-button>
-      </template>
-      <el-button
-        v-else-if="!openError"
-        type="primary"
-        :loading="running"
-        :disabled="!dialogInteractReady || !canRun || running || isExternalBlockActive"
-        @click="submit(false)"
-      >
-        {{ running ? '同步卷队列 / 连写启动中…' : '确认连写' }}
-      </el-button>
+      <div class="batch-run-footer">
+        <p v-if="busy && busyPhaseLabel" class="busy-phase-hint">{{ busyPhaseLabel }}</p>
+        <div class="batch-run-footer__actions">
+          <el-button v-if="busy" type="danger" plain @click="cancelBatchRun">取消连写</el-button>
+          <template v-else-if="openError">
+            <el-button :disabled="!dialogInteractReady" @click="closeBatchDialog">关闭</el-button>
+            <el-button type="primary" :loading="opening" @click="retryDialogContext">重试加载</el-button>
+          </template>
+          <template v-else>
+            <el-button :disabled="!dialogInteractReady" @click="closeBatchDialog">关闭</el-button>
+            <template v-if="isCircuitPaused && !busy">
+              <el-button type="warning" plain @click="goMonitorAlerts">先处理待处理章</el-button>
+              <el-button
+                type="primary"
+                :disabled="!dialogInteractReady || !canRun || isExternalBlockActive"
+                @click="submit(true)"
+              >
+                仍继续写书
+              </el-button>
+            </template>
+            <el-button
+              v-else
+              type="primary"
+              :loading="running"
+              :disabled="!dialogInteractReady || !canRun || running || isExternalBlockActive"
+              @click="submit(false)"
+            >
+              {{ running ? '同步卷队列 / 连写启动中…' : '确认连写' }}
+            </el-button>
+          </template>
+        </div>
+      </div>
     </template>
   </el-dialog>
 </template>
@@ -224,7 +231,45 @@ const showVectorAlert = computed(() =>
 .batch-run-body {
   display: grid;
   gap: 14px;
-  padding: 10px 0;
+  padding: 4px 0 8px;
+  max-height: min(68vh, 520px);
+  overflow-y: auto;
+}
+
+.batch-run-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.batch-run-footer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+:deep(.batch-run-dialog .el-dialog__body) {
+  padding-top: 12px;
+  padding-bottom: 8px;
+}
+
+:deep(.batch-run-dialog .el-dialog__footer) {
+  padding-top: 8px;
+}
+
+.batch-run-body :deep(.el-checkbox) {
+  align-items: flex-start;
+  height: auto;
+  white-space: normal;
+}
+
+.batch-run-body :deep(.el-checkbox__label) {
+  line-height: 1.5;
+  white-space: normal;
 }
 
 .batch-run-lead {

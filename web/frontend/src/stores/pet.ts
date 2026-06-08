@@ -395,7 +395,7 @@ export const usePetStore = defineStore('pet', () => {
     syncIgnoredFailedTasks()
     window.addEventListener('storage', syncIgnoredFailedTasks)
     bindPipelineChannel()
-    subscribePolling(PET_POLL_KEY, refreshContext, 2500)
+    subscribePolling(PET_POLL_KEY, refreshContext, 1800)
   }
 
   function stopPolling() {

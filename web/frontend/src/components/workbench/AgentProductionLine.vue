@@ -11,6 +11,12 @@ import {
   Warning,
 } from '@element-plus/icons-vue'
 import { PRODUCTION_BLOCKS, PIPELINE_STEP_LABELS } from '../../constants/pipelineDisplay'
+import {
+  applyRunningPipelineOverlay,
+  rawBlockStatus,
+  settleQueueBlockAfterChapterStart,
+  type BlockStatus,
+} from '../../utils/productionLineBlocks'
 import { useNovelBatchRun } from '../../composables/useNovelBatchRun'
 import { useTasksStore, type ProgressEntry } from '../../stores/tasks'
 import {
@@ -78,24 +84,9 @@ const activeChapterId = computed(() => {
   return sorted[0]?.chapter_id || ''
 })
 
-type BlockStatus = 'idle' | 'running' | 'done' | 'error' | 'paused'
-
-function rawBlockStatus(blockId: string, steps: string[], entries: ProgressEntry[]): BlockStatus {
+function resolveBlockStatus(blockId: string, steps: string[], entries: ProgressEntry[]): BlockStatus {
   if (userPaused.value && pausedBlockId.value === blockId) return 'paused'
-  const relevant = entries.filter((e) => steps.includes(e.step))
-  if (!relevant.length) return 'idle'
-  if (relevant.some((e) => e.status === 'running')) return 'running'
-  if (relevant.some((e) => e.status === 'error' || e.status === 'blocked')) return 'error'
-  if (relevant.some((e) => e.status === 'warning')) return 'error'
-  const touched = relevant.filter((e) => e.status !== 'skipped')
-  if (
-    touched.length > 0 &&
-    touched.every((e) => e.status === 'done' || e.status === 'skipped')
-  ) {
-    return 'done'
-  }
-  if (relevant.some((e) => e.status === 'done')) return 'running'
-  return 'idle'
+  return rawBlockStatus(steps, entries)
 }
 
 const blockViews = computed(() => {
@@ -104,8 +95,8 @@ const blockViews = computed(() => {
     ? progress.value.filter((p) => p.chapter_id === chapter || !p.chapter_id)
     : progress.value.filter((p) => !p.chapter_id || p.step === 'ensure_queue' || p.step === 'managing_editor')
 
-  const raw = PRODUCTION_BLOCKS.map((block, index) => {
-    const status = rawBlockStatus(block.id, block.steps, entries)
+  let raw = PRODUCTION_BLOCKS.map((block, index) => {
+    const status = resolveBlockStatus(block.id, block.steps, entries)
     const runningStep = entries.find(
       (e) => block.steps.includes(e.step) && e.status === 'running',
     )
@@ -118,6 +109,8 @@ const blockViews = computed(() => {
       chapterId: runningStep?.chapter_id || (status === 'running' ? chapter : ''),
     }
   })
+
+  raw = settleQueueBlockAfterChapterStart(raw, entries, chapter)
 
   if (userPaused.value) {
     return raw.map((b) => {
@@ -136,21 +129,10 @@ const blockViews = computed(() => {
     })
   }
 
-  let runIdx = raw.findIndex((b) => b.status === 'running')
-  if (runIdx < 0 && (batchBusy.value || isRunning.value)) {
-    runIdx = raw.findIndex((b) => b.status === 'idle' || b.status === 'paused')
-  }
-
-  if (runIdx >= 0 && (isRunning.value || batchBusy.value)) {
-    return raw.map((b, i) => {
-      if (b.status === 'error' || b.status === 'paused') return b
-      if (i < runIdx) return { ...b, status: 'done' as BlockStatus }
-      if (i === runIdx) return { ...b, status: 'running' as BlockStatus }
-      return { ...b, status: 'idle' as BlockStatus }
-    })
-  }
-
-  return raw
+  return applyRunningPipelineOverlay(raw, {
+    pipelineBusy: isRunning.value || batchBusy.value,
+    entries,
+  })
 })
 
 const pipelineActive = computed(
@@ -388,6 +370,10 @@ onUnmounted(() => {
 
 .stage-card.status-paused {
   background: #f8fafc;
+}
+
+.production-line.pipeline-panel {
+  overflow: visible;
 }
 
 </style>

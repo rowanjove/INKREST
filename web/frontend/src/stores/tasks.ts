@@ -2,6 +2,14 @@ import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
 import { listTasks, abortTask as apiAbortTask, getRuntimeLogs, clearRuntimeLogs } from '../api'
 import { errorCodeHint } from '../utils/errorCodes'
+
+function pulsePetPipelineRefresh() {
+  try {
+    new BroadcastChannel('inkrest-pipeline').postMessage({ type: 'pulse', at: Date.now() })
+  } catch {
+    /* BroadcastChannel unavailable */
+  }
+}
 import { shouldPoll } from '../utils/pollingGate'
 import { usePipelineAlertsStore } from './pipelineAlerts'
 
@@ -108,6 +116,8 @@ function formatProgressLogMessage(entry: ProgressEntry): string {
   return `${stepLabel} · ${status}`
 }
 
+const QUEUE_PROGRESS_STEPS = new Set(['ensure_queue', 'managing_editor', 'novel_batch', 'novel_autopilot'])
+
 const PIPELINE_ORDER = [
   'init',
   'chapter_planner',
@@ -170,7 +180,21 @@ export const useTasksStore = defineStore('tasks', () => {
             p.status = 'done'
           }
         })
+        // 章节流水线启动后，卷队列同步不应继续占着 S1
+        progress.value.forEach((p) => {
+          if (QUEUE_PROGRESS_STEPS.has(p.step) && p.status === 'running') {
+            p.status = 'done'
+          }
+        })
       }
+    }
+
+    if (entry.step === 'ensure_queue' && entry.status === 'done') {
+      progress.value.forEach((p) => {
+        if (p.step === 'ensure_queue' && p.status === 'running') {
+          p.status = 'done'
+        }
+      })
     }
 
     const idx = progress.value.findIndex(
@@ -185,6 +209,9 @@ export const useTasksStore = defineStore('tasks', () => {
     if (entry.status === 'running') {
       isRunning.value = true
       currentChapterId.value = entry.chapter_id
+      if (PIPELINE_ORDER.includes(entry.step) || QUEUE_PROGRESS_STEPS.has(entry.step)) {
+        pulsePetPipelineRefresh()
+      }
     }
 
     if (
@@ -203,6 +230,9 @@ export const useTasksStore = defineStore('tasks', () => {
     isRunning.value = false
     progress.value.forEach(p => {
       if (p.chapter_id === chapterId && p.status === 'running') {
+        p.status = 'done'
+      }
+      if (!p.chapter_id && QUEUE_PROGRESS_STEPS.has(p.step) && p.status === 'running') {
         p.status = 'done'
       }
     })

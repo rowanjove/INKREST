@@ -438,6 +438,12 @@ export function useNovelBatchRun() {
         showClose: true,
       })
       await ensureNovelQueue({ timeout: 600_000, signal })
+      tasksStore.addProgress({
+        step: 'ensure_queue',
+        status: 'done',
+        chapter_id: '',
+        timestamp: Date.now(),
+      })
       queueMsg?.close()
       queueMsg = null
       const cap = form.value.target_chapters
@@ -467,6 +473,12 @@ export function useNovelBatchRun() {
       if (signal.aborted || error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError') {
         return
       }
+      tasksStore.addProgress({
+        step: 'ensure_queue',
+        status: 'error',
+        chapter_id: '',
+        timestamp: Date.now(),
+      })
       const detail = error?.response?.data?.detail
       const status = error?.response?.status
       const msg =
@@ -481,10 +493,19 @@ export function useNovelBatchRun() {
       throw error
     } finally {
       queueMsg?.close()
+      const aborted = signal.aborted
       runAbort = null
       running.value = false
       runPhase.value = 'idle'
       stopChapterCountPoll()
+      if (aborted) {
+        tasksStore.addProgress({
+          step: 'ensure_queue',
+          status: 'error',
+          chapter_id: '',
+          timestamp: Date.now(),
+        })
+      }
     }
   }
 
