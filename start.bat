@@ -12,9 +12,9 @@ echo.
 
 REM Try exe first, fallback to python
 if exist "dist\NovelAgent.exe" (
-    dist\NovelAgent.exe --no-browser
+    dist\NovelAgent.exe serve --no-browser
 ) else (
-    python main.py --no-browser
+    python main.py serve --no-browser
 )
 
 pause

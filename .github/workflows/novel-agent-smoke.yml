@@ -15,6 +15,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -32,3 +35,14 @@ jobs:
             tests/test_full_chain_chaos.py \
             tests/api/test_novel_smoke_chain.py \
             -q --tb=short
+      - name: Install frontend deps
+        working-directory: web/frontend
+        run: npm ci
+      - name: Frontend unit tests
+        working-directory: web/frontend
+        run: npm run test:unit
+      - name: Build frontend
+        working-directory: web/frontend
+        run: npm run build
+      - name: Check frontend bundle budget
+        run: python scripts/check_frontend_bundle.py web/frontend/dist

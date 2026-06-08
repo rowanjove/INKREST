@@ -144,6 +144,12 @@ def cmd_run_chapter(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    # Legacy: `python main.py --no-browser` (pre-subcommand CLI)
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] not in ("serve", "run-chapter", "-h", "--help"):
+        sys.argv.insert(1, "serve")
+
     parser = argparse.ArgumentParser(description="Novel Agent")
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
