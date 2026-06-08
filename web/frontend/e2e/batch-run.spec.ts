@@ -25,6 +25,9 @@ test.describe('batch run dialog', () => {
     await expect(dialog).toBeVisible({ timeout: 15_000 })
     await page.waitForTimeout(800)
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByRole('button', { name: '确认连写' })).toBeVisible()
+    // 种子场景含熔断暂停 → 主按钮为「仍继续写书」；无暂停时为「确认连写」
+    await expect(
+      dialog.getByRole('button', { name: /确认连写|仍继续写书/ }),
+    ).toBeVisible()
   })
 })

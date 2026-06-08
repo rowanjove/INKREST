@@ -11,7 +11,7 @@ export default defineConfig({
   webServer: process.env.E2E_SKIP_SERVER
     ? undefined
     : {
-        command: 'python ../../main.py',
+        command: 'python ../../main.py serve --no-browser',
         url: 'http://127.0.0.1:8000',
         reuseExistingServer: process.env.E2E_REUSE_SERVER === '1',
         timeout: 120_000,
