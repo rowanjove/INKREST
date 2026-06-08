@@ -8,7 +8,7 @@ import DashboardMetricsPane from '../components/dashboard/DashboardMetricsPane.v
 import DashboardSerializationPane from '../components/dashboard/DashboardSerializationPane.vue'
 import DashboardOutlineDiffDialog from '../components/dashboard/DashboardOutlineDiffDialog.vue'
 import DashboardAddChapterDialog from '../components/dashboard/DashboardAddChapterDialog.vue'
-import NovelBatchRunDialog from '../components/NovelBatchRunDialog.vue'
+
 import { useDashboardWorkbench } from '../composables/useDashboardWorkbench'
 import { useDashboardSerial } from '../composables/useDashboardSerial'
 import { useDashboardBatchDialog } from '../composables/useDashboardBatchDialog'
@@ -181,7 +181,6 @@ onUnmounted(() => {
       @remove-batch-row="removeBatchRow"
     />
 
-    <NovelBatchRunDialog />
   </section>
 </template>
 

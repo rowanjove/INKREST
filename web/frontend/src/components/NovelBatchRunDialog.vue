@@ -10,6 +10,7 @@ import { Loading } from '@element-plus/icons-vue'
 
 const {
   dialogVisible,
+  openError,
   running,
   form,
   ctx,
@@ -31,6 +32,7 @@ const {
   busyPhaseLabel,
   goMonitorAlerts,
   goChapterRepair,
+  retryDialogContext,
   workScale,
 } = useNovelBatchRun()
 
@@ -54,10 +56,17 @@ const showVectorAlert = computed(() =>
     :close-on-click-modal="false"
     :close-on-press-escape="dialogInteractReady"
     :before-close="beforeDialogClose"
+    :destroy-on-close="false"
   >
     <div v-if="opening" class="batch-run-loading">
       <el-icon class="is-loading batch-run-loading__icon"><Loading /></el-icon>
       <p>{{ busyPhaseLabel || '正在加载开书状态…' }}</p>
+    </div>
+    <div v-else-if="openError" class="batch-run-error">
+      <el-alert type="error" :closable="false" show-icon title="加载开书状态失败">
+        <p>{{ openError }}</p>
+        <p class="batch-run-error__hint">弹窗将保持打开，请确认后台服务正常后重试。</p>
+      </el-alert>
     </div>
     <div v-else class="batch-run-body">
       <el-alert
@@ -158,8 +167,12 @@ const showVectorAlert = computed(() =>
     <template #footer>
       <p v-if="busy && busyPhaseLabel" class="busy-phase-hint">{{ busyPhaseLabel }}</p>
       <el-button v-if="busy" type="danger" plain @click="cancelBatchRun">取消连写</el-button>
+      <template v-else-if="openError">
+        <el-button :disabled="!dialogInteractReady" @click="closeBatchDialog">关闭</el-button>
+        <el-button type="primary" :loading="opening" @click="retryDialogContext">重试加载</el-button>
+      </template>
       <el-button v-else :disabled="!dialogInteractReady" @click="closeBatchDialog">关闭</el-button>
-      <template v-if="isCircuitPaused && !busy">
+      <template v-if="!openError && isCircuitPaused && !busy">
         <el-button type="warning" plain @click="goMonitorAlerts">先处理待处理章</el-button>
         <el-button
           type="primary"
@@ -170,7 +183,7 @@ const showVectorAlert = computed(() =>
         </el-button>
       </template>
       <el-button
-        v-else
+        v-else-if="!openError"
         type="primary"
         :loading="running"
         :disabled="!dialogInteractReady || !canRun || running || isExternalBlockActive"
@@ -183,13 +196,24 @@ const showVectorAlert = computed(() =>
 </template>
 
 <style scoped>
-.batch-run-loading {
+.batch-run-loading,
+.batch-run-error {
   display: grid;
   justify-items: center;
   gap: 12px;
-  padding: 36px 0;
+  padding: 24px 0;
   color: var(--color-text-muted);
   font-size: 14px;
+}
+
+.batch-run-error {
+  justify-items: stretch;
+}
+
+.batch-run-error__hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
 }
 
 .batch-run-loading__icon {

@@ -49,6 +49,8 @@ export type NovelBatchRunContext = {
 }
 
 const dialogVisible = ref(false)
+/** 打开弹窗时拉取上下文失败，留在弹窗内展示而非秒关 */
+const openError = ref('')
 /** 弹窗刚打开时禁止遮罩/误触关闭 */
 let dialogCloseGuardUntil = 0
 const dialogInteractReady = ref(false)
@@ -57,6 +59,7 @@ let dialogInteractTimer: ReturnType<typeof setTimeout> | null = null
 function closeBatchDialog() {
   dialogCloseGuardUntil = 0
   dialogInteractReady.value = false
+  openError.value = ''
   if (dialogInteractTimer) {
     clearTimeout(dialogInteractTimer)
     dialogInteractTimer = null
@@ -176,59 +179,67 @@ export function useNovelBatchRun() {
     return { ...est, priceLabel }
   })
 
-  const REFRESH_TIMEOUT_MS = 45_000
-
-  function withRefreshTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
-    return Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        setTimeout(
-          () => reject(new Error(`${label}超时，请确认栖墨后台已启动（日志中心可看日志）`)),
-          REFRESH_TIMEOUT_MS,
-        )
-      }),
-    ])
-  }
-
   async function refreshContext() {
     const [assetRes, countRes, outlineRes, modelsRes, configRes, embRes, arcRes, batchRes, alertsRes] =
-      await withRefreshTimeout(
-        Promise.all([
-          listAssets().catch(() => ({ data: [] })),
-          getChapterCount(true).catch(() => ({ data: { total: 0 } })),
-          getOutline().catch(() => ({ data: {} })),
-          listModels().catch(() => ({ data: [] })),
-          getConfig().catch(() => ({ data: {} })),
-          getEmbeddingStatus().catch(() => ({ data: {} })),
-          getArcProgress().catch(() => ({ data: { progress: null } })),
-          getNovelBatchStatus().catch(() => ({ data: {} })),
-          getPipelineAlerts().catch(() => ({ data: { alerts: [] } })),
-        ]),
-        '加载开书状态',
-      )
-    const outlineData = outlineRes.data
-    const progress = arcRes.data?.progress || batchRes.data || null
-    const pricing = resolveDailyModelPricePer1k(configRes.data, modelsRes.data || [])
-    modelPricePer1k.value = pricing.pricePer1k
-    modelPriceLabel.value = pricing.modelLabel
-    ctx.value = {
-      outline: outlineData && Object.keys(outlineData).length > 0 ? outlineData : null,
-      assets: assetRes.data || [],
-      // 与工作台 loadWorkbench 一致，避免 authoritative_completed 偏大导致弹窗被静默拦截
-      chapterCountTotal: countRes.data?.total ?? 0,
-      engineReady: resolveEngine(configRes.data, modelsRes.data || []).ready,
-      semanticSearchEffective: Boolean(embRes.data?.semantic_search_effective),
-      vectorEnabled: embRes.data?.vector_enabled !== false,
-      arcProgress: progress,
-      batchPaused: progress?.status === 'paused',
-      pauseReason: String(progress?.pause_reason || ''),
-      lastChapterId: String(progress?.last_chapter_id || ''),
-      externalPendingCount: (alertsRes.data?.alerts || []).filter((item: { last_stage?: string }) =>
-        isExternalPending(item),
-      ).length,
-      blockContinueUntilExternal: Boolean(
-        configRes.data?.runtime?.block_continue_until_external_pass,
-      ),
+      await Promise.all([
+        listAssets().catch(() => ({ data: [] })),
+        getChapterCount(true).catch(() => ({ data: { total: 0 } })),
+        getOutline().catch(() => ({ data: {} })),
+        listModels().catch(() => ({ data: [] })),
+        getConfig().catch(() => ({ data: {} })),
+        getEmbeddingStatus().catch(() => ({ data: {} })),
+        getArcProgress().catch(() => ({ data: { progress: null } })),
+        getNovelBatchStatus().catch(() => ({ data: {} })),
+        getPipelineAlerts().catch(() => ({ data: { alerts: [] } })),
+      ])
+    try {
+      const outlineData = outlineRes.data
+      const progress = arcRes.data?.progress || batchRes.data || null
+      const pricing = resolveDailyModelPricePer1k(configRes.data, modelsRes.data || [])
+      modelPricePer1k.value = pricing.pricePer1k
+      modelPriceLabel.value = pricing.modelLabel
+      ctx.value = {
+        outline: outlineData && Object.keys(outlineData).length > 0 ? outlineData : null,
+        assets: assetRes.data || [],
+        // 与工作台 loadWorkbench 一致，避免 authoritative_completed 偏大导致弹窗被静默拦截
+        chapterCountTotal: countRes.data?.total ?? 0,
+        engineReady: resolveEngine(configRes.data, modelsRes.data || []).ready,
+        semanticSearchEffective: Boolean(embRes.data?.semantic_search_effective),
+        vectorEnabled: embRes.data?.vector_enabled !== false,
+        arcProgress: progress,
+        batchPaused: progress?.status === 'paused',
+        pauseReason: String(progress?.pause_reason || ''),
+        lastChapterId: String(progress?.last_chapter_id || ''),
+        externalPendingCount: (alertsRes.data?.alerts || []).filter((item: { last_stage?: string }) =>
+          isExternalPending(item),
+        ).length,
+        blockContinueUntilExternal: Boolean(
+          configRes.data?.runtime?.block_continue_until_external_pass,
+        ),
+      }
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : '解析开书状态失败，请重试'
+      throw new Error(message)
+    }
+  }
+
+  async function loadDialogContext(): Promise<boolean> {
+    openError.value = ''
+    opening.value = true
+    runPhase.value = 'opening'
+    try {
+      await refreshContext()
+      applyFormDefaults()
+      return true
+    } catch (error: any) {
+      const message = error?.message || '无法加载开书状态，请稍后重试'
+      openError.value = message
+      ElMessage.error(message)
+      return false
+    } finally {
+      opening.value = false
+      if (runPhase.value === 'opening') runPhase.value = 'idle'
     }
   }
 
@@ -319,29 +330,24 @@ export function useNovelBatchRun() {
   /** 可选：调整本次章数 / 是否自动续轮后再启动 */
   async function openDialog() {
     if (busy.value) return
-    // 必须先同步弹出，再在弹窗内加载；异步后再 visible 会被工作台刷新/遮罩误关
+    // 必须先同步弹出，再在弹窗内加载；失败时保留弹窗供重试，不能秒关
     dialogVisible.value = true
     armDialogOpenGuard()
-    opening.value = true
-    runPhase.value = 'opening'
-    try {
-      await refreshContext()
-      applyFormDefaults()
-      if (!canRun.value) {
-        const pending = readinessItems.value.filter((i) => !i.ok).map((i) => i.label)
-        ElMessage.warning(
-          pending.length
-            ? `开书清单尚有未就绪项：${pending.join('、')}。可在弹窗内查看详情后再启动。`
-            : '开书清单未全绿，请补齐后再确认连写。',
-        )
-      }
-    } catch (error: any) {
-      ElMessage.error(error?.message || '无法加载开书状态，请稍后重试')
-      closeBatchDialog()
-    } finally {
-      opening.value = false
-      if (runPhase.value === 'opening') runPhase.value = 'idle'
+    const ok = await loadDialogContext()
+    if (ok && !canRun.value) {
+      const pending = readinessItems.value.filter((i) => !i.ok).map((i) => i.label)
+      ElMessage.warning(
+        pending.length
+          ? `开书清单尚有未就绪项：${pending.join('、')}。可在弹窗内查看详情后再启动。`
+          : '开书清单未全绿，请补齐后再确认连写。',
+      )
     }
+  }
+
+  async function retryDialogContext() {
+    if (opening.value || running.value) return
+    armDialogOpenGuard()
+    await loadDialogContext()
   }
 
   function goMonitorAlerts() {
@@ -483,6 +489,7 @@ export function useNovelBatchRun() {
 
   return {
     dialogVisible,
+    openError,
     dialogInteractReady,
     beforeDialogClose,
     closeBatchDialog,
@@ -507,6 +514,7 @@ export function useNovelBatchRun() {
     startBatchRun,
     cancelBatchRun,
     openDialog,
+    retryDialogContext,
     submit,
     goMonitorAlerts,
     goChapterRepair,
