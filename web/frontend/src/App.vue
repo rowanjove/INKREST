@@ -15,6 +15,7 @@ import {
   MagicStick,
 } from '@element-plus/icons-vue'
 import { useProjectStore } from './stores/project'
+import { useTasksStore } from './stores/tasks'
 import {
   getConfig,
   getEmbeddingStatus,
@@ -44,6 +45,7 @@ const handleWizardCompleted = () => {
 const route = useRoute()
 const router = useRouter()
 const projectStore = useProjectStore()
+const tasksStore = useTasksStore()
 type EngineStage = { label: string; detail: string; ok: boolean; warn?: boolean }
 
 const engineLabel = ref('检查中…')
@@ -86,9 +88,17 @@ const checkBackendHealth = async () => {
   }
 }
 
+function onPipelineStarted() {
+  void tasksStore.refreshTaskList()
+}
+
 onMounted(async () => {
   await projectStore.fetchCurrent()
   await loadEngineStatus()
+  tasksStore.connectElectronEvents()
+  tasksStore.startPolling()
+  window.addEventListener('inkrest-pipeline-started', onPipelineStarted)
+  window.addEventListener('inkrest-batch-finished', onPipelineStarted)
 
   if (window.electronAPI?.onNavigate) {
     unlistenNavigate = window.electronAPI.onNavigate((routePath: string) => {
@@ -127,6 +137,9 @@ watch(backendStatus, (status) => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('inkrest-pipeline-started', onPipelineStarted)
+  window.removeEventListener('inkrest-batch-finished', onPipelineStarted)
+  tasksStore.stopPolling()
   if (unlistenNavigate) {
     unlistenNavigate()
   }

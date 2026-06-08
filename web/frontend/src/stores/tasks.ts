@@ -307,12 +307,14 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   let pollingTimer: number | null = null
+  let wsBackupPollTimer: number | null = null
   let wsSocket: WebSocket | null = null
   let wsFallbackTimer: number | null = null
   let wsHeartbeatTimer: number | null = null
   let wsUsePollingFallback = false
   let taskPollConsumers = 0
   let wsAllowReconnect = true
+  const WS_BACKUP_POLL_MS = 4000
 
 
   const isTauriClient =
@@ -441,6 +443,8 @@ export const useTasksStore = defineStore('tasks', () => {
           window.clearInterval(pollingTimer)
           pollingTimer = null
         }
+        // WS 推送可能延迟或漏包，保留 HTTP 轮询兜底，避免生产线/山山一直待机
+        startWsBackupPoll()
       }
       socket.onmessage = (ev) => {
         try {
@@ -453,6 +457,7 @@ export const useTasksStore = defineStore('tasks', () => {
       socket.onerror = () => {
         wsUsePollingFallback = true
         stopWsHeartbeat()
+        stopWsBackupPoll()
         socket.close()
         wsSocket = null
         startPollingFallback()
@@ -460,6 +465,7 @@ export const useTasksStore = defineStore('tasks', () => {
       socket.onclose = () => {
         wsSocket = null
         stopWsHeartbeat()
+        stopWsBackupPoll()
         if (!wsUsePollingFallback && wsAllowReconnect && taskPollConsumers > 0) {
           wsFallbackTimer = window.setTimeout(connectTaskWebSocket, 5000)
         }
@@ -476,12 +482,28 @@ export const useTasksStore = defineStore('tasks', () => {
     pollingTimer = window.setInterval(pollTasks, 2000)
   }
 
+  function startWsBackupPoll() {
+    if (wsBackupPollTimer) return
+    void pollTasks()
+    wsBackupPollTimer = window.setInterval(() => {
+      void pollTasks()
+    }, WS_BACKUP_POLL_MS)
+  }
+
+  function stopWsBackupPoll() {
+    if (wsBackupPollTimer) {
+      window.clearInterval(wsBackupPollTimer)
+      wsBackupPollTimer = null
+    }
+  }
+
   function disconnectTaskWebSocket() {
     if (wsFallbackTimer) {
       window.clearTimeout(wsFallbackTimer)
       wsFallbackTimer = null
     }
     stopWsHeartbeat()
+    stopWsBackupPoll()
     if (wsSocket) {
       wsSocket.close()
       wsSocket = null
@@ -491,9 +513,12 @@ export const useTasksStore = defineStore('tasks', () => {
   function startPolling() {
     taskPollConsumers += 1
     wsAllowReconnect = true
+    void pollTasks()
     connectTaskWebSocket()
     if (wsUsePollingFallback) {
       startPollingFallback()
+    } else if (wsSocket?.readyState === WebSocket.OPEN) {
+      startWsBackupPoll()
     }
   }
 

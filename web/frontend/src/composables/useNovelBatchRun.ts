@@ -31,7 +31,9 @@ import {
   resolveDailyModelPricePer1k,
 } from '../utils/tokenCostEstimate'
 import { useProjectStore } from '../stores/project'
+import { useTasksStore } from '../stores/tasks'
 import { needsRepairBeforeResume } from '../utils/batchPause'
+import { notifyPipelineStarted } from '../utils/pipelineNotify'
 
 export type NovelBatchRunContext = {
   outline: Record<string, any> | null
@@ -124,6 +126,7 @@ function resolveEngine(config: any, models: any[]) {
 export function useNovelBatchRun() {
   const router = useRouter()
   const projectStore = useProjectStore()
+  const tasksStore = useTasksStore()
   const { currentProject } = storeToRefs(projectStore)
 
   const maxAvailableChapters = computed(() => {
@@ -419,6 +422,12 @@ export function useNovelBatchRun() {
     runAbort = new AbortController()
     const signal = runAbort.signal
     startChapterCountPoll()
+    tasksStore.addProgress({
+      step: 'ensure_queue',
+      status: 'running',
+      chapter_id: '',
+      timestamp: Date.now(),
+    })
     let queueMsg: ReturnType<typeof ElMessage.info> | null = null
     try {
       runPhase.value = 'syncing_queue'
@@ -449,6 +458,8 @@ export function useNovelBatchRun() {
       ElMessage.success(
         `已启动${mode}（上限 ${cap} 章，任务 ${data?.task_id || ''}），请到日志中心查看任务流水。`,
       )
+      await tasksStore.refreshTaskList()
+      notifyPipelineStarted()
       closeBatchDialog()
       window.dispatchEvent(new CustomEvent('inkrest-batch-finished'))
       return data

@@ -81,6 +81,7 @@ const { restartDashboardTimer, stopDashboardPolling, tasksStore } = useDashboard
 })
 
 function onBatchFinished() {
+  void tasksStore.refreshTaskList()
   void loadWorkbench(loadSerialData)
 }
 
@@ -88,8 +89,6 @@ onMounted(async () => {
   await loadWorkbench(loadSerialData)
   restartDashboardTimer()
   watch(() => tasksStore.isRunning, restartDashboardTimer)
-  tasksStore.connectElectronEvents()
-  tasksStore.startPolling()
   tasksStore.startRuntimeLogPolling()
   window.addEventListener('inkrest-batch-finished', onBatchFinished)
 })
@@ -97,7 +96,6 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('inkrest-batch-finished', onBatchFinished)
   stopDashboardPolling()
-  tasksStore.stopPolling()
   tasksStore.stopRuntimeLogPolling()
 })
 </script>

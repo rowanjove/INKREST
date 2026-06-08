@@ -121,6 +121,7 @@ export const usePetStore = defineStore('pet', () => {
   const lastError = ref('')
   const PET_POLL_KEY = 'pet-context'
   let petPollingActive = false
+  let pipelineChannel: BroadcastChannel | null = null
   let flashTimer: number | null = null
   let wasPipelineRunning = false
   let lastActiveFailedCount = 0
@@ -375,11 +376,25 @@ export const usePetStore = defineStore('pet', () => {
     }
   }
 
+  function bindPipelineChannel() {
+    if (pipelineChannel || typeof BroadcastChannel === 'undefined') return
+    pipelineChannel = new BroadcastChannel('inkrest-pipeline')
+    pipelineChannel.onmessage = () => {
+      void refreshContext()
+    }
+  }
+
+  function unbindPipelineChannel() {
+    pipelineChannel?.close()
+    pipelineChannel = null
+  }
+
   function startPolling() {
     if (petPollingActive) return
     petPollingActive = true
     syncIgnoredFailedTasks()
     window.addEventListener('storage', syncIgnoredFailedTasks)
+    bindPipelineChannel()
     subscribePolling(PET_POLL_KEY, refreshContext, 2500)
   }
 
@@ -387,6 +402,7 @@ export const usePetStore = defineStore('pet', () => {
     if (!petPollingActive) return
     petPollingActive = false
     window.removeEventListener('storage', syncIgnoredFailedTasks)
+    unbindPipelineChannel()
     clearFlashTimer()
     unsubscribePolling(PET_POLL_KEY)
   }
