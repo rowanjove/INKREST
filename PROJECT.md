@@ -359,11 +359,19 @@ python main.py run-chapter --chapter-id 001 --goal "主角雨夜回到出租屋"
 python main.py run-chapter --chapter-id 001 --goal "..." --json-output
 ```
 
-### 方式三：打包为 exe
+### 方式三：桌面端 Electron（推荐分发）
+
+```powershell
+cd web/frontend
+npm run electron:pack
+# 输出: dist-desktop/win-unpacked/栖墨.exe
+```
+
+### 方式三（遗留）：PyInstaller 单文件
 
 ```bash
 pyinstaller novel_agent.spec --clean --noconfirm
-# 输出: dist/NovelAgent.exe
+# 输出: dist/NovelAgent.exe — 需 main.py serve 启动 Web
 ```
 
 ### 方式四：Windows 双击启动
@@ -473,7 +481,8 @@ start.bat
 
 ### 运行测试
 ```bash
-python -m unittest tests.test_pipeline -v
+python -m pytest tests/ --ignore=tests/smoke -q
+cd web/frontend && npm run test:unit && npm run build
 ```
 
 ### 添加新 Agent

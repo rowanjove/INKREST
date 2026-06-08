@@ -1,124 +1,99 @@
-# 多 Agent 小说生成流水线 MVP
+# 栖墨 · INKREST — 多 Agent 长篇写作
 
-这是第一版本地骨架：先跑通“单章生产流水线”，再接真实模型、数据库和向量检索。
+本地优先的智能长篇流水线：章节规划 → 写作 → 审校 → 状态同步，配套 Vue 工作台与 Electron 桌面端（栖墨）。
 
 ## 当前能力
+
 - Planner 生成章节计划和场景卡。
 - Context Builder 生成每个场景的最小上下文包。
-- Writer 写单场景。
-- Length Fix 根据字数报告分流到 Expander 或 Compressor。
-- Stitch Editor 合并并修接缝。
-- Style Editor 降低模板感。
-- Auditor 输出审校报告和状态更新。
-- 自动加载 `prompts/*.md`。
-- 审校 JSON 结构校验。
-- 敏感词硬匹配扫描。
-- `state_update` 自动合并到 `state/*.yaml`。
-- 每章生成状态快照。
-- 自动生成 HTML 看板。
-- 多场景并行生成。
-- 自动维护 SQLite 镜像：`data/novel.sqlite`。
-- 章节终稿索引入库。
-- 事件历史可查询，并会进入后续场景 Context Pack。
-- 结构化写作规则：`assets/rules.yaml`。
-- 每章自动生成 `chapter_summary.md`，并写入 SQLite。
-- 时间线网络：`timeline_nodes`、`timeline_edges`、`foreshadows`、`hooks`。
+- Writer 写单场景；Length Fix / Stitch / Style / Auditor 等后续阶段。
+- 自动加载 `prompts/*.md`；审校 JSON 校验；敏感词扫描。
+- `state_update` 合并到 `state/*.yaml` + SQLite 镜像 `data/novel.sqlite`。
+- 多场景并行、向量召回、插件扩展、山山驻场助手、全书连写与章节维护。
+
+## 快速开始
+
+### 1. 依赖与配置
+
+```powershell
+pip install -r requirements.txt
+copy config\pipeline.yaml.example config\pipeline.yaml
+```
+
+在 `config/pipeline.yaml` 或 `config/models.json` 填入模型 API Key（二者已在 `.gitignore`，勿提交）。
+
+### 2. 启动 Web 后台
+
+```powershell
+# 推荐
+python main.py serve --no-browser
+
+# 或双击
+start.bat
+```
+
+浏览器打开 http://127.0.0.1:8000 。桌面端请使用下方 **栖墨 Electron** 打包产物（会自动拉起同一后台）。
+
+### 3. 桌面端（推荐交付形态）
+
+```powershell
+cd web\frontend
+npm ci
+npm run electron:pack
+```
+
+运行：`web\frontend\dist-desktop\win-unpacked\栖墨.exe`
+
+若已构建过 PyInstaller 后端，仅更新前端时可：
+
+```powershell
+cd web\frontend
+npm run build
+npm run sync:python-runtime
+npx electron-builder --win --dir
+```
 
 ## 运行测试
 
 ```powershell
-python -m unittest tests.test_pipeline -v
+# 后端（与 CI 一致）
+python -m pytest tests/ --ignore=tests/smoke -q
+
+# 前端
+cd web\frontend
+npm run test:unit
+npm run build
+npm run check:bundle
 ```
 
-## 干跑一章
+可选导出/向量相关测试依赖：`pip install -r requirements-extras.txt`
 
-当前默认使用 `StaticLLM`，不会调用真实模型，只会生成占位内容。
+推送前完整清单见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## CLI（无 Web UI）
 
 ```powershell
-python .\orchestrator.py run-chapter --chapter-id 001 --goal "主角雨夜回到出租屋，并遭遇第一次异常。"
+# 干跑一章（StaticLLM，不耗 API）
+python main.py run-chapter --chapter-id 001 --goal "主角雨夜回到出租屋，并遭遇第一次异常。" --dry-run
+
+# 等价旧入口（会提示迁移到 cli.py / main.py）
+python cli.py run-chapter --chapter-id 001 --goal "..." --dry-run
 ```
 
-输出会落在：
+章节产出目录：`workspace/chapters/chapter_001/`（或当前激活项目下的 `projects/<id>/workspace/...`）。
 
-```text
-workspace/chapters/chapter_001/
-```
+其他 CLI：`python cli.py dashboard`、`query-events`、`query-timeline` 等，见 `python cli.py -h`。
 
-旧命令仍兼容：
+## Web 功能概览
 
-```powershell
-python .\orchestrator.py --chapter-id 001 --goal "主角雨夜回到出租屋，并遭遇第一次异常。"
-```
+- **书库** — 多项目创建、切换、导入
+- **工作台** — 开书清单、连写启动、单章运行、长篇指标
+- **大纲 / 状态 / 写作台** — 设定、人物伏笔、章节编辑与 AI 改写
+- **章节维护** — 待处理章、外审与修稿队列
+- **日志中心** — 任务流水、运行日志、费用摘要
+- **设置** — 模型路由、Embedding、插件、山山助手
 
-## 重新生成看板
-
-```powershell
-python .\orchestrator.py dashboard
-```
-
-看板位置：
-
-```text
-dashboard/index.html
-```
-
-## 查询事件历史
-
-```powershell
-python .\orchestrator.py query-events --query "白塔医院"
-```
-
-事件来自审校阶段输出的 `state_update.events`。当前干跑模型默认输出空事件；接入真实模型后，只要 Auditor 返回事件，系统会自动写入 `state/events.yaml` 和 `data/novel.sqlite`。
-
-## 查询时间线网络
-
-```powershell
-python .\orchestrator.py query-timeline --query "白塔医院"
-```
-
-时间线网络来自审校阶段输出的：
-
-```text
-state_update.timeline_nodes
-state_update.timeline_edges
-state_update.foreshadows
-state_update.hooks
-```
-
-这些内容会同时写入 `state/*.yaml` 和 `data/novel.sqlite`，并自动进入后续场景 Context Pack 的“相关时间线网络”段落。
-
-## Web UI
-
-### 快速启动
-
-**方式一：双击运行**
-```
-start.bat
-```
-
-**方式二：Python 启动**
-```powershell
-pip install -r requirements.txt
-python main.py
-```
-
-**方式三：打包好的 exe**
-```powershell
-dist\NovelAgent.exe
-```
-
-启动后自动打开浏览器 http://127.0.0.1:8000
-
-### 功能页面
-- **Dashboard** — 总览看板
-- **章节管理** — 章节列表、运行新章节、查看详情
-- **小说状态** — 人物、伏笔、钩子、道具、事件历史
-- **资产编辑** — 编辑人物卡、世界观、文风指南等
-- **配置管理** — 查看/编辑 LLM 配置（多模型路由）
-
-### 多模型路由
-
-在 `config/pipeline.yaml` 中配置不同 agent 使用不同模型：
+### 多模型路由示例
 
 ```yaml
 llm:
@@ -130,31 +105,25 @@ llm:
   overrides:
     writer:
       model: Pro/deepseek-ai/DeepSeek-R1
-    planner:
-      model: Pro/deepseek-ai/DeepSeek-R1
 ```
 
-未配置 override 的 agent 会使用 default 模型。
+## 遗留单文件打包（不推荐）
 
-## 打包 exe
+仅维护兼容时使用：
 
 ```powershell
 pyinstaller novel_agent.spec --clean --noconfirm
+# 输出: dist/NovelAgent.exe — 需自行 `serve --no-browser` 启动 Web
 ```
 
-生成文件：`dist/NovelAgent.exe`（约 33MB）
+**对外分发请用 Electron `栖墨.exe`**，见上文 `electron:pack`。
 
-## 本地验证清单
+## 安全与远程部署
 
-改代码后请按 [CONTRIBUTING.md](CONTRIBUTING.md) 跑对应检查：
+默认仅监听 `127.0.0.1`。局域网/服务器部署见 [docs/remote-deployment-security.md](docs/remote-deployment-security.md)。
 
-- 前端：`cd web/frontend && npm run build`，再加 `pytest tests/test_workspace_ui_contract.py`
-- 后端：`pytest tests/ --ignore=tests/smoke -q`
-- 提交前：全量 pytest + smoke 链子集（见 CONTRIBUTING）
+## 更多文档
 
-首次配置：复制 `config/pipeline.yaml.example` → `config/pipeline.yaml`，填入 API Key。
-
-## 下一步
-- 填写 `assets/` 下的人物卡、世界观等资产文件
-- 在 `config/pipeline.yaml` 配置真实 LLM API Key
-- 增加混合检索和历史上下文召回
+- 贡献与发版：[CONTRIBUTING.md](CONTRIBUTING.md)
+- 产品介绍：[小说生成Agent项目介绍.md](小说生成Agent项目介绍.md)
+- 架构说明：[PROJECT.md](PROJECT.md)

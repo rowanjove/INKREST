@@ -1,6 +1,8 @@
 name: Novel Agent Full Tests
 
 on:
+  push:
+    branches: [master, main]
   pull_request:
     branches: [master, main]
   schedule:

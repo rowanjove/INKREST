@@ -565,6 +565,15 @@ def test_shanshan_copy_points_to_chapter_maintenance_not_monitor() -> None:
     assert "运行监控" not in source
 
 
+def test_readme_documents_current_entrypoints() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "python -m pytest" in readme
+    assert "python main.py serve" in readme
+    assert "electron:pack" in readme
+    assert "栖墨.exe" in readme
+    assert "python -m unittest tests.test_pipeline" not in readme
+
+
 def test_batch_run_primary_button_opens_dialog_not_split_menu() -> None:
     source = AGENT_PRODUCTION_LINE.read_text(encoding="utf-8")
     assert "split-button" not in source

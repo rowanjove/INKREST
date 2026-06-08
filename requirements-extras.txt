@@ -1,0 +1,4 @@
+# Optional deps for export features and extended CI coverage.
+# Install: pip install -r requirements-extras.txt
+ebooklib>=0.18
+reportlab>=4.0

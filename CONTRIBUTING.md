@@ -31,9 +31,14 @@ python -m pytest tests/ --ignore=tests/smoke -q
 ### 推送 / 开 PR 前（推荐全量）
 
 ```powershell
-cd web/frontend; npm run build; cd ../..
+cd web/frontend
+npm run test:unit
+npm run build
+npm run check:bundle
+cd ../..
 python -m pytest tests/ --ignore=tests/smoke -q --tb=short
 python -m pytest tests/test_full_chain_chaos.py tests/api/test_novel_smoke_chain.py -q --tb=short
+python scripts/perf_api_baseline.py --check
 ```
 
 环境变量 `NOVEL_AGENT_DISABLE_LOCAL_TOKEN=1` 与 CI smoke 一致，本地跑 API 测试时可设置。
@@ -43,7 +48,7 @@ python -m pytest tests/test_full_chain_chaos.py tests/api/test_novel_smoke_chain
 1. 复制 `.env.example` 为 `.env`（可选，API Key 也可写在项目 `config/`）。
 2. 复制 `config/pipeline.yaml.example` 为 `config/pipeline.yaml`，填入模型与 Key。
 3. `pip install -r requirements.txt`
-4. `python main.py` 或 `start.bat`
+4. `python main.py serve` 或 `start.bat`（桌面端用 `npm run electron:pack` 产物）
 
 ## Git 约定
 
@@ -61,11 +66,13 @@ python -m pytest tests/test_full_chain_chaos.py tests/api/test_novel_smoke_chain
 
 ## 发布清单（portable / Electron）
 
-1. 确认 `pytest tests/ --ignore=tests/smoke` 与 `npm run build`、`npm run test:unit` 全绿
+1. 确认 `pytest tests/ --ignore=tests/smoke`、`npm run test:unit`、`npm run build`、`npm run check:bundle` 全绿
 2. 对齐 `web/frontend/package.json` 的 `version` 与发版说明
 3. 更新 `CHANGELOG`（如有）与用户可见文案
-4. 运行 `python scripts/verify_bundle_manifest.py dist-portable/<产物目录>`
-5. 打包后冒烟：开书 → 连写 1 章 dry_run → 日志中心费用摘要有数据
+4. 桌面端：`cd web/frontend && npm run electron:pack`（或全量 `npm run electron:build`）
+5. 交付路径：`web/frontend/dist-desktop/win-unpacked/栖墨.exe`（勿混用未 sync 的旧 portable）
+6. 可选：`python scripts/verify_bundle_manifest.py <产物目录>`
+7. 打包后冒烟：开书 → 连写弹窗可开 → 任务日志有进度 → 山山状态同步
 
 ## 长跑与混沌测试（可选）
 
