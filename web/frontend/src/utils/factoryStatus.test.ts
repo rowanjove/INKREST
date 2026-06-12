@@ -26,6 +26,13 @@ const baseDashboard: FactoryDashboard = {
     running_tasks: 0,
     risk_level: 'low',
   },
+  mode_profile: {
+    mode: 'newbie_auto',
+    label: '新手全自动',
+    automation_level: 'high',
+    priorities: ['自动补齐开书要素'],
+    operator_hint: '适合从灵感直接推进。',
+  },
   pipeline: [],
   repair: { blocked_count: 0, items: [] },
   exports: { txt_available: false, epub_available: false, pdf_available: false },

@@ -30,6 +30,12 @@ const tone = computed(() =>
   props.dashboard ? getFactoryTone(props.dashboard.factory_status.risk_level) : 'success',
 )
 const modeOptions = factoryModeOptions()
+const automationLabel = computed(() => {
+  const level = props.dashboard?.mode_profile.automation_level
+  if (level === 'high') return '高自动化'
+  if (level === 'managed') return '管理视角'
+  return '平衡介入'
+})
 const progressPercent = computed(() => {
   const status = props.dashboard?.factory_status
   if (!status?.target_chapters) return 0
@@ -61,6 +67,19 @@ const progressPercent = computed(() => {
             :value="option.value"
           />
         </el-select>
+        <div v-if="dashboard?.mode_profile" class="factory-mode-profile">
+          <el-tag size="small" effect="plain">{{ automationLabel }}</el-tag>
+          <span
+            v-for="priority in dashboard.mode_profile.priorities"
+            :key="priority"
+            class="factory-mode-priority"
+          >
+            {{ priority }}
+          </span>
+        </div>
+        <p v-if="dashboard?.mode_profile.operator_hint" class="factory-mode-hint">
+          {{ dashboard.mode_profile.operator_hint }}
+        </p>
       </div>
     </div>
 
@@ -155,6 +174,31 @@ h2 {
 .factory-mode-select {
   width: 150px;
   margin-top: 8px;
+}
+
+.factory-mode-profile {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.factory-mode-priority {
+  max-width: 120px;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.factory-mode-hint {
+  max-width: 320px;
+  margin: 8px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .factory-status-grid {

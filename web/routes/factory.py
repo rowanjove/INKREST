@@ -78,6 +78,42 @@ def _infer_mode(meta: Dict[str, Any]) -> str:
     return mode if mode in allowed else "newbie_auto"
 
 
+def _mode_profile(mode: str) -> Dict[str, Any]:
+    profiles = {
+        "newbie_auto": {
+            "label": "新手全自动",
+            "automation_level": "high",
+            "priorities": ["跳过复杂配置", "自动补齐开书要素", "阻断后优先自修"],
+            "operator_hint": "适合从一个灵感直接推进，系统会优先给默认答案和下一步动作。",
+        },
+        "author_copilot": {
+            "label": "作者协作",
+            "automation_level": "balanced",
+            "priorities": ["人工随时介入", "保留改稿入口", "展示更多产物与报告"],
+            "operator_hint": "适合有写作经验的作者，把 AI 当副手而不是全自动代写机。",
+        },
+        "platform_review": {
+            "label": "平台过审",
+            "automation_level": "high",
+            "priorities": ["AI 味风险", "敏感风险", "导出前风险总检"],
+            "operator_hint": "适合准备投放或投稿，系统会更突出过审风险和自动改写入口。",
+        },
+        "longform_stable": {
+            "label": "长篇稳定",
+            "automation_level": "balanced",
+            "priorities": ["设定连续性", "人物线追踪", "伏笔回收"],
+            "operator_hint": "适合百章以上项目，系统会优先提醒记忆、向量和状态同步风险。",
+        },
+        "studio": {
+            "label": "工作室生产",
+            "automation_level": "managed",
+            "priorities": ["多书进度", "待处理章节", "批量导出"],
+            "operator_hint": "适合多项目管理，系统会更突出生产队列、风险聚合和批量动作。",
+        },
+    }
+    return {"mode": mode, **profiles.get(mode, profiles["newbie_auto"])}
+
+
 def _planned_chapter_count(outline: Dict[str, Any], root: Path) -> int:
     chapters = outline.get("chapters")
     if isinstance(chapters, list):
@@ -307,6 +343,8 @@ def get_factory_dashboard() -> Dict[str, Any]:
     plan_status = "missing" if not outline else ("ready" if not readiness["missing"] else "planning")
     project_id = ws_server._active_project_id
 
+    mode = _infer_mode(meta)
+
     return {
         "project": {
             "id": project_id,
@@ -316,7 +354,7 @@ def get_factory_dashboard() -> Dict[str, Any]:
                 or meta.get("scale")
                 or "medium"
             ),
-            "mode": _infer_mode(meta),
+            "mode": mode,
         },
         "production_plan": {
             "status": plan_status,
@@ -334,6 +372,7 @@ def get_factory_dashboard() -> Dict[str, Any]:
             "running_tasks": running_tasks,
             "risk_level": risk_level,
         },
+        "mode_profile": _mode_profile(mode),
         "pipeline": _pipeline(state),
         "repair": repair,
         "exports": _exports(root, completed),

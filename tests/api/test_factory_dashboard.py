@@ -21,7 +21,7 @@ class FactoryDashboardTests(ApiTestBase):
         body = response.json()
         self.assertEqual(body["factory_status"]["state"], "empty")
         self.assertEqual(body["production_plan"]["status"], "missing")
-        for key in ("project", "production_plan", "factory_status", "pipeline", "repair", "exports"):
+        for key in ("project", "production_plan", "factory_status", "mode_profile", "pipeline", "repair", "exports"):
             self.assertIn(key, body)
 
     def test_factory_dashboard_summarizes_production_plan(self):
@@ -121,6 +121,24 @@ class FactoryDashboardTests(ApiTestBase):
 
         dashboard = TestClient(web_app).get("/api/factory/dashboard").json()
         self.assertEqual(dashboard["project"]["mode"], "platform_review")
+
+    def test_factory_dashboard_includes_mode_strategy_profile(self):
+        config_dir = self.tmpdir / "config"
+        config_dir.mkdir(parents=True)
+        (config_dir / "project_meta.json").write_text(
+            json.dumps({"factory_mode": "longform_stable"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        response = TestClient(web_app).get("/api/factory/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        profile = response.json()["mode_profile"]
+        self.assertEqual(profile["mode"], "longform_stable")
+        self.assertEqual(profile["label"], "长篇稳定")
+        self.assertEqual(profile["automation_level"], "balanced")
+        self.assertIn("设定连续性", profile["priorities"])
+        self.assertTrue(profile["operator_hint"])
 
     def test_factory_mode_update_rejects_unknown_mode(self):
         response = TestClient(web_app).put(

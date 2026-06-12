@@ -25,6 +25,16 @@ export interface FactoryProject {
   mode: FactoryMode
 }
 
+export type FactoryAutomationLevel = 'high' | 'balanced' | 'managed'
+
+export interface FactoryModeProfile {
+  mode: FactoryMode
+  label: string
+  automation_level: FactoryAutomationLevel
+  priorities: string[]
+  operator_hint: string
+}
+
 export interface ProductionPlanReadiness {
   ok: number
   total: number
@@ -80,6 +90,7 @@ export interface FactoryDashboard {
   project: FactoryProject
   production_plan: ProductionPlanSummary
   factory_status: FactoryStatusSummary
+  mode_profile: FactoryModeProfile
   pipeline: FactoryPipelineStep[]
   repair: FactoryRepairSummary
   exports: FactoryExportSummary
