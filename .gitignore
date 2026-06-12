@@ -53,6 +53,7 @@ scratch/
 dist-portable/
 terminals/
 agent-tools/
+.worktrees/
 
 # Dev workspace roots (runtime data, not source)
 /state/
