@@ -46,6 +46,15 @@ export interface FactoryCommand {
   reason: string
 }
 
+export type FactoryBriefSeverity = 'success' | 'warning' | 'danger' | 'info'
+
+export interface FactoryOperatorBrief {
+  severity: FactoryBriefSeverity
+  next_intent: FactoryCommandIntent
+  summary: string
+  details: string
+}
+
 export interface ProductionPlanReadiness {
   ok: number
   total: number
@@ -102,6 +111,7 @@ export interface FactoryDashboard {
   production_plan: ProductionPlanSummary
   factory_status: FactoryStatusSummary
   mode_profile: FactoryModeProfile
+  operator_brief: FactoryOperatorBrief
   commands: FactoryCommand[]
   pipeline: FactoryPipelineStep[]
   repair: FactoryRepairSummary

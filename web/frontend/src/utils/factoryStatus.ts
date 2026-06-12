@@ -55,6 +55,18 @@ export function formatFactoryState(state: FactoryState): string {
   return STATE_LABELS[state] ?? state
 }
 
+export function formatFactoryIntent(intent: FactoryActionIntent): string {
+  const labels: Record<FactoryActionIntent, string> = {
+    create: '新建作品',
+    plan: '补齐计划',
+    run: '继续生产',
+    monitor: '查看进度',
+    repair: '自动修复',
+    export: '导出检查',
+  }
+  return labels[intent] ?? intent
+}
+
 export function getFactoryTone(riskLevel: FactoryRiskLevel): 'success' | 'warning' | 'danger' {
   if (riskLevel === 'high') return 'danger'
   if (riskLevel === 'medium') return 'warning'

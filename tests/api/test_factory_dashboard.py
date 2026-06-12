@@ -21,7 +21,7 @@ class FactoryDashboardTests(ApiTestBase):
         body = response.json()
         self.assertEqual(body["factory_status"]["state"], "empty")
         self.assertEqual(body["production_plan"]["status"], "missing")
-        for key in ("project", "production_plan", "factory_status", "mode_profile", "commands", "pipeline", "repair", "exports"):
+        for key in ("project", "production_plan", "factory_status", "mode_profile", "operator_brief", "commands", "pipeline", "repair", "exports"):
             self.assertIn(key, body)
 
     def test_factory_dashboard_summarizes_production_plan(self):
@@ -190,3 +190,45 @@ class FactoryDashboardTests(ApiTestBase):
         self.assertEqual(risk_command["intent"], "export")
         self.assertEqual(risk_command["tone"], "warning")
         self.assertTrue(risk_command["reason"])
+
+    def test_factory_dashboard_includes_operator_brief_for_blocked_state(self):
+        workspace = self.tmpdir / "workspace"
+        chapter_dir = workspace / "chapters" / "chapter_009"
+        (chapter_dir / "reports").mkdir(parents=True)
+        (workspace / "outline.json").write_text(
+            json.dumps({"chosen_title": "简报测试", "target_chapters": 30}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (chapter_dir / "checkpoint.json").write_text(
+            json.dumps(
+                {
+                    "chapter_id": "009",
+                    "last_stage": "quality_blocked",
+                    "completed_stages": ["generation", "audit"],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        (chapter_dir / "reports" / "quality.json").write_text(
+            json.dumps(
+                {
+                    "overall_pass": False,
+                    "guard_summary": {
+                        "overall_status": "fail",
+                        "blocked_by": ["ai_flavor"],
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        response = TestClient(web_app).get("/api/factory/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        brief = response.json()["operator_brief"]
+        self.assertEqual(brief["severity"], "danger")
+        self.assertEqual(brief["next_intent"], "repair")
+        self.assertIn("009", brief["summary"])
+        self.assertTrue(brief["details"])

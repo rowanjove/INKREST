@@ -4,6 +4,7 @@ import { Cpu, Refresh, Tools } from '@element-plus/icons-vue'
 import type { FactoryDashboard, FactoryMode } from '../../types/factory'
 import {
   factoryModeOptions,
+  formatFactoryIntent,
   formatFactoryState,
   getFactoryPrimaryAction,
   getFactoryTone,
@@ -36,6 +37,12 @@ const automationLabel = computed(() => {
   if (level === 'managed') return '管理视角'
   return '平衡介入'
 })
+function briefTagType(severity: string) {
+  if (severity === 'success') return 'success'
+  if (severity === 'warning') return 'warning'
+  if (severity === 'danger') return 'danger'
+  return 'info'
+}
 function commandButtonType(tone: string) {
   if (tone === 'primary') return 'primary'
   if (tone === 'success') return 'success'
@@ -87,6 +94,15 @@ const progressPercent = computed(() => {
         <p v-if="dashboard?.mode_profile.operator_hint" class="factory-mode-hint">
           {{ dashboard.mode_profile.operator_hint }}
         </p>
+        <div v-if="dashboard?.operator_brief" class="factory-operator-brief">
+          <el-tag size="small" :type="briefTagType(dashboard.operator_brief.severity)" effect="dark">
+            {{ formatFactoryIntent(dashboard.operator_brief.next_intent) }}
+          </el-tag>
+          <div>
+            <strong>{{ dashboard.operator_brief.summary }}</strong>
+            <span>{{ dashboard.operator_brief.details }}</span>
+          </div>
+        </div>
         <div v-if="dashboard?.commands?.length" class="factory-command-row">
           <el-tooltip
             v-for="command in dashboard.commands"
@@ -221,6 +237,35 @@ h2 {
 .factory-mode-hint {
   max-width: 320px;
   margin: 8px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.factory-operator-brief {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: flex-start;
+  max-width: 420px;
+  margin-top: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--color-bg-surface-muted);
+}
+
+.factory-operator-brief strong,
+.factory-operator-brief span {
+  display: block;
+}
+
+.factory-operator-brief strong {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.factory-operator-brief span {
+  margin-top: 2px;
   color: var(--color-text-muted);
   font-size: 12px;
   line-height: 1.5;

@@ -4,6 +4,7 @@ import {
   formatFactoryMode,
   formatFactoryState,
   getFactoryPrimaryAction,
+  formatFactoryIntent,
   getFactoryTone,
 } from './factoryStatus'
 import type { FactoryDashboard } from '../types/factory'
@@ -32,6 +33,12 @@ const baseDashboard: FactoryDashboard = {
     automation_level: 'high',
     priorities: ['自动补齐开书要素'],
     operator_hint: '适合从灵感直接推进。',
+  },
+  operator_brief: {
+    severity: 'success',
+    next_intent: 'run',
+    summary: '生产条件已就绪',
+    details: '可以继续生产。',
   },
   commands: [],
   pipeline: [],
@@ -86,5 +93,11 @@ describe('factoryStatus', () => {
       'longform_stable',
       'studio',
     ])
+  })
+
+  it('formats factory command intents for operator brief tags', () => {
+    expect(formatFactoryIntent('create')).toBe('新建作品')
+    expect(formatFactoryIntent('repair')).toBe('自动修复')
+    expect(formatFactoryIntent('export')).toBe('导出检查')
   })
 })

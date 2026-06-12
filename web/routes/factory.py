@@ -193,6 +193,73 @@ def _factory_commands(mode: str, state: str, repair: Dict[str, Any], exports: Di
     return commands[:4]
 
 
+def _operator_brief(
+    mode: str,
+    state: str,
+    repair: Dict[str, Any],
+    readiness: Dict[str, Any],
+    planned: int,
+    completed: int,
+    target: int,
+) -> Dict[str, str]:
+    blocked_items = repair.get("items") if isinstance(repair.get("items"), list) else []
+    first_blocked = blocked_items[0] if blocked_items else {}
+    missing = readiness.get("missing") if isinstance(readiness.get("missing"), list) else []
+
+    if state == "empty":
+        return {
+            "severity": "info",
+            "next_intent": "create",
+            "summary": "还没有可生产的作品，先从开书工厂建立大纲和生产计划。",
+            "details": "用户可以只给一个灵感，系统再补齐题材、卖点、角色和章节队列。",
+        }
+    if state == "planning":
+        missing_text = "、".join(str(item) for item in missing[:3]) or "生产计划"
+        return {
+            "severity": "warning",
+            "next_intent": "plan",
+            "summary": f"生产计划还缺 {missing_text}，建议先补齐再启动长篇流水线。",
+            "details": f"当前已规划 {planned} 章；计划完整后，后续续写更不容易丢设定。",
+        }
+    if state == "running":
+        return {
+            "severity": "info",
+            "next_intent": "monitor",
+            "summary": "生产线正在运行，建议先查看任务进度和实时日志。",
+            "details": "此时不要重复启动批量任务，等当前任务结束后系统会刷新产物和风险状态。",
+        }
+    if state == "blocked":
+        chapter_id = str(first_blocked.get("chapter_id") or "")
+        title = str(first_blocked.get("title") or f"第 {chapter_id} 章" if chapter_id else "阻断章节")
+        return {
+            "severity": "danger",
+            "next_intent": "repair",
+            "summary": f"{title} 需要优先修复，处理后再继续生产。",
+            "details": str(first_blocked.get("manual_hint") or "先处理阻断章节，避免后续章节继承错误设定或机器味。"),
+        }
+    if state == "complete":
+        return {
+            "severity": "success",
+            "next_intent": "export",
+            "summary": "目标章节已经完成，可以进入导出和投放前检查。",
+            "details": "建议先做通读、风险总检和格式导出，再作为交付稿或投稿稿使用。",
+        }
+
+    mode_details = {
+        "platform_review": "平台过审模式下，导出前建议重点检查 AI 味、敏感词和重复表达。",
+        "longform_stable": "长篇稳定模式下，建议定期检查人物状态、伏笔回收和设定同步。",
+        "studio": "工作室模式下，建议关注多书队列、阻断聚合和批量导出节奏。",
+        "author_copilot": "作者协作模式下，可以随时人工介入改稿，再让系统继续跑后续章节。",
+    }
+    progress = f"{completed} / {target}" if target else str(completed)
+    return {
+        "severity": "success",
+        "next_intent": "run",
+        "summary": "生产条件已就绪，可以启动或继续下一批章节。",
+        "details": mode_details.get(mode, f"当前完成进度 {progress}，系统会优先保持计划、设定和章节队列一致。"),
+    }
+
+
 def _planned_chapter_count(outline: Dict[str, Any], root: Path) -> int:
     chapters = outline.get("chapters")
     if isinstance(chapters, list):
@@ -453,6 +520,7 @@ def get_factory_dashboard() -> Dict[str, Any]:
             "risk_level": risk_level,
         },
         "mode_profile": _mode_profile(mode),
+        "operator_brief": _operator_brief(mode, state, repair, readiness, planned, completed, target),
         "commands": _factory_commands(mode, state, repair, exports),
         "pipeline": _pipeline(state),
         "repair": repair,
