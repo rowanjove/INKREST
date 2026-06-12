@@ -21,6 +21,7 @@ from web.routes.assistant import router as assistant_router
 from web.routes.covers import router as covers_router
 from web.routes.outlines import router as outlines_router
 from web.routes.agent_api import router as agent_api_router
+from web.routes.factory import router as factory_router
 from web.security import AccessTokenMiddleware, authorize_websocket
 from web.routes.system import router as system_router
 from web.routes.auth import router as auth_router
@@ -97,6 +98,7 @@ app.include_router(plugins_router)
 app.include_router(covers_router)
 app.include_router(outlines_router)
 app.include_router(agent_api_router)
+app.include_router(factory_router)
 app.include_router(system_router)
 app.include_router(auth_router)
 

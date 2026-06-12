@@ -31,6 +31,7 @@ from web.routes import assets as _route_assets  # noqa: F401
 from web.routes import assistant as _route_assistant  # noqa: F401
 from web.routes import covers as _route_covers  # noqa: F401
 from web.routes import outlines as _route_outlines  # noqa: F401
+from web.routes import factory as _route_factory  # noqa: F401
 
 # Models re-export
 from web.models import (
