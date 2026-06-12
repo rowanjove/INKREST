@@ -1,0 +1,71 @@
+import { describe, expect, it } from 'vitest'
+import {
+  formatFactoryMode,
+  formatFactoryState,
+  getFactoryPrimaryAction,
+  getFactoryTone,
+} from './factoryStatus'
+import type { FactoryDashboard } from '../types/factory'
+
+const baseDashboard: FactoryDashboard = {
+  project: { id: 'p1', name: '测试书', scale: 'medium', mode: 'newbie_auto' },
+  production_plan: {
+    status: 'ready',
+    title: '测试书',
+    selling_points: [],
+    target_chapters: 100,
+    planned_chapters: 10,
+    readiness: { ok: 6, total: 6, missing: [] },
+  },
+  factory_status: {
+    state: 'ready',
+    current_stage: 'planning',
+    completed_chapters: 0,
+    target_chapters: 100,
+    running_tasks: 0,
+    risk_level: 'low',
+  },
+  pipeline: [],
+  repair: { blocked_count: 0, items: [] },
+  exports: { txt_available: false, epub_available: false, pdf_available: false },
+}
+
+describe('factoryStatus', () => {
+  it('formats factory modes', () => {
+    expect(formatFactoryMode('newbie_auto')).toBe('新手全自动')
+    expect(formatFactoryMode('author_copilot')).toBe('作者协作')
+  })
+
+  it('formats factory states', () => {
+    expect(formatFactoryState('blocked')).toBe('等待修复')
+    expect(formatFactoryState('running')).toBe('生产中')
+  })
+
+  it('maps blocked state to auto repair primary action', () => {
+    const dashboard = {
+      ...baseDashboard,
+      factory_status: { ...baseDashboard.factory_status, state: 'blocked' as const },
+    }
+    expect(getFactoryPrimaryAction(dashboard)).toEqual({
+      label: '自动修复',
+      intent: 'repair',
+    })
+  })
+
+  it('maps planning state to production-plan action', () => {
+    const dashboard = {
+      ...baseDashboard,
+      factory_status: { ...baseDashboard.factory_status, state: 'planning' as const },
+    }
+    expect(getFactoryPrimaryAction(dashboard)).toEqual({
+      label: '生成生产计划',
+      intent: 'plan',
+    })
+  })
+
+  it('maps risk levels to display tones', () => {
+    expect(getFactoryTone('high')).toBe('danger')
+    expect(getFactoryTone('medium')).toBe('warning')
+    expect(getFactoryTone('low')).toBe('success')
+  })
+})

@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { FactoryDashboard } from './types/factory'
 
 const isTauri = typeof window !== 'undefined' && (
   (window as any).__TAURI_METADATA__ !== undefined ||
@@ -94,6 +95,11 @@ export const listTasks = () =>
 
 export const getSystemReadiness = () =>
   api.get('/system/readiness')
+
+export async function getFactoryDashboard(): Promise<FactoryDashboard> {
+  const { data } = await api.get<FactoryDashboard>('/factory/dashboard')
+  return data
+}
 
 export const abortTask = (taskId: string) =>
   api.post(`/chapters/tasks/${taskId}/abort`)
