@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { DocumentAdd, Plus } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import DashboardWorkbenchPane from '../components/dashboard/DashboardWorkbenchPane.vue'
 import DashboardMetricsPane from '../components/dashboard/DashboardMetricsPane.vue'
 import DashboardSerializationPane from '../components/dashboard/DashboardSerializationPane.vue'
@@ -19,6 +20,7 @@ import { useDashboardBatchDialog } from '../composables/useDashboardBatchDialog'
 import { useDashboardPolling } from '../composables/useDashboardPolling'
 import { useChapterStore } from '../stores/chapter'
 import { useFactoryStore } from '../stores/factory'
+import { apiErrorMessage, rerunChapterGate, rewriteChapter } from '../api'
 
 const router = useRouter()
 const chapterStore = useChapterStore()
@@ -125,16 +127,30 @@ function handleFactoryAction(intent: string) {
   scrollToWorkbenchPipeline()
 }
 
-function goRepairChapter(chapterId: string) {
-  router.push(`/chapters/${chapterId}`)
+async function goRepairChapter(chapterId: string) {
+  try {
+    await rewriteChapter(chapterId)
+    ElMessage.success(`第 ${chapterId} 章已提交自动修复`)
+    await Promise.all([factoryStore.refreshDashboard(), tasksStore.refreshTaskList()])
+  } catch (error: any) {
+    ElMessage.error(apiErrorMessage(error, '自动修复提交失败'))
+    router.push(`/chapters/${chapterId}`)
+  }
 }
 
 function goEditChapter(chapterId: string) {
   router.push(`/writer?chapter=${chapterId}`)
 }
 
-function goRerunGate(chapterId: string) {
-  router.push(`/chapters/${chapterId}`)
+async function goRerunGate(chapterId: string) {
+  try {
+    await rerunChapterGate(chapterId)
+    ElMessage.success(`第 ${chapterId} 章已提交门禁重跑`)
+    await factoryStore.refreshDashboard()
+  } catch (error: any) {
+    ElMessage.error(apiErrorMessage(error, '门禁重跑提交失败'))
+    router.push(`/chapters/${chapterId}`)
+  }
 }
 
 function onBatchFinished() {
