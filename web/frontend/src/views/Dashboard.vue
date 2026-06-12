@@ -14,9 +14,11 @@ import { useDashboardSerial } from '../composables/useDashboardSerial'
 import { useDashboardBatchDialog } from '../composables/useDashboardBatchDialog'
 import { useDashboardPolling } from '../composables/useDashboardPolling'
 import { useChapterStore } from '../stores/chapter'
+import { useFactoryStore } from '../stores/factory'
 
 const router = useRouter()
 const chapterStore = useChapterStore()
+const factoryStore = useFactoryStore()
 const { loading } = storeToRefs(chapterStore)
 
 const {
@@ -82,11 +84,12 @@ const { restartDashboardTimer, stopDashboardPolling, tasksStore } = useDashboard
 
 function onBatchFinished() {
   void tasksStore.refreshTaskList()
+  void factoryStore.refreshDashboard()
   void loadWorkbench(loadSerialData)
 }
 
 onMounted(async () => {
-  await loadWorkbench(loadSerialData)
+  await Promise.all([loadWorkbench(loadSerialData), factoryStore.loadDashboard()])
   restartDashboardTimer()
   watch(() => tasksStore.isRunning, restartDashboardTimer)
   tasksStore.startRuntimeLogPolling()
