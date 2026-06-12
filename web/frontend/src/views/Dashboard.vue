@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { DocumentAdd, Plus } from '@element-plus/icons-vue'
@@ -8,6 +8,10 @@ import DashboardMetricsPane from '../components/dashboard/DashboardMetricsPane.v
 import DashboardSerializationPane from '../components/dashboard/DashboardSerializationPane.vue'
 import DashboardOutlineDiffDialog from '../components/dashboard/DashboardOutlineDiffDialog.vue'
 import DashboardAddChapterDialog from '../components/dashboard/DashboardAddChapterDialog.vue'
+import FactoryControlPanel from '../components/workbench/FactoryControlPanel.vue'
+import FactoryPipelinePanel from '../components/workbench/FactoryPipelinePanel.vue'
+import ProductionPlanPanel from '../components/workbench/ProductionPlanPanel.vue'
+import RepairCommandPanel from '../components/workbench/RepairCommandPanel.vue'
 
 import { useDashboardWorkbench } from '../composables/useDashboardWorkbench'
 import { useDashboardSerial } from '../composables/useDashboardSerial'
@@ -20,6 +24,11 @@ const router = useRouter()
 const chapterStore = useChapterStore()
 const factoryStore = useFactoryStore()
 const { loading } = storeToRefs(chapterStore)
+const {
+  dashboard: factoryDashboard,
+  loading: factoryLoading,
+  error: factoryError,
+} = storeToRefs(factoryStore)
 
 const {
   assets,
@@ -81,6 +90,52 @@ const { restartDashboardTimer, stopDashboardPolling, tasksStore } = useDashboard
   activeTab,
   loadSerialData,
 })
+const productionPlan = computed(() => factoryDashboard.value?.production_plan || null)
+const factoryPipeline = computed(() => factoryDashboard.value?.pipeline || [])
+const repairSummary = computed(() => factoryDashboard.value?.repair || null)
+
+function scrollToWorkbenchPipeline() {
+  activeTab.value = 'workbench'
+  window.setTimeout(() => {
+    document.querySelector('.production-line')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, 80)
+}
+
+function handleFactoryAction(intent: string) {
+  if (intent === 'create') {
+    router.push('/create')
+    return
+  }
+  if (intent === 'plan') {
+    router.push('/create')
+    return
+  }
+  if (intent === 'monitor') {
+    router.push('/monitor')
+    return
+  }
+  if (intent === 'repair') {
+    router.push('/chapters/maintenance?expand=alerts')
+    return
+  }
+  if (intent === 'export') {
+    activeTab.value = 'serialization'
+    return
+  }
+  scrollToWorkbenchPipeline()
+}
+
+function goRepairChapter(chapterId: string) {
+  router.push(`/chapters/${chapterId}`)
+}
+
+function goEditChapter(chapterId: string) {
+  router.push(`/writer?chapter=${chapterId}`)
+}
+
+function goRerunGate(chapterId: string) {
+  router.push(`/chapters/${chapterId}`)
+}
 
 function onBatchFinished() {
   void tasksStore.refreshTaskList()
@@ -117,6 +172,26 @@ onUnmounted(() => {
         </el-button>
       </div>
     </header>
+
+    <div class="factory-first-screen">
+      <FactoryControlPanel
+        :dashboard="factoryDashboard"
+        :loading="factoryLoading"
+        :error="factoryError"
+        @action="handleFactoryAction"
+        @refresh="factoryStore.refreshDashboard"
+      />
+      <div class="factory-first-screen__grid">
+        <ProductionPlanPanel :plan="productionPlan" />
+        <FactoryPipelinePanel :steps="factoryPipeline" />
+      </div>
+      <RepairCommandPanel
+        :repair="repairSummary"
+        @repair="goRepairChapter"
+        @edit="goEditChapter"
+        @rerun-gate="goRerunGate"
+      />
+    </div>
 
     <el-tabs v-model="activeTab" class="dashboard-main-tabs">
       <el-tab-pane label="创作工作台" name="workbench" class="tab-pane-workbench">
@@ -200,6 +275,18 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
+.factory-first-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.factory-first-screen__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 12px;
+}
+
 .dashboard-main-tabs {
   flex: 1;
   min-height: 0;
@@ -239,6 +326,10 @@ onUnmounted(() => {
     align-items: stretch;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .factory-first-screen__grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

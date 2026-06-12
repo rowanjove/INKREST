@@ -110,6 +110,18 @@ BATCH_BANNER = ROOT / "web" / "frontend" / "src" / "components" / "BatchRunStatu
 AGENT_PRODUCTION_LINE = (
     ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "AgentProductionLine.vue"
 )
+FACTORY_CONTROL_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "FactoryControlPanel.vue"
+)
+PRODUCTION_PLAN_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "ProductionPlanPanel.vue"
+)
+FACTORY_PIPELINE_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "FactoryPipelinePanel.vue"
+)
+REPAIR_COMMAND_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "RepairCommandPanel.vue"
+)
 CHAPTER_DETAIL = ROOT / "web" / "frontend" / "src" / "views" / "ChapterDetail.vue"
 CHAPTER_DETAIL_HEADER = (
     ROOT / "web" / "frontend" / "src" / "components" / "chapter" / "ChapterDetailHeader.vue"
@@ -180,6 +192,20 @@ def test_dashboard_auto_accepts_pending_state_candidates() -> None:
     assert "candidate.status === 'pending'" in serial_source
     assert "await approveAllProjectCandidates(pid)" in serial_source
     assert "默认自动通过" in serialization_pane
+
+
+def test_dashboard_exposes_factory_first_screen_panels() -> None:
+    dashboard = DASHBOARD.read_text(encoding="utf-8")
+    assert "FactoryControlPanel" in dashboard
+    assert "ProductionPlanPanel" in dashboard
+    assert "FactoryPipelinePanel" in dashboard
+    assert "RepairCommandPanel" in dashboard
+    assert "useFactoryStore" in dashboard
+    assert "factory-first-screen" in dashboard
+    assert "factory-control-panel" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")
+    assert "production-plan-panel" in PRODUCTION_PLAN_PANEL.read_text(encoding="utf-8")
+    assert "factory-pipeline-panel" in FACTORY_PIPELINE_PANEL.read_text(encoding="utf-8")
+    assert "repair-command-panel" in REPAIR_COMMAND_PANEL.read_text(encoding="utf-8")
 
 
 def test_pet_abort_button_uses_short_label() -> None:
