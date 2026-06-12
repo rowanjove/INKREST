@@ -11,9 +11,14 @@ import router from './router'
 import { bootstrapLocalAccessToken } from './api'
 
 initTheme()
-void bootstrapLocalAccessToken()
 
-const app = createApp(ThemeRoot)
-app.use(createPinia())
-app.use(router)
-app.mount('#app')
+async function bootstrapApp() {
+  await bootstrapLocalAccessToken()
+
+  const app = createApp(ThemeRoot)
+  app.use(createPinia())
+  app.use(router)
+  app.mount('#app')
+}
+
+void bootstrapApp()
