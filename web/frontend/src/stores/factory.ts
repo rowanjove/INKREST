@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { getFactoryDashboard } from '../api'
-import type { FactoryDashboard } from '../types/factory'
+import { getFactoryDashboard, updateFactoryMode } from '../api'
+import type { FactoryDashboard, FactoryMode } from '../types/factory'
 
 export const useFactoryStore = defineStore('factory', () => {
   const dashboard = ref<FactoryDashboard | null>(null)
   const loading = ref(false)
+  const savingMode = ref(false)
   const error = ref('')
   const lastLoadedAt = ref<number | null>(null)
 
@@ -26,12 +27,28 @@ export const useFactoryStore = defineStore('factory', () => {
     await loadDashboard()
   }
 
+  async function saveMode(mode: FactoryMode) {
+    savingMode.value = true
+    error.value = ''
+    try {
+      await updateFactoryMode(mode)
+      await loadDashboard()
+    } catch (err: any) {
+      error.value = err?.message || '生产模式保存失败'
+      throw err
+    } finally {
+      savingMode.value = false
+    }
+  }
+
   return {
     dashboard,
     loading,
+    savingMode,
     error,
     lastLoadedAt,
     loadDashboard,
     refreshDashboard,
+    saveMode,
   }
 })

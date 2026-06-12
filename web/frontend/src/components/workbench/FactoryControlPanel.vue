@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Cpu, Refresh, Tools } from '@element-plus/icons-vue'
-import type { FactoryDashboard } from '../../types/factory'
+import type { FactoryDashboard, FactoryMode } from '../../types/factory'
 import {
-  formatFactoryMode,
+  factoryModeOptions,
   formatFactoryState,
   getFactoryPrimaryAction,
   getFactoryTone,
@@ -12,24 +12,24 @@ import {
 const props = defineProps<{
   dashboard: FactoryDashboard | null
   loading?: boolean
+  savingMode?: boolean
   error?: string
 }>()
 
 const emit = defineEmits<{
   action: [intent: string]
   refresh: []
+  modeChange: [mode: FactoryMode]
 }>()
 
 const action = computed(() => props.dashboard ? getFactoryPrimaryAction(props.dashboard) : null)
 const stateLabel = computed(() =>
   props.dashboard ? formatFactoryState(props.dashboard.factory_status.state) : '等待加载',
 )
-const modeLabel = computed(() =>
-  props.dashboard ? formatFactoryMode(props.dashboard.project.mode) : 'AI 工厂',
-)
 const tone = computed(() =>
-  props.dashboard ? getFactoryTone(props.dashboard.factory_status.risk_level) : 'info',
+  props.dashboard ? getFactoryTone(props.dashboard.factory_status.risk_level) : 'success',
 )
+const modeOptions = factoryModeOptions()
 const progressPercent = computed(() => {
   const status = props.dashboard?.factory_status
   if (!status?.target_chapters) return 0
@@ -43,9 +43,24 @@ const progressPercent = computed(() => {
       <div class="factory-icon">
         <el-icon><Cpu /></el-icon>
       </div>
-      <div>
-        <p class="factory-kicker">{{ modeLabel }}</p>
+      <div class="factory-title-block">
+        <p class="factory-kicker">生产模式</p>
         <h2>{{ dashboard?.project.name || 'AI 网文生产工厂' }}</h2>
+        <el-select
+          class="factory-mode-select"
+          :model-value="dashboard?.project.mode"
+          :disabled="!dashboard || savingMode"
+          :loading="savingMode"
+          size="small"
+          @change="(mode: FactoryMode) => emit('modeChange', mode)"
+        >
+          <el-option
+            v-for="option in modeOptions"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
       </div>
     </div>
 
@@ -120,6 +135,10 @@ const progressPercent = computed(() => {
   background: var(--color-primary-soft);
 }
 
+.factory-title-block {
+  min-width: 0;
+}
+
 .factory-kicker,
 .factory-stat span {
   margin: 0;
@@ -131,6 +150,11 @@ h2 {
   margin: 4px 0 0;
   font-size: 20px;
   line-height: 1.25;
+}
+
+.factory-mode-select {
+  width: 150px;
+  margin-top: 8px;
 }
 
 .factory-status-grid {

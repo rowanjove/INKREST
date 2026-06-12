@@ -104,3 +104,28 @@ class FactoryDashboardTests(ApiTestBase):
         self.assertEqual(item["chapter_id"], "008")
         self.assertIn(item["recommended_action"], {"auto_repair", "rerun_gate", "manual_edit"})
         self.assertTrue(item["manual_hint"])
+
+    def test_factory_mode_update_persists_to_project_meta(self):
+        config_dir = self.tmpdir / "config"
+        config_dir.mkdir(parents=True)
+
+        response = TestClient(web_app).put(
+            "/api/factory/mode",
+            json={"mode": "platform_review"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["mode"], "platform_review")
+        meta = json.loads((config_dir / "project_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["factory_mode"], "platform_review")
+
+        dashboard = TestClient(web_app).get("/api/factory/dashboard").json()
+        self.assertEqual(dashboard["project"]["mode"], "platform_review")
+
+    def test_factory_mode_update_rejects_unknown_mode(self):
+        response = TestClient(web_app).put(
+            "/api/factory/mode",
+            json={"mode": "chaos_machine"},
+        )
+
+        self.assertEqual(response.status_code, 422)

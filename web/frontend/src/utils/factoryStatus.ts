@@ -26,6 +26,14 @@ const MODE_LABELS: Record<FactoryMode, string> = {
   studio: '工作室生产',
 }
 
+const MODE_ORDER: FactoryMode[] = [
+  'newbie_auto',
+  'author_copilot',
+  'platform_review',
+  'longform_stable',
+  'studio',
+]
+
 const STATE_LABELS: Record<FactoryState, string> = {
   empty: '等待开书',
   planning: '计划待完善',
@@ -37,6 +45,10 @@ const STATE_LABELS: Record<FactoryState, string> = {
 
 export function formatFactoryMode(mode: FactoryMode): string {
   return MODE_LABELS[mode] ?? mode
+}
+
+export function factoryModeOptions(): Array<{ value: FactoryMode; label: string }> {
+  return MODE_ORDER.map((mode) => ({ value: mode, label: formatFactoryMode(mode) }))
 }
 
 export function formatFactoryState(state: FactoryState): string {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  factoryModeOptions,
   formatFactoryMode,
   formatFactoryState,
   getFactoryPrimaryAction,
@@ -67,5 +68,15 @@ describe('factoryStatus', () => {
     expect(getFactoryTone('high')).toBe('danger')
     expect(getFactoryTone('medium')).toBe('warning')
     expect(getFactoryTone('low')).toBe('success')
+  })
+
+  it('lists factory modes in product priority order', () => {
+    expect(factoryModeOptions().map((option) => option.value)).toEqual([
+      'newbie_auto',
+      'author_copilot',
+      'platform_review',
+      'longform_stable',
+      'studio',
+    ])
   })
 })

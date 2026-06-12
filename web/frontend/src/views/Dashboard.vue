@@ -20,6 +20,7 @@ import { useDashboardBatchDialog } from '../composables/useDashboardBatchDialog'
 import { useDashboardPolling } from '../composables/useDashboardPolling'
 import { useChapterStore } from '../stores/chapter'
 import { useFactoryStore } from '../stores/factory'
+import type { FactoryMode } from '../types/factory'
 import { apiErrorMessage, rerunChapterGate, rewriteChapter } from '../api'
 
 const router = useRouter()
@@ -29,6 +30,7 @@ const { loading } = storeToRefs(chapterStore)
 const {
   dashboard: factoryDashboard,
   loading: factoryLoading,
+  savingMode: factorySavingMode,
   error: factoryError,
 } = storeToRefs(factoryStore)
 
@@ -127,6 +129,15 @@ function handleFactoryAction(intent: string) {
   scrollToWorkbenchPipeline()
 }
 
+async function handleFactoryModeChange(mode: FactoryMode) {
+  try {
+    await factoryStore.saveMode(mode)
+    ElMessage.success('生产模式已更新')
+  } catch (error: any) {
+    ElMessage.error(apiErrorMessage(error, '生产模式保存失败'))
+  }
+}
+
 async function goRepairChapter(chapterId: string) {
   try {
     await rewriteChapter(chapterId)
@@ -193,9 +204,11 @@ onUnmounted(() => {
       <FactoryControlPanel
         :dashboard="factoryDashboard"
         :loading="factoryLoading"
+        :saving-mode="factorySavingMode"
         :error="factoryError"
         @action="handleFactoryAction"
         @refresh="factoryStore.refreshDashboard"
+        @mode-change="handleFactoryModeChange"
       />
       <div class="factory-first-screen__grid">
         <ProductionPlanPanel :plan="productionPlan" />

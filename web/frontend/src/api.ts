@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { FactoryDashboard } from './types/factory'
+import type { FactoryDashboard, FactoryMode } from './types/factory'
 
 const isTauri = typeof window !== 'undefined' && (
   (window as any).__TAURI_METADATA__ !== undefined ||
@@ -98,6 +98,11 @@ export const getSystemReadiness = () =>
 
 export async function getFactoryDashboard(): Promise<FactoryDashboard> {
   const { data } = await api.get<FactoryDashboard>('/factory/dashboard')
+  return data
+}
+
+export async function updateFactoryMode(mode: FactoryMode): Promise<{ status: string; mode: FactoryMode }> {
+  const { data } = await api.put<{ status: string; mode: FactoryMode }>('/factory/mode', { mode })
   return data
 }
 

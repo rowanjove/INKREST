@@ -4,13 +4,27 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 import web.context as ws_server
 
 router = APIRouter()
+
+
+FactoryMode = Literal[
+    "newbie_auto",
+    "author_copilot",
+    "platform_review",
+    "longform_stable",
+    "studio",
+]
+
+
+class FactoryModeRequest(BaseModel):
+    mode: FactoryMode
 
 
 def _read_json(path: Path) -> Dict[str, Any]:
@@ -44,6 +58,12 @@ def _project_name(project_id: str | None, root: Path, outline: Dict[str, Any]) -
 
 def _load_project_meta(root: Path) -> Dict[str, Any]:
     return _read_json(root / "config" / "project_meta.json")
+
+
+def _write_project_meta(root: Path, meta: Dict[str, Any]) -> None:
+    meta_path = root / "config" / "project_meta.json"
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _infer_mode(meta: Dict[str, Any]) -> str:
@@ -318,3 +338,12 @@ def get_factory_dashboard() -> Dict[str, Any]:
         "repair": repair,
         "exports": _exports(root, completed),
     }
+
+
+@router.put("/api/factory/mode")
+def update_factory_mode(req: FactoryModeRequest) -> Dict[str, str]:
+    root = ws_server.get_root_dir()
+    meta = _load_project_meta(root)
+    meta["factory_mode"] = req.mode
+    _write_project_meta(root, meta)
+    return {"status": "updated", "mode": req.mode}
