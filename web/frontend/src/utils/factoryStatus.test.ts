@@ -33,6 +33,7 @@ const baseDashboard: FactoryDashboard = {
     priorities: ['自动补齐开书要素'],
     operator_hint: '适合从灵感直接推进。',
   },
+  commands: [],
   pipeline: [],
   repair: { blocked_count: 0, items: [] },
   exports: { txt_available: false, epub_available: false, pdf_available: false },

@@ -35,6 +35,17 @@ export interface FactoryModeProfile {
   operator_hint: string
 }
 
+export type FactoryCommandIntent = 'create' | 'plan' | 'run' | 'monitor' | 'repair' | 'export'
+export type FactoryCommandTone = 'primary' | 'success' | 'warning' | 'danger' | 'info'
+
+export interface FactoryCommand {
+  id: string
+  label: string
+  intent: FactoryCommandIntent
+  tone: FactoryCommandTone
+  reason: string
+}
+
 export interface ProductionPlanReadiness {
   ok: number
   total: number
@@ -91,6 +102,7 @@ export interface FactoryDashboard {
   production_plan: ProductionPlanSummary
   factory_status: FactoryStatusSummary
   mode_profile: FactoryModeProfile
+  commands: FactoryCommand[]
   pipeline: FactoryPipelineStep[]
   repair: FactoryRepairSummary
   exports: FactoryExportSummary

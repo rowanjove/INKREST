@@ -114,6 +114,85 @@ def _mode_profile(mode: str) -> Dict[str, Any]:
     return {"mode": mode, **profiles.get(mode, profiles["newbie_auto"])}
 
 
+def _factory_commands(mode: str, state: str, repair: Dict[str, Any], exports: Dict[str, bool]) -> List[Dict[str, str]]:
+    commands: List[Dict[str, str]] = []
+    if state == "empty":
+        commands.append({
+            "id": "create_project",
+            "label": "新建作品",
+            "intent": "create",
+            "tone": "primary",
+            "reason": "当前还没有可生产的大纲，先进入开书流程。",
+        })
+    elif state == "planning":
+        commands.append({
+            "id": "complete_plan",
+            "label": "补齐生产计划",
+            "intent": "plan",
+            "tone": "primary",
+            "reason": "生产计划还不完整，先补齐大纲、章节队列和基础资产。",
+        })
+    elif state == "running":
+        commands.append({
+            "id": "monitor_production",
+            "label": "查看生产进度",
+            "intent": "monitor",
+            "tone": "primary",
+            "reason": "已有任务运行中，优先查看生产线状态。",
+        })
+    elif state == "blocked" or int(repair.get("blocked_count") or 0) > 0:
+        commands.append({
+            "id": "repair_blocked",
+            "label": "处理阻断章节",
+            "intent": "repair",
+            "tone": "danger",
+            "reason": "存在待修复章节，先处理阻断再继续生产。",
+        })
+    else:
+        commands.append({
+            "id": "continue_production",
+            "label": "继续生产",
+            "intent": "run",
+            "tone": "primary",
+            "reason": "当前没有阻断，可以继续推进下一批章节。",
+        })
+
+    if mode == "platform_review":
+        commands.append({
+            "id": "export_risk_check",
+            "label": "导出前风险总检",
+            "intent": "export",
+            "tone": "warning",
+            "reason": "平台过审模式会优先检查 AI 味、敏感词和投稿风险。",
+        })
+    elif mode == "longform_stable":
+        commands.append({
+            "id": "memory_check",
+            "label": "检查长篇记忆",
+            "intent": "monitor",
+            "tone": "warning",
+            "reason": "长篇稳定模式建议定期查看设定、伏笔和人物线同步状态。",
+        })
+    elif mode == "studio":
+        commands.append({
+            "id": "studio_queue",
+            "label": "查看多书队列",
+            "intent": "monitor",
+            "tone": "info",
+            "reason": "工作室生产模式优先关注多项目进度和待处理章节。",
+        })
+
+    if exports.get("txt_available") or exports.get("epub_available"):
+        commands.append({
+            "id": "export_available",
+            "label": "导出作品",
+            "intent": "export",
+            "tone": "success",
+            "reason": "已有可导出的章节产物。",
+        })
+    return commands[:4]
+
+
 def _planned_chapter_count(outline: Dict[str, Any], root: Path) -> int:
     chapters = outline.get("chapters")
     if isinstance(chapters, list):
@@ -344,6 +423,7 @@ def get_factory_dashboard() -> Dict[str, Any]:
     project_id = ws_server._active_project_id
 
     mode = _infer_mode(meta)
+    exports = _exports(root, completed)
 
     return {
         "project": {
@@ -373,9 +453,10 @@ def get_factory_dashboard() -> Dict[str, Any]:
             "risk_level": risk_level,
         },
         "mode_profile": _mode_profile(mode),
+        "commands": _factory_commands(mode, state, repair, exports),
         "pipeline": _pipeline(state),
         "repair": repair,
-        "exports": _exports(root, completed),
+        "exports": exports,
     }
 
 

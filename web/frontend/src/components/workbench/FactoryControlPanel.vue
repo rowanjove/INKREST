@@ -36,6 +36,13 @@ const automationLabel = computed(() => {
   if (level === 'managed') return '管理视角'
   return '平衡介入'
 })
+function commandButtonType(tone: string) {
+  if (tone === 'primary') return 'primary'
+  if (tone === 'success') return 'success'
+  if (tone === 'warning') return 'warning'
+  if (tone === 'danger') return 'danger'
+  return undefined
+}
 const progressPercent = computed(() => {
   const status = props.dashboard?.factory_status
   if (!status?.target_chapters) return 0
@@ -80,6 +87,24 @@ const progressPercent = computed(() => {
         <p v-if="dashboard?.mode_profile.operator_hint" class="factory-mode-hint">
           {{ dashboard.mode_profile.operator_hint }}
         </p>
+        <div v-if="dashboard?.commands?.length" class="factory-command-row">
+          <el-tooltip
+            v-for="command in dashboard.commands"
+            :key="command.id"
+            :content="command.reason"
+            placement="bottom"
+          >
+            <el-button
+              class="factory-command-button"
+              :type="commandButtonType(command.tone)"
+              plain
+              size="small"
+              @click="emit('action', command.intent)"
+            >
+              {{ command.label }}
+            </el-button>
+          </el-tooltip>
+        </div>
       </div>
     </div>
 
@@ -199,6 +224,17 @@ h2 {
   color: var(--color-text-muted);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.factory-command-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.factory-command-button {
+  max-width: 150px;
 }
 
 .factory-status-grid {

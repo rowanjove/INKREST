@@ -21,12 +21,17 @@ class FactoryDashboardTests(ApiTestBase):
         body = response.json()
         self.assertEqual(body["factory_status"]["state"], "empty")
         self.assertEqual(body["production_plan"]["status"], "missing")
-        for key in ("project", "production_plan", "factory_status", "mode_profile", "pipeline", "repair", "exports"):
+        for key in ("project", "production_plan", "factory_status", "mode_profile", "commands", "pipeline", "repair", "exports"):
             self.assertIn(key, body)
 
     def test_factory_dashboard_summarizes_production_plan(self):
         workspace = self.tmpdir / "workspace"
         workspace.mkdir(parents=True)
+        assets = self.tmpdir / "assets"
+        assets.mkdir(parents=True)
+        (assets / "character_cards.yaml").write_text("主角: 测试", encoding="utf-8")
+        (assets / "world_bible.md").write_text("世界观测试", encoding="utf-8")
+        (assets / "style_guide.md").write_text("风格测试", encoding="utf-8")
         (workspace / "outline.json").write_text(
             json.dumps(
                 {
@@ -147,3 +152,41 @@ class FactoryDashboardTests(ApiTestBase):
         )
 
         self.assertEqual(response.status_code, 422)
+
+    def test_factory_dashboard_includes_mode_aware_commands(self):
+        config_dir = self.tmpdir / "config"
+        config_dir.mkdir(parents=True)
+        (config_dir / "project_meta.json").write_text(
+            json.dumps({"factory_mode": "platform_review"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        workspace = self.tmpdir / "workspace"
+        workspace.mkdir(parents=True)
+        assets = self.tmpdir / "assets"
+        assets.mkdir(parents=True)
+        (assets / "character_cards.yaml").write_text("主角: 测试", encoding="utf-8")
+        (assets / "world_bible.md").write_text("世界观测试", encoding="utf-8")
+        (assets / "style_guide.md").write_text("风格测试", encoding="utf-8")
+        (workspace / "outline.json").write_text(
+            json.dumps(
+                {
+                    "chosen_title": "过审测试",
+                    "target_chapters": 20,
+                    "chapters": [{"chapter_id": "001", "goal": "开场"}],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        response = TestClient(web_app).get("/api/factory/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        commands = response.json()["commands"]
+        command_ids = [item["id"] for item in commands]
+        self.assertIn("export_risk_check", command_ids)
+        self.assertIn("continue_production", command_ids)
+        risk_command = next(item for item in commands if item["id"] == "export_risk_check")
+        self.assertEqual(risk_command["intent"], "export")
+        self.assertEqual(risk_command["tone"], "warning")
+        self.assertTrue(risk_command["reason"])
