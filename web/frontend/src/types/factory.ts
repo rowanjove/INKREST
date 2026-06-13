@@ -61,6 +61,16 @@ export interface ProductionPlanReadiness {
   missing: string[]
 }
 
+export type ProductionPlanNextStepIntent = 'plan' | 'asset'
+
+export interface ProductionPlanNextStep {
+  id: string
+  label: string
+  description: string
+  intent: ProductionPlanNextStepIntent
+  route: string
+}
+
 export interface ProductionPlanSummary {
   status: ProductionPlanStatus
   title: string
@@ -68,6 +78,7 @@ export interface ProductionPlanSummary {
   target_chapters: number
   planned_chapters: number
   readiness: ProductionPlanReadiness
+  next_steps: ProductionPlanNextStep[]
 }
 
 export interface FactoryStatusSummary {

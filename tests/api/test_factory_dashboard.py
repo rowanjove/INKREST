@@ -232,3 +232,31 @@ class FactoryDashboardTests(ApiTestBase):
         self.assertEqual(brief["next_intent"], "repair")
         self.assertIn("009", brief["summary"])
         self.assertTrue(brief["details"])
+
+    def test_factory_dashboard_includes_production_plan_next_steps(self):
+        workspace = self.tmpdir / "workspace"
+        workspace.mkdir(parents=True)
+        (workspace / "outline.json").write_text(
+            json.dumps(
+                {
+                    "chosen_title": "补齐指引测试",
+                    "target_chapters": 60,
+                    "chapters": [{"chapter_id": "001", "goal": "开场"}],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        response = TestClient(web_app).get("/api/factory/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        next_steps = response.json()["production_plan"]["next_steps"]
+        step_ids = [item["id"] for item in next_steps]
+        self.assertIn("character_cards", step_ids)
+        self.assertIn("world_bible", step_ids)
+        self.assertIn("style_guide", step_ids)
+        first_step = next_steps[0]
+        self.assertIn(first_step["intent"], {"plan", "asset"})
+        self.assertTrue(first_step["label"])
+        self.assertTrue(first_step["route"])

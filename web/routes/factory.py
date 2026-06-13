@@ -346,6 +346,60 @@ def _readiness(outline: Dict[str, Any], root: Path, planned: int) -> Dict[str, A
     return {"ok": len(checks) - len(missing), "total": len(checks), "missing": missing}
 
 
+def _production_plan_next_steps(readiness: Dict[str, Any]) -> List[Dict[str, str]]:
+    missing = readiness.get("missing") if isinstance(readiness.get("missing"), list) else []
+    catalog = {
+        "大纲": {
+            "id": "outline",
+            "label": "生成大纲",
+            "description": "先补齐故事骨架、题材方向和主线承诺。",
+            "intent": "plan",
+            "route": "/create",
+        },
+        "书名": {
+            "id": "title",
+            "label": "补全书名",
+            "description": "给作品确定一个可展示、可导出的标题。",
+            "intent": "plan",
+            "route": "/outline",
+        },
+        "生产计划": {
+            "id": "chapter_queue",
+            "label": "补章节队列",
+            "description": "把大纲拆成可连续生产的章节目标。",
+            "intent": "plan",
+            "route": "/outline",
+        },
+        "角色卡": {
+            "id": "character_cards",
+            "label": "补角色卡",
+            "description": "固定人物动机、关系和说话方式，降低长篇跑偏。",
+            "intent": "asset",
+            "route": "/assets",
+        },
+        "世界观": {
+            "id": "world_bible",
+            "label": "补世界观",
+            "description": "沉淀地点、规则、势力和基础设定，给后续章节做参照。",
+            "intent": "asset",
+            "route": "/assets",
+        },
+        "风格指南": {
+            "id": "style_guide",
+            "label": "补风格指南",
+            "description": "约束语言口吻、节奏和禁用表达，减少 AI 味。",
+            "intent": "asset",
+            "route": "/assets",
+        },
+    }
+    steps: List[Dict[str, str]] = []
+    for item in missing:
+        step = catalog.get(str(item))
+        if step:
+            steps.append(step)
+    return steps[:4]
+
+
 def _exports(root: Path, completed: int) -> Dict[str, bool]:
     has_text = completed > 0
     return {
@@ -510,6 +564,7 @@ def get_factory_dashboard() -> Dict[str, Any]:
             "target_chapters": target,
             "planned_chapters": planned,
             "readiness": readiness,
+            "next_steps": _production_plan_next_steps(readiness),
         },
         "factory_status": {
             "state": state,

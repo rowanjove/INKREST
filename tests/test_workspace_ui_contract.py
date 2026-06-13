@@ -200,6 +200,7 @@ def test_dashboard_exposes_factory_first_screen_panels() -> None:
     assert "ProductionPlanPanel" in dashboard
     assert "FactoryPipelinePanel" in dashboard
     assert "RepairCommandPanel" in dashboard
+    assert '@next-step="handleProductionPlanNextStep"' in dashboard
     assert "useFactoryStore" in dashboard
     assert "factory-first-screen" in dashboard
     assert "factory-control-panel" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")

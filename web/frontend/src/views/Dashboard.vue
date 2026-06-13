@@ -20,7 +20,7 @@ import { useDashboardBatchDialog } from '../composables/useDashboardBatchDialog'
 import { useDashboardPolling } from '../composables/useDashboardPolling'
 import { useChapterStore } from '../stores/chapter'
 import { useFactoryStore } from '../stores/factory'
-import type { FactoryMode } from '../types/factory'
+import type { FactoryMode, ProductionPlanNextStep } from '../types/factory'
 import { apiErrorMessage, rerunChapterGate, rewriteChapter } from '../api'
 
 const router = useRouter()
@@ -129,6 +129,14 @@ function handleFactoryAction(intent: string) {
   scrollToWorkbenchPipeline()
 }
 
+function handleProductionPlanNextStep(step: ProductionPlanNextStep) {
+  if (step.route) {
+    router.push(step.route)
+    return
+  }
+  handleFactoryAction(step.intent)
+}
+
 async function handleFactoryModeChange(mode: FactoryMode) {
   try {
     await factoryStore.saveMode(mode)
@@ -211,7 +219,7 @@ onUnmounted(() => {
         @mode-change="handleFactoryModeChange"
       />
       <div class="factory-first-screen__grid">
-        <ProductionPlanPanel :plan="productionPlan" />
+        <ProductionPlanPanel :plan="productionPlan" @next-step="handleProductionPlanNextStep" />
         <FactoryPipelinePanel :steps="factoryPipeline" />
       </div>
       <RepairCommandPanel

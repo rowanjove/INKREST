@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { DocumentChecked } from '@element-plus/icons-vue'
-import type { ProductionPlanSummary } from '../../types/factory'
+import type { ProductionPlanNextStep, ProductionPlanSummary } from '../../types/factory'
 
 const props = defineProps<{
   plan: ProductionPlanSummary | null | undefined
+}>()
+
+const emit = defineEmits<{
+  nextStep: [step: ProductionPlanNextStep]
 }>()
 
 const readinessPercent = computed(() => {
@@ -12,6 +16,8 @@ const readinessPercent = computed(() => {
   if (!readiness?.total) return 0
   return Math.round((readiness.ok / readiness.total) * 100)
 })
+
+const visibleNextSteps = computed(() => props.plan?.next_steps?.slice(0, 4) || [])
 </script>
 
 <template>
@@ -46,6 +52,15 @@ const readinessPercent = computed(() => {
     <div v-if="plan?.readiness.missing?.length" class="missing-list">
       <strong>待补齐</strong>
       <span>{{ plan.readiness.missing.join('、') }}</span>
+    </div>
+    <div v-if="visibleNextSteps.length" class="plan-next-steps">
+      <article v-for="step in visibleNextSteps" :key="step.id" class="plan-next-step">
+        <div>
+          <strong>{{ step.label }}</strong>
+          <span>{{ step.description }}</span>
+        </div>
+        <el-button size="small" plain @click="emit('nextStep', step)">去处理</el-button>
+      </article>
     </div>
   </section>
 </template>
@@ -126,6 +141,38 @@ h3 {
   gap: 6px;
 }
 
+.plan-next-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.plan-next-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--color-bg-surface-muted);
+}
+
+.plan-next-step strong,
+.plan-next-step span {
+  display: block;
+}
+
+.plan-next-step strong {
+  font-size: 13px;
+}
+
+.plan-next-step span {
+  margin-top: 2px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 @media (max-width: 820px) {
   .panel-head,
   .plan-body {
@@ -135,6 +182,11 @@ h3 {
 
   .readiness-box {
     min-width: 0;
+  }
+
+  .plan-next-steps,
+  .plan-next-step {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -18,6 +18,7 @@ const baseDashboard: FactoryDashboard = {
     target_chapters: 100,
     planned_chapters: 10,
     readiness: { ok: 6, total: 6, missing: [] },
+    next_steps: [],
   },
   factory_status: {
     state: 'ready',
