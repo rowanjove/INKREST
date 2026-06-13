@@ -59,6 +59,22 @@ const baseDashboard: FactoryDashboard = {
     route: '/workspace',
     primary_action: '进入导出',
   },
+  stability_report: {
+    status: 'missing',
+    score: 0,
+    summary: 'No production plan exists yet.',
+    tracked: { characters: 0, foreshadows: 0, reader_promises: 0, secrets: 0 },
+    risks: [],
+    next_actions: [],
+  },
+  naturalness_report: {
+    status: 'missing',
+    score: 92,
+    summary: 'No quality reports are available yet.',
+    risk_types: [],
+    sample_issues: [],
+    next_actions: [],
+  },
   repair: { blocked_count: 0, items: [] },
   exports: { txt_available: false, epub_available: false, pdf_available: false },
 }

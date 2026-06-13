@@ -145,6 +145,65 @@ export interface FactoryExportCheck {
   primary_action: string
 }
 
+export type FactoryRiskSeverity = 'info' | 'warning' | 'danger'
+export type FactoryRiskIntent = 'plan' | 'asset' | 'state' | 'monitor' | 'repair' | 'chapter' | 'export'
+
+export interface FactoryRiskAction {
+  id: string
+  label: string
+  intent: FactoryRiskIntent
+  route: string
+  reason: string
+}
+
+export interface FactoryRouteRisk {
+  id: string
+  label: string
+  severity: FactoryRiskSeverity
+  detail: string
+  route: string
+  action_label: string
+}
+
+export interface FactoryTrackedMemory {
+  characters: number
+  foreshadows: number
+  reader_promises: number
+  secrets: number
+}
+
+export interface FactoryStabilityReport {
+  status: 'missing' | 'stable' | 'warning' | 'blocked'
+  score: number
+  summary: string
+  tracked: FactoryTrackedMemory
+  risks: FactoryRouteRisk[]
+  next_actions: FactoryRiskAction[]
+}
+
+export interface FactoryNaturalnessRiskType {
+  id: string
+  label: string
+  count: number
+  severity: FactoryRiskSeverity
+}
+
+export interface FactoryNaturalnessIssue {
+  chapter_id: string
+  label: string
+  detail: string
+  route: string
+}
+
+export interface FactoryNaturalnessReport {
+  status: 'missing' | 'natural' | 'warning' | 'blocked'
+  score: number
+  summary: string
+  risk_types: FactoryNaturalnessRiskType[]
+  sample_issues: FactoryNaturalnessIssue[]
+  next_actions: FactoryRiskAction[]
+}
+
 export interface FactoryDashboard {
   project: FactoryProject
   production_plan: ProductionPlanSummary
@@ -155,6 +214,8 @@ export interface FactoryDashboard {
   pipeline: FactoryPipelineStep[]
   quality_summary: FactoryQualitySummary
   export_check: FactoryExportCheck
+  stability_report: FactoryStabilityReport
+  naturalness_report: FactoryNaturalnessReport
   repair: FactoryRepairSummary
   exports: FactoryExportSummary
 }
