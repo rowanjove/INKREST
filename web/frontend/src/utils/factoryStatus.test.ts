@@ -51,6 +51,14 @@ const baseDashboard: FactoryDashboard = {
     ai_flavor_risks: 0,
     latest_issue: null,
   },
+  export_check: {
+    status: 'blocked',
+    can_export: false,
+    blockers: [],
+    warnings: [],
+    route: '/workspace',
+    primary_action: '进入导出',
+  },
   repair: { blocked_count: 0, items: [] },
   exports: { txt_available: false, epub_available: false, pdf_available: false },
 }

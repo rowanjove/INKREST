@@ -134,6 +134,17 @@ export interface FactoryExportSummary {
   pdf_available: boolean
 }
 
+export type FactoryExportCheckStatus = 'ready' | 'warning' | 'blocked'
+
+export interface FactoryExportCheck {
+  status: FactoryExportCheckStatus
+  can_export: boolean
+  blockers: string[]
+  warnings: string[]
+  route: string
+  primary_action: string
+}
+
 export interface FactoryDashboard {
   project: FactoryProject
   production_plan: ProductionPlanSummary
@@ -143,6 +154,7 @@ export interface FactoryDashboard {
   commands: FactoryCommand[]
   pipeline: FactoryPipelineStep[]
   quality_summary: FactoryQualitySummary
+  export_check: FactoryExportCheck
   repair: FactoryRepairSummary
   exports: FactoryExportSummary
 }

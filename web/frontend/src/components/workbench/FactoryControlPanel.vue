@@ -50,6 +50,12 @@ function commandButtonType(tone: string) {
   if (tone === 'danger') return 'danger'
   return undefined
 }
+function exportCheckType(status: string) {
+  if (status === 'ready') return 'success'
+  if (status === 'warning') return 'warning'
+  if (status === 'blocked') return 'danger'
+  return 'info'
+}
 const progressPercent = computed(() => {
   const status = props.dashboard?.factory_status
   if (!status?.target_chapters) return 0
@@ -120,6 +126,29 @@ const progressPercent = computed(() => {
               {{ command.label }}
             </el-button>
           </el-tooltip>
+        </div>
+        <div v-if="dashboard?.export_check" class="factory-export-check">
+          <el-tag size="small" :type="exportCheckType(dashboard.export_check.status)" effect="plain">
+            导出总检
+          </el-tag>
+          <div class="factory-export-copy">
+            <strong>{{ dashboard.export_check.primary_action }}</strong>
+            <span v-if="dashboard.export_check.blockers.length">
+              {{ dashboard.export_check.blockers.join('；') }}
+            </span>
+            <span v-else-if="dashboard.export_check.warnings.length">
+              {{ dashboard.export_check.warnings.join('；') }}
+            </span>
+            <span v-else>TXT / EPUB 导出条件已就绪。</span>
+          </div>
+          <el-button
+            size="small"
+            plain
+            :disabled="!dashboard.export_check.can_export"
+            @click="emit('action', 'export')"
+          >
+            去导出
+          </el-button>
         </div>
       </div>
     </div>
@@ -282,6 +311,42 @@ h2 {
   max-width: 150px;
 }
 
+.factory-export-check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  max-width: 520px;
+  margin-top: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--color-bg-surface-muted);
+}
+
+.factory-export-copy {
+  min-width: 0;
+}
+
+.factory-export-copy strong,
+.factory-export-copy span {
+  display: block;
+}
+
+.factory-export-copy strong {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.factory-export-copy span {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .factory-status-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -328,6 +393,15 @@ h2 {
 @media (max-width: 1180px) {
   .factory-control-panel {
     grid-template-columns: 1fr;
+  }
+
+  .factory-export-check {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .factory-export-check .el-button {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 </style>

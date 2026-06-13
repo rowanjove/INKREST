@@ -205,6 +205,7 @@ def test_dashboard_exposes_factory_first_screen_panels() -> None:
     assert "useFactoryStore" in dashboard
     assert "factory-first-screen" in dashboard
     assert "factory-control-panel" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")
+    assert "factory-export-check" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")
     assert "production-plan-panel" in PRODUCTION_PLAN_PANEL.read_text(encoding="utf-8")
     assert "factory-pipeline-panel" in FACTORY_PIPELINE_PANEL.read_text(encoding="utf-8")
     assert "quality-summary-strip" in FACTORY_PIPELINE_PANEL.read_text(encoding="utf-8")

@@ -409,6 +409,34 @@ def _exports(root: Path, completed: int) -> Dict[str, bool]:
     }
 
 
+def _export_check(exports: Dict[str, bool], repair: Dict[str, Any], quality: Dict[str, Any]) -> Dict[str, Any]:
+    blockers: List[str] = []
+    warnings: List[str] = []
+    completed_available = bool(exports.get("txt_available") or exports.get("epub_available"))
+    blocked_count = int(repair.get("blocked_count") or 0)
+    failed = int(quality.get("failed") or 0)
+    ai_risks = int(quality.get("ai_flavor_risks") or 0)
+
+    if not completed_available:
+        blockers.append("暂无可导出的正式章节")
+    if blocked_count > 0:
+        blockers.append(f"仍有 {blocked_count} 章待修复")
+    if failed > 0:
+        blockers.append(f"存在 {failed} 章质检未通过")
+    if ai_risks > 0:
+        warnings.append(f"发现 {ai_risks} 章 AI 味风险")
+
+    status = "blocked" if blockers else ("warning" if warnings else "ready")
+    return {
+        "status": status,
+        "can_export": completed_available and not blockers,
+        "blockers": blockers,
+        "warnings": warnings,
+        "route": "/workspace",
+        "primary_action": "处理阻断" if blockers else "进入导出",
+    }
+
+
 def _chapter_id_from_quality_path(path: Path) -> str:
     chapter_dir = path.parent.parent
     name = chapter_dir.name
@@ -597,6 +625,7 @@ def get_factory_dashboard() -> Dict[str, Any]:
 
     mode = _infer_mode(meta)
     exports = _exports(root, completed)
+    quality_summary = _quality_summary(root)
 
     return {
         "project": {
@@ -630,7 +659,8 @@ def get_factory_dashboard() -> Dict[str, Any]:
         "operator_brief": _operator_brief(mode, state, repair, readiness, planned, completed, target),
         "commands": _factory_commands(mode, state, repair, exports),
         "pipeline": _pipeline(state),
-        "quality_summary": _quality_summary(root),
+        "quality_summary": quality_summary,
+        "export_check": _export_check(exports, repair, quality_summary),
         "repair": repair,
         "exports": exports,
     }

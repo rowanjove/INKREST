@@ -21,7 +21,7 @@ class FactoryDashboardTests(ApiTestBase):
         body = response.json()
         self.assertEqual(body["factory_status"]["state"], "empty")
         self.assertEqual(body["production_plan"]["status"], "missing")
-        for key in ("project", "production_plan", "factory_status", "mode_profile", "operator_brief", "commands", "pipeline", "repair", "exports"):
+        for key in ("project", "production_plan", "factory_status", "mode_profile", "operator_brief", "commands", "pipeline", "quality_summary", "export_check", "repair", "exports"):
             self.assertIn(key, body)
 
     def test_factory_dashboard_summarizes_production_plan(self):
@@ -304,3 +304,50 @@ class FactoryDashboardTests(ApiTestBase):
         self.assertEqual(summary["ai_flavor_risks"], 1)
         self.assertEqual(summary["latest_issue"]["chapter_id"], "002")
         self.assertIn("ai_flavor", summary["latest_issue"]["blocked_by"])
+
+    def test_factory_dashboard_blocks_export_check_on_quality_failures(self):
+        workspace = self.tmpdir / "workspace"
+        workspace.mkdir(parents=True)
+        (workspace / "outline.json").write_text(
+            json.dumps(
+                {
+                    "chosen_title": "导出总检测试",
+                    "target_chapters": 2,
+                    "chapters": [
+                        {"chapter_id": "001", "goal": "开场"},
+                        {"chapter_id": "002", "goal": "冲突"},
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        for chapter_id in ("001", "002"):
+            chapter_dir = workspace / "chapters" / f"chapter_{chapter_id}"
+            reports_dir = chapter_dir / "reports"
+            reports_dir.mkdir(parents=True)
+            (chapter_dir / "chapter_final.txt").write_text("正文" * 80, encoding="utf-8")
+            (reports_dir / "quality.json").write_text(
+                json.dumps(
+                    {
+                        "overall_pass": chapter_id == "001",
+                        "guard_summary": {
+                            "overall_status": "PASS" if chapter_id == "001" else "FAIL",
+                            "blocked_by": [] if chapter_id == "001" else ["ai_flavor"],
+                        },
+                        "ai_flavor": {"risk_level": "low" if chapter_id == "001" else "high"},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+        response = TestClient(web_app).get("/api/factory/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        check = response.json()["export_check"]
+        self.assertEqual(check["status"], "blocked")
+        self.assertFalse(check["can_export"])
+        self.assertIn("存在 1 章质检未通过", check["blockers"])
+        self.assertIn("发现 1 章 AI 味风险", check["warnings"])
+        self.assertEqual(check["route"], "/workspace")

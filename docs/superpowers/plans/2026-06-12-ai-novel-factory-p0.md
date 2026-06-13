@@ -32,6 +32,14 @@ Out of scope:
 - Full workstudio permissions.
 - Deep rewriting of all generation agents.
 
+## P0 Closeout Notes (2026-06-13)
+
+- Implemented the factory dashboard API, mode profile, operator brief, recommended commands, production-plan next steps, pipeline status, repair summary, quality summary, and export preflight.
+- Implemented the workbench first screen with factory control, production plan, production-line status, repair commands, quality summary, and export preflight entry.
+- `GET /api/factory/dashboard` is read-only. It must not trigger chapter generation, repair, export, or batch production.
+- Real 10-chapter generation smoke testing remains operator-approved only, because project policy forbids auto-triggering generation without explicit user approval.
+- P0 verification uses backend contract tests, frontend unit tests, frontend build, workspace UI contract tests, and local browser visual QA.
+
 ## File Structure
 
 Expected files to modify or create:
@@ -139,6 +147,26 @@ Response shape:
         "manual_hint": "重点改写第 3-5 段的抽象抒情和重复句式。"
       }
     ]
+  },
+  "quality_summary": {
+    "status": "blocked",
+    "total_reports": 8,
+    "passed": 7,
+    "failed": 1,
+    "ai_flavor_risks": 1,
+    "latest_issue": {
+      "chapter_id": "008",
+      "blocked_by": ["ai_flavor"],
+      "ai_flavor_risk": "high"
+    }
+  },
+  "export_check": {
+    "status": "blocked",
+    "can_export": false,
+    "blockers": ["存在 1 章质检未通过"],
+    "warnings": ["发现 1 章 AI 味风险"],
+    "route": "/workspace",
+    "primary_action": "处理阻断"
   },
   "exports": {
     "txt_available": true,
