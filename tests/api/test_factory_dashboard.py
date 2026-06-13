@@ -21,8 +21,10 @@ class FactoryDashboardTests(ApiTestBase):
         body = response.json()
         self.assertEqual(body["factory_status"]["state"], "empty")
         self.assertEqual(body["production_plan"]["status"], "missing")
-        for key in ("project", "production_plan", "factory_status", "mode_profile", "operator_brief", "commands", "pipeline", "quality_summary", "export_check", "repair", "exports"):
+        for key in ("project", "production_plan", "factory_status", "mode_profile", "operator_brief", "commands", "pipeline", "quality_summary", "export_check", "stability_report", "naturalness_report", "repair", "exports"):
             self.assertIn(key, body)
+        self.assertEqual(body["stability_report"]["status"], "missing")
+        self.assertEqual(body["naturalness_report"]["status"], "missing")
 
     def test_factory_dashboard_summarizes_production_plan(self):
         workspace = self.tmpdir / "workspace"
@@ -351,3 +353,76 @@ class FactoryDashboardTests(ApiTestBase):
         self.assertIn("存在 1 章质检未通过", check["blockers"])
         self.assertIn("发现 1 章 AI 味风险", check["warnings"])
         self.assertEqual(check["route"], "/workspace")
+    def test_factory_dashboard_reports_longform_stability_risks(self):
+        workspace = self.tmpdir / "workspace"
+        workspace.mkdir(parents=True)
+        (workspace / "outline.json").write_text(
+            json.dumps(
+                {
+                    "chosen_title": "longform stability test",
+                    "target_chapters": 160,
+                    "chapters": [{"chapter_id": "001", "goal": "opening"}],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        response = TestClient(web_app).get("/api/factory/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        report = response.json()["stability_report"]
+        self.assertEqual(report["status"], "warning")
+        self.assertLess(report["score"], 100)
+        risk_ids = [risk["id"] for risk in report["risks"]]
+        self.assertIn("character_cards_missing", risk_ids)
+        self.assertIn("world_bible_missing", risk_ids)
+        self.assertIn("low_longform_memory", risk_ids)
+        self.assertEqual(report["tracked"]["characters"], 0)
+        self.assertTrue(report["next_actions"])
+        self.assertEqual(report["next_actions"][0]["route"], "/assets")
+
+    def test_factory_dashboard_reports_naturalness_risks_from_quality_reports(self):
+        workspace = self.tmpdir / "workspace"
+        workspace.mkdir(parents=True)
+        (workspace / "outline.json").write_text(
+            json.dumps(
+                {
+                    "chosen_title": "naturalness test",
+                    "target_chapters": 20,
+                    "chapters": [{"chapter_id": "008", "goal": "beat"}],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        reports_dir = workspace / "chapters" / "chapter_008" / "reports"
+        reports_dir.mkdir(parents=True)
+        (reports_dir / "quality.json").write_text(
+            json.dumps(
+                {
+                    "overall_pass": False,
+                    "guard_summary": {
+                        "overall_status": "FAIL",
+                        "blocked_by": ["ai_flavor", "style", "sensitive"],
+                    },
+                    "ai_flavor": {"risk_level": "high"},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        response = TestClient(web_app).get("/api/factory/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        report = response.json()["naturalness_report"]
+        self.assertEqual(report["status"], "blocked")
+        self.assertLess(report["score"], 100)
+        risk_ids = [item["id"] for item in report["risk_types"]]
+        self.assertIn("ai_flavor", risk_ids)
+        self.assertIn("style", risk_ids)
+        self.assertIn("platform", risk_ids)
+        self.assertEqual(report["sample_issues"][0]["chapter_id"], "008")
+        self.assertEqual(report["sample_issues"][0]["route"], "/chapters/008")
+        self.assertEqual(report["next_actions"][0]["intent"], "repair")

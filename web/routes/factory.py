@@ -489,6 +489,279 @@ def _quality_summary(root: Path) -> Dict[str, Any]:
     }
 
 
+def _clamp_score(value: int) -> int:
+    return max(0, min(100, value))
+
+
+def _quality_report_facts(root: Path) -> Dict[str, Any]:
+    chapters_root = root / "workspace" / "chapters"
+    reports = sorted(chapters_root.glob("chapter_*/reports/quality.json")) if chapters_root.is_dir() else []
+    facts: Dict[str, Any] = {
+        "total": 0,
+        "failed": 0,
+        "ai_flavor": 0,
+        "style": 0,
+        "platform": 0,
+        "continuity": 0,
+        "state": 0,
+        "samples": [],
+    }
+    for report_path in reports:
+        report = _read_json(report_path)
+        chapter_id = _chapter_id_from_quality_path(report_path)
+        guard = report.get("guard_summary") if isinstance(report.get("guard_summary"), dict) else {}
+        blocked_by = [str(item) for item in guard.get("blocked_by", [])] if isinstance(guard.get("blocked_by"), list) else []
+        ai_flavor = report.get("ai_flavor") if isinstance(report.get("ai_flavor"), dict) else {}
+        ai_risk = str(ai_flavor.get("risk_level") or "").lower()
+        failed = report.get("overall_pass") is False or str(guard.get("overall_status") or "").upper() == "FAIL"
+
+        facts["total"] += 1
+        if failed:
+            facts["failed"] += 1
+        if "ai_flavor" in blocked_by or ai_risk in {"medium", "high"}:
+            facts["ai_flavor"] += 1
+        if "style" in blocked_by:
+            facts["style"] += 1
+        if any(item in blocked_by for item in ("sensitive", "platform", "compliance")):
+            facts["platform"] += 1
+        if "continuity" in blocked_by:
+            facts["continuity"] += 1
+        if "state" in blocked_by or "memory" in blocked_by:
+            facts["state"] += 1
+        if blocked_by and len(facts["samples"]) < 3:
+            facts["samples"].append({"chapter_id": chapter_id, "blocked_by": blocked_by, "ai_flavor_risk": ai_risk})
+    return facts
+
+
+def _tracked_state_counts(root: Path) -> Dict[str, int]:
+    counts = {"characters": 0, "foreshadows": 0, "reader_promises": 0, "secrets": 0}
+    try:
+        from novel_agent.state.sqlite_store import SQLiteStateStore
+
+        store = SQLiteStateStore(root)
+        counts["characters"] = len(store.list_characters())
+        counts["foreshadows"] = len(store.list_foreshadows())
+        counts["reader_promises"] = len(store.list_reader_promises())
+        counts["secrets"] = len(store.list_secrets())
+    except Exception:
+        pass
+    return counts
+
+
+def _stability_report(
+    root: Path,
+    outline: Dict[str, Any],
+    planned: int,
+    target: int,
+    completed: int,
+    quality_facts: Dict[str, Any],
+) -> Dict[str, Any]:
+    empty_tracked = {"characters": 0, "foreshadows": 0, "reader_promises": 0, "secrets": 0}
+    if not outline:
+        return {
+            "status": "missing",
+            "score": 0,
+            "summary": "No production plan exists yet.",
+            "tracked": empty_tracked,
+            "risks": [],
+            "next_actions": [
+                {
+                    "id": "create_plan",
+                    "label": "Create production plan",
+                    "intent": "plan",
+                    "route": "/create",
+                    "reason": "A longform stability report needs an outline first.",
+                }
+            ],
+        }
+
+    score = 100
+    risks: List[Dict[str, str]] = []
+    tracked = _tracked_state_counts(root)
+
+    def add_risk(risk_id: str, label: str, severity: str, detail: str, route: str, action_label: str, penalty: int) -> None:
+        nonlocal score
+        score -= penalty
+        risks.append(
+            {
+                "id": risk_id,
+                "label": label,
+                "severity": severity,
+                "detail": detail,
+                "route": route,
+                "action_label": action_label,
+            }
+        )
+
+    if planned <= 0:
+        add_risk(
+            "chapter_plan_missing",
+            "Chapter plan missing",
+            "danger",
+            "The outline has no chapter queue for continuous production.",
+            "/outline",
+            "Open outline",
+            12,
+        )
+    if not (root / "assets" / "character_cards.yaml").is_file():
+        add_risk(
+            "character_cards_missing",
+            "Character cards missing",
+            "warning",
+            "Character cards reduce personality and state drift in longform runs.",
+            "/assets",
+            "Open assets",
+            12,
+        )
+    if not (root / "assets" / "world_bible.md").is_file():
+        add_risk(
+            "world_bible_missing",
+            "World bible missing",
+            "warning",
+            "A world bible keeps settings, forces, and rules consistent.",
+            "/assets",
+            "Open assets",
+            10,
+        )
+    if not (root / "assets" / "style_guide.md").is_file():
+        add_risk(
+            "style_guide_missing",
+            "Style guide missing",
+            "info",
+            "A style guide makes later chapters less likely to drift in voice.",
+            "/assets",
+            "Open assets",
+            8,
+        )
+    if planned > 0 and completed <= 0:
+        add_risk(
+            "no_completed_chapters",
+            "No completed chapters",
+            "info",
+            "Stability confidence improves after at least one completed chapter is audited.",
+            "/workspace",
+            "Open workbench",
+            8,
+        )
+
+    continuity_failures = int(quality_facts.get("continuity") or 0) + int(quality_facts.get("state") or 0)
+    if continuity_failures:
+        add_risk(
+            "continuity_failures",
+            "Continuity failures",
+            "danger",
+            f"{continuity_failures} chapter report(s) mention continuity or state problems.",
+            "/chapters/maintenance?expand=alerts",
+            "Open repair queue",
+            min(30, continuity_failures * 10),
+        )
+    if target >= 100 and sum(tracked.values()) < 3:
+        add_risk(
+            "low_longform_memory",
+            "Low longform memory coverage",
+            "warning",
+            "This project targets 100+ chapters but has very little tracked story memory.",
+            "/state",
+            "Open state library",
+            5,
+        )
+
+    status = "blocked" if any(risk["severity"] == "danger" for risk in risks) else ("warning" if risks else "stable")
+    primary_risk = risks[0] if risks else None
+    return {
+        "status": status,
+        "score": _clamp_score(score),
+        "summary": "Longform stability is ready." if status == "stable" else "Longform stability needs attention before large batch production.",
+        "tracked": tracked,
+        "risks": risks,
+        "next_actions": [
+            {
+                "id": "stability_next",
+                "label": primary_risk["action_label"] if primary_risk else "Continue production",
+                "intent": "state" if primary_risk and primary_risk["route"] == "/state" else "asset",
+                "route": primary_risk["route"] if primary_risk else "/workspace",
+                "reason": primary_risk["detail"] if primary_risk else "No stability blocker is visible.",
+            }
+        ],
+    }
+
+
+def _naturalness_report(quality_facts: Dict[str, Any], completed: int) -> Dict[str, Any]:
+    total = int(quality_facts.get("total") or 0)
+    if total <= 0:
+        return {
+            "status": "missing",
+            "score": 92 if completed <= 0 else 84,
+            "summary": "No quality reports are available yet.",
+            "risk_types": [],
+            "sample_issues": [],
+            "next_actions": [
+                {
+                    "id": "run_quality",
+                    "label": "Run quality check",
+                    "intent": "monitor",
+                    "route": "/workspace",
+                    "reason": "Naturalness confidence needs quality reports.",
+                }
+            ],
+        }
+
+    failed = int(quality_facts.get("failed") or 0)
+    ai_flavor = int(quality_facts.get("ai_flavor") or 0)
+    style = int(quality_facts.get("style") or 0)
+    platform = int(quality_facts.get("platform") or 0)
+    score = 100 - min(45, failed * 15) - min(36, ai_flavor * 12) - min(30, style * 10) - min(30, platform * 10)
+    risk_types: List[Dict[str, Any]] = []
+    for risk_id, label, count in (
+        ("ai_flavor", "AI flavor", ai_flavor),
+        ("style", "Style risk", style),
+        ("platform", "Platform-facing risk", platform),
+    ):
+        if count:
+            risk_types.append({"id": risk_id, "label": label, "count": count, "severity": "warning" if not failed else "danger"})
+
+    samples: List[Dict[str, str]] = []
+    for sample in quality_facts.get("samples", [])[:3]:
+        chapter_id = str(sample.get("chapter_id") or "")
+        blocked_by = sample.get("blocked_by") if isinstance(sample.get("blocked_by"), list) else []
+        samples.append(
+            {
+                "chapter_id": chapter_id,
+                "label": " / ".join(str(item) for item in blocked_by) or "Quality risk",
+                "detail": f"Quality report flagged: {', '.join(str(item) for item in blocked_by)}",
+                "route": f"/chapters/{chapter_id}",
+            }
+        )
+
+    status = "blocked" if failed and risk_types else ("warning" if risk_types else "natural")
+    return {
+        "status": status,
+        "score": _clamp_score(score),
+        "summary": "Naturalness risk is under control." if status == "natural" else "Naturalness or platform-facing risk exists in quality reports.",
+        "risk_types": risk_types,
+        "sample_issues": samples,
+        "next_actions": [
+            {
+                "id": "naturalness_next",
+                "label": "Reduce AI flavor",
+                "intent": "repair",
+                "route": "/workspace",
+                "reason": "Use repair actions or manual edit hints before export.",
+            }
+        ]
+        if risk_types
+        else [
+            {
+                "id": "naturalness_ready",
+                "label": "Export preflight",
+                "intent": "export",
+                "route": "/workspace",
+                "reason": "No visible naturalness risk is blocking export.",
+            }
+        ],
+    }
+
+
 def _alert_title(root: Path, chapter_id: str) -> str:
     plan = _read_json(root / "workspace" / "chapters" / f"chapter_{chapter_id}" / "plan.json")
     return str(plan.get("chapter_title") or plan.get("title") or f"第 {chapter_id} 章")
@@ -626,6 +899,9 @@ def get_factory_dashboard() -> Dict[str, Any]:
     mode = _infer_mode(meta)
     exports = _exports(root, completed)
     quality_summary = _quality_summary(root)
+    quality_facts = _quality_report_facts(root)
+    stability_report = _stability_report(root, outline, planned, target, completed, quality_facts)
+    naturalness_report = _naturalness_report(quality_facts, completed)
 
     return {
         "project": {
@@ -661,6 +937,8 @@ def get_factory_dashboard() -> Dict[str, Any]:
         "pipeline": _pipeline(state),
         "quality_summary": quality_summary,
         "export_check": _export_check(exports, repair, quality_summary),
+        "stability_report": stability_report,
+        "naturalness_report": naturalness_report,
         "repair": repair,
         "exports": exports,
     }
