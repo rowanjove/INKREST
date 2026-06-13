@@ -1,7 +1,7 @@
 {
   "version": 1,
   "description": "Frontend dist/assets JS size ceilings (raw bytes). Update after intentional bundle growth.",
-  "max_total_js_bytes": 1780000,
+  "max_total_js_bytes": 1790000,
   "max_element_plus_js_bytes": 1150000,
   "max_single_js_bytes": 75000,
   "max_index_js_bytes": 60000

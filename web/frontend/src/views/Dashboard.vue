@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { DocumentAdd, Plus } from '@element-plus/icons-vue'
@@ -11,8 +11,6 @@ import DashboardOutlineDiffDialog from '../components/dashboard/DashboardOutline
 import DashboardAddChapterDialog from '../components/dashboard/DashboardAddChapterDialog.vue'
 import FactoryControlPanel from '../components/workbench/FactoryControlPanel.vue'
 import FactoryPipelinePanel from '../components/workbench/FactoryPipelinePanel.vue'
-import LongformStabilityPanel from '../components/workbench/LongformStabilityPanel.vue'
-import NaturalnessRiskPanel from '../components/workbench/NaturalnessRiskPanel.vue'
 import ProductionPlanPanel from '../components/workbench/ProductionPlanPanel.vue'
 import RepairCommandPanel from '../components/workbench/RepairCommandPanel.vue'
 
@@ -28,6 +26,8 @@ import { apiErrorMessage, rerunChapterGate, rewriteChapter } from '../api'
 const router = useRouter()
 const chapterStore = useChapterStore()
 const factoryStore = useFactoryStore()
+const LongformStabilityPanel = defineAsyncComponent(() => import('../components/workbench/LongformStabilityPanel.vue'))
+const NaturalnessRiskPanel = defineAsyncComponent(() => import('../components/workbench/NaturalnessRiskPanel.vue'))
 const { loading } = storeToRefs(chapterStore)
 const {
   dashboard: factoryDashboard,

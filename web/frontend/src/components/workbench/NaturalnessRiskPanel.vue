@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { MagicStick } from '@element-plus/icons-vue'
 import type { FactoryNaturalnessReport, FactoryRiskAction } from '../../types/factory'
 
 defineProps<{
@@ -40,7 +39,6 @@ function primaryAction(report: FactoryNaturalnessReport | null | undefined) {
       <span v-if="!report?.risk_types?.length">暂无可见风险</span>
     </div>
     <article v-if="report?.sample_issues?.length" class="top-risk">
-      <el-icon><MagicStick /></el-icon>
       <div>
         <strong>第 {{ report.sample_issues[0].chapter_id }} 章</strong>
         <span>{{ report.sample_issues[0].detail }}</span>

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { DataLine } from '@element-plus/icons-vue'
 import type { FactoryRiskAction, FactoryStabilityReport } from '../../types/factory'
 
 defineProps<{
@@ -42,7 +41,6 @@ function primaryAction(report: FactoryStabilityReport | null | undefined) {
       <span>秘密 {{ report?.tracked.secrets || 0 }}</span>
     </div>
     <article v-if="report?.risks?.length" class="top-risk">
-      <el-icon><DataLine /></el-icon>
       <div>
         <strong>{{ report.risks[0].label }}</strong>
         <span>{{ report.risks[0].detail }}</span>
