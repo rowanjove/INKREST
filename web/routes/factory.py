@@ -409,6 +409,58 @@ def _exports(root: Path, completed: int) -> Dict[str, bool]:
     }
 
 
+def _chapter_id_from_quality_path(path: Path) -> str:
+    chapter_dir = path.parent.parent
+    name = chapter_dir.name
+    return name.replace("chapter_", "", 1) if name.startswith("chapter_") else name
+
+
+def _quality_summary(root: Path) -> Dict[str, Any]:
+    chapters_root = root / "workspace" / "chapters"
+    reports = sorted(chapters_root.glob("chapter_*/reports/quality.json")) if chapters_root.is_dir() else []
+    passed = 0
+    failed = 0
+    ai_flavor_risks = 0
+    latest_issue: Dict[str, Any] | None = None
+
+    for report_path in reports:
+        report = _read_json(report_path)
+        chapter_id = _chapter_id_from_quality_path(report_path)
+        guard = report.get("guard_summary") if isinstance(report.get("guard_summary"), dict) else {}
+        blocked_by = guard.get("blocked_by") if isinstance(guard.get("blocked_by"), list) else []
+        ai_flavor = report.get("ai_flavor") if isinstance(report.get("ai_flavor"), dict) else {}
+        ai_risk = str(ai_flavor.get("risk_level") or "").lower()
+
+        if report.get("overall_pass") is False or str(guard.get("overall_status") or "").upper() == "FAIL":
+            failed += 1
+            latest_issue = {
+                "chapter_id": chapter_id,
+                "blocked_by": [str(item) for item in blocked_by],
+                "ai_flavor_risk": ai_risk or "unknown",
+            }
+        else:
+            passed += 1
+
+        if "ai_flavor" in blocked_by or ai_risk in {"medium", "high"}:
+            ai_flavor_risks += 1
+
+    total = len(reports)
+    if failed:
+        status = "blocked"
+    elif total:
+        status = "passed"
+    else:
+        status = "missing"
+    return {
+        "status": status,
+        "total_reports": total,
+        "passed": passed,
+        "failed": failed,
+        "ai_flavor_risks": ai_flavor_risks,
+        "latest_issue": latest_issue,
+    }
+
+
 def _alert_title(root: Path, chapter_id: str) -> str:
     plan = _read_json(root / "workspace" / "chapters" / f"chapter_{chapter_id}" / "plan.json")
     return str(plan.get("chapter_title") or plan.get("title") or f"第 {chapter_id} 章")
@@ -578,6 +630,7 @@ def get_factory_dashboard() -> Dict[str, Any]:
         "operator_brief": _operator_brief(mode, state, repair, readiness, planned, completed, target),
         "commands": _factory_commands(mode, state, repair, exports),
         "pipeline": _pipeline(state),
+        "quality_summary": _quality_summary(root),
         "repair": repair,
         "exports": exports,
     }

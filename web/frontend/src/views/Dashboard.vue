@@ -96,6 +96,7 @@ const { restartDashboardTimer, stopDashboardPolling, tasksStore } = useDashboard
 })
 const productionPlan = computed(() => factoryDashboard.value?.production_plan || null)
 const factoryPipeline = computed(() => factoryDashboard.value?.pipeline || [])
+const qualitySummary = computed(() => factoryDashboard.value?.quality_summary || null)
 const repairSummary = computed(() => factoryDashboard.value?.repair || null)
 
 function scrollToWorkbenchPipeline() {
@@ -220,7 +221,7 @@ onUnmounted(() => {
       />
       <div class="factory-first-screen__grid">
         <ProductionPlanPanel :plan="productionPlan" @next-step="handleProductionPlanNextStep" />
-        <FactoryPipelinePanel :steps="factoryPipeline" />
+        <FactoryPipelinePanel :steps="factoryPipeline" :quality="qualitySummary" />
       </div>
       <RepairCommandPanel
         :repair="repairSummary"

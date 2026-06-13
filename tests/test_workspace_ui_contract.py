@@ -199,6 +199,7 @@ def test_dashboard_exposes_factory_first_screen_panels() -> None:
     assert "FactoryControlPanel" in dashboard
     assert "ProductionPlanPanel" in dashboard
     assert "FactoryPipelinePanel" in dashboard
+    assert ':quality="qualitySummary"' in dashboard
     assert "RepairCommandPanel" in dashboard
     assert '@next-step="handleProductionPlanNextStep"' in dashboard
     assert "useFactoryStore" in dashboard
@@ -206,6 +207,7 @@ def test_dashboard_exposes_factory_first_screen_panels() -> None:
     assert "factory-control-panel" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")
     assert "production-plan-panel" in PRODUCTION_PLAN_PANEL.read_text(encoding="utf-8")
     assert "factory-pipeline-panel" in FACTORY_PIPELINE_PANEL.read_text(encoding="utf-8")
+    assert "quality-summary-strip" in FACTORY_PIPELINE_PANEL.read_text(encoding="utf-8")
     assert "repair-command-panel" in REPAIR_COMMAND_PANEL.read_text(encoding="utf-8")
 
 

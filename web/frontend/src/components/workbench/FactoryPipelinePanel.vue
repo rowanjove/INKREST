@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { CircleCheck, Clock, Loading, Tools, Warning } from '@element-plus/icons-vue'
-import type { FactoryPipelineStep } from '../../types/factory'
+import type { FactoryPipelineStep, FactoryQualitySummary } from '../../types/factory'
 
 defineProps<{
   steps: FactoryPipelineStep[]
+  quality?: FactoryQualitySummary | null
 }>()
 
 function iconFor(state: FactoryPipelineStep['state']) {
@@ -11,6 +12,12 @@ function iconFor(state: FactoryPipelineStep['state']) {
   if (state === 'active') return Loading
   if (state === 'blocked' || state === 'warning') return Warning
   return Clock
+}
+
+function qualityTone(status?: FactoryQualitySummary['status']) {
+  if (status === 'blocked') return 'danger'
+  if (status === 'passed') return 'success'
+  return 'info'
 }
 </script>
 
@@ -32,6 +39,26 @@ function iconFor(state: FactoryPipelineStep['state']) {
         </el-icon>
         <strong>{{ step.label }}</strong>
       </article>
+    </div>
+    <div v-if="quality" class="quality-summary-strip">
+      <div>
+        <span>质检报告</span>
+        <strong>{{ quality.passed }} / {{ quality.total_reports }}</strong>
+      </div>
+      <div>
+        <span>未通过</span>
+        <strong>{{ quality.failed }}</strong>
+      </div>
+      <div>
+        <span>AI 味风险</span>
+        <strong>{{ quality.ai_flavor_risks }}</strong>
+      </div>
+      <el-tag :type="qualityTone(quality.status)" effect="plain">
+        {{ quality.status === 'blocked' ? '待修复' : quality.status === 'passed' ? '已通过' : '待质检' }}
+      </el-tag>
+      <p v-if="quality.latest_issue">
+        最近问题：第 {{ quality.latest_issue.chapter_id }} 章 · {{ quality.latest_issue.blocked_by.join(' / ') || quality.latest_issue.ai_flavor_risk }}
+      </p>
     </div>
   </section>
 </template>
@@ -97,15 +124,54 @@ h3 {
   background: #fef2f2;
 }
 
+.quality-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--color-bg-surface-muted);
+}
+
+.quality-summary-strip div {
+  min-width: 0;
+}
+
+.quality-summary-strip span,
+.quality-summary-strip p {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.quality-summary-strip span,
+.quality-summary-strip strong {
+  display: block;
+}
+
+.quality-summary-strip p {
+  grid-column: 1 / -1;
+  margin: 0;
+  line-height: 1.45;
+}
+
 @media (max-width: 920px) {
   .factory-step-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .quality-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 560px) {
   .factory-step-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quality-summary-strip {
+    grid-template-columns: 1fr;
   }
 }
 </style>

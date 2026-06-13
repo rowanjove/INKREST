@@ -260,3 +260,47 @@ class FactoryDashboardTests(ApiTestBase):
         self.assertIn(first_step["intent"], {"plan", "asset"})
         self.assertTrue(first_step["label"])
         self.assertTrue(first_step["route"])
+
+    def test_factory_dashboard_summarizes_quality_reports(self):
+        workspace = self.tmpdir / "workspace"
+        workspace.mkdir(parents=True)
+        (workspace / "outline.json").write_text(
+            json.dumps(
+                {
+                    "chosen_title": "质量摘要测试",
+                    "target_chapters": 10,
+                    "chapters": [
+                        {"chapter_id": "001", "goal": "开场"},
+                        {"chapter_id": "002", "goal": "冲突"},
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        for chapter_id, report in {
+            "001": {
+                "overall_pass": True,
+                "guard_summary": {"overall_status": "PASS", "blocked_by": []},
+                "ai_flavor": {"risk_level": "low"},
+            },
+            "002": {
+                "overall_pass": False,
+                "guard_summary": {"overall_status": "FAIL", "blocked_by": ["ai_flavor"]},
+                "ai_flavor": {"risk_level": "high"},
+            },
+        }.items():
+            reports_dir = workspace / "chapters" / f"chapter_{chapter_id}" / "reports"
+            reports_dir.mkdir(parents=True)
+            (reports_dir / "quality.json").write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+
+        response = TestClient(web_app).get("/api/factory/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        summary = response.json()["quality_summary"]
+        self.assertEqual(summary["total_reports"], 2)
+        self.assertEqual(summary["passed"], 1)
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(summary["ai_flavor_risks"], 1)
+        self.assertEqual(summary["latest_issue"]["chapter_id"], "002")
+        self.assertIn("ai_flavor", summary["latest_issue"]["blocked_by"])

@@ -96,6 +96,23 @@ export interface FactoryPipelineStep {
   state: FactoryStepState
 }
 
+export type FactoryQualityStatus = 'missing' | 'passed' | 'blocked'
+
+export interface FactoryQualityIssue {
+  chapter_id: string
+  blocked_by: string[]
+  ai_flavor_risk: string
+}
+
+export interface FactoryQualitySummary {
+  status: FactoryQualityStatus
+  total_reports: number
+  passed: number
+  failed: number
+  ai_flavor_risks: number
+  latest_issue: FactoryQualityIssue | null
+}
+
 export interface FactoryRepairItem {
   chapter_id: string
   title: string
@@ -125,6 +142,7 @@ export interface FactoryDashboard {
   operator_brief: FactoryOperatorBrief
   commands: FactoryCommand[]
   pipeline: FactoryPipelineStep[]
+  quality_summary: FactoryQualitySummary
   repair: FactoryRepairSummary
   exports: FactoryExportSummary
 }

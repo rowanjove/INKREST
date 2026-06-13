@@ -43,6 +43,14 @@ const baseDashboard: FactoryDashboard = {
   },
   commands: [],
   pipeline: [],
+  quality_summary: {
+    status: 'missing',
+    total_reports: 0,
+    passed: 0,
+    failed: 0,
+    ai_flavor_risks: 0,
+    latest_issue: null,
+  },
   repair: { blocked_count: 0, items: [] },
   exports: { txt_available: false, epub_available: false, pdf_available: false },
 }
