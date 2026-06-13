@@ -122,6 +122,12 @@ FACTORY_PIPELINE_PANEL = (
 REPAIR_COMMAND_PANEL = (
     ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "RepairCommandPanel.vue"
 )
+LONGFORM_STABILITY_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "LongformStabilityPanel.vue"
+)
+NATURALNESS_RISK_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "NaturalnessRiskPanel.vue"
+)
 CHAPTER_DETAIL = ROOT / "web" / "frontend" / "src" / "views" / "ChapterDetail.vue"
 CHAPTER_DETAIL_HEADER = (
     ROOT / "web" / "frontend" / "src" / "components" / "chapter" / "ChapterDetailHeader.vue"
@@ -199,6 +205,9 @@ def test_dashboard_exposes_factory_first_screen_panels() -> None:
     assert "FactoryControlPanel" in dashboard
     assert "ProductionPlanPanel" in dashboard
     assert "FactoryPipelinePanel" in dashboard
+    assert "LongformStabilityPanel" in dashboard
+    assert "NaturalnessRiskPanel" in dashboard
+    assert "factory-risk-grid" in dashboard
     assert ':quality="qualitySummary"' in dashboard
     assert "RepairCommandPanel" in dashboard
     assert '@next-step="handleProductionPlanNextStep"' in dashboard
@@ -209,6 +218,8 @@ def test_dashboard_exposes_factory_first_screen_panels() -> None:
     assert "production-plan-panel" in PRODUCTION_PLAN_PANEL.read_text(encoding="utf-8")
     assert "factory-pipeline-panel" in FACTORY_PIPELINE_PANEL.read_text(encoding="utf-8")
     assert "quality-summary-strip" in FACTORY_PIPELINE_PANEL.read_text(encoding="utf-8")
+    assert "longform-stability-panel" in LONGFORM_STABILITY_PANEL.read_text(encoding="utf-8")
+    assert "naturalness-risk-panel" in NATURALNESS_RISK_PANEL.read_text(encoding="utf-8")
     assert "repair-command-panel" in REPAIR_COMMAND_PANEL.read_text(encoding="utf-8")
 
 

@@ -11,6 +11,8 @@ import DashboardOutlineDiffDialog from '../components/dashboard/DashboardOutline
 import DashboardAddChapterDialog from '../components/dashboard/DashboardAddChapterDialog.vue'
 import FactoryControlPanel from '../components/workbench/FactoryControlPanel.vue'
 import FactoryPipelinePanel from '../components/workbench/FactoryPipelinePanel.vue'
+import LongformStabilityPanel from '../components/workbench/LongformStabilityPanel.vue'
+import NaturalnessRiskPanel from '../components/workbench/NaturalnessRiskPanel.vue'
 import ProductionPlanPanel from '../components/workbench/ProductionPlanPanel.vue'
 import RepairCommandPanel from '../components/workbench/RepairCommandPanel.vue'
 
@@ -20,7 +22,7 @@ import { useDashboardBatchDialog } from '../composables/useDashboardBatchDialog'
 import { useDashboardPolling } from '../composables/useDashboardPolling'
 import { useChapterStore } from '../stores/chapter'
 import { useFactoryStore } from '../stores/factory'
-import type { FactoryMode, ProductionPlanNextStep } from '../types/factory'
+import type { FactoryMode, FactoryRiskAction, ProductionPlanNextStep } from '../types/factory'
 import { apiErrorMessage, rerunChapterGate, rewriteChapter } from '../api'
 
 const router = useRouter()
@@ -98,6 +100,8 @@ const productionPlan = computed(() => factoryDashboard.value?.production_plan ||
 const factoryPipeline = computed(() => factoryDashboard.value?.pipeline || [])
 const qualitySummary = computed(() => factoryDashboard.value?.quality_summary || null)
 const repairSummary = computed(() => factoryDashboard.value?.repair || null)
+const stabilityReport = computed(() => factoryDashboard.value?.stability_report || null)
+const naturalnessReport = computed(() => factoryDashboard.value?.naturalness_report || null)
 
 function scrollToWorkbenchPipeline() {
   activeTab.value = 'workbench'
@@ -136,6 +140,26 @@ function handleProductionPlanNextStep(step: ProductionPlanNextStep) {
     return
   }
   handleFactoryAction(step.intent)
+}
+
+function handleFactoryRiskAction(action: FactoryRiskAction) {
+  if (action.intent === 'export') {
+    activeTab.value = 'serialization'
+    return
+  }
+  if (action.intent === 'repair') {
+    router.push('/chapters/maintenance?expand=alerts')
+    return
+  }
+  if (action.intent === 'chapter' || action.route.startsWith('/chapters/')) {
+    router.push(action.route)
+    return
+  }
+  if (action.route) {
+    router.push(action.route)
+    return
+  }
+  handleFactoryAction(action.intent)
 }
 
 async function handleFactoryModeChange(mode: FactoryMode) {
@@ -222,6 +246,18 @@ onUnmounted(() => {
       <div class="factory-first-screen__grid">
         <ProductionPlanPanel :plan="productionPlan" @next-step="handleProductionPlanNextStep" />
         <FactoryPipelinePanel :steps="factoryPipeline" :quality="qualitySummary" />
+      </div>
+      <div class="factory-risk-grid">
+        <LongformStabilityPanel
+          :report="stabilityReport"
+          :priority="factoryDashboard?.project.mode === 'longform_stable'"
+          @action="handleFactoryRiskAction"
+        />
+        <NaturalnessRiskPanel
+          :report="naturalnessReport"
+          :priority="factoryDashboard?.project.mode === 'platform_review'"
+          @action="handleFactoryRiskAction"
+        />
       </div>
       <RepairCommandPanel
         :repair="repairSummary"
@@ -325,6 +361,12 @@ onUnmounted(() => {
   gap: 12px;
 }
 
+.factory-risk-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .dashboard-main-tabs {
   flex: 1;
   min-height: 0;
@@ -367,6 +409,10 @@ onUnmounted(() => {
   }
 
   .factory-first-screen__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .factory-risk-grid {
     grid-template-columns: 1fr;
   }
 }
