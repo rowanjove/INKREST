@@ -674,6 +674,24 @@ def test_longform_vector_warn_surfaces_in_readiness_and_dialog() -> None:
     assert "长篇向量建议" in dialog
 
 
+def test_vector_readiness_and_task_queue_wired_in_workbench_and_batch_run() -> None:
+    workbench = (
+        ROOT / "web" / "frontend" / "src" / "composables" / "useDashboardWorkbench.ts"
+    ).read_text(encoding="utf-8")
+    batch_run = (
+        ROOT / "web" / "frontend" / "src" / "composables" / "useNovelBatchRun.ts"
+    ).read_text(encoding="utf-8")
+    task_log = TASK_LOG.read_text(encoding="utf-8")
+    assert "resolveVectorContextFromApis" in workbench
+    assert "getNovelReadiness" in workbench
+    assert "vectorReadiness" in workbench
+    assert "resolveVectorContextFromApis" in batch_run
+    assert "vectorReadiness" in batch_run
+    assert "getTaskQueue" in task_log
+    assert "queueSummary" in task_log
+    assert "max_concurrent_chapters" in task_log
+
+
 def test_batch_run_cost_uses_model_pricing_hint() -> None:
     estimate = ROOT / "web" / "frontend" / "src" / "utils" / "tokenCostEstimate.ts"
     composable = ROOT / "web" / "frontend" / "src" / "composables" / "useNovelBatchRun.ts"

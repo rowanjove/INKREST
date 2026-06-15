@@ -9,6 +9,7 @@ import {
   readinessAllOk,
   readinessTrafficLight,
   type ReadinessItem,
+  type VectorReadinessContext,
 } from '../../utils/projectReadiness'
 
 const props = defineProps<{
@@ -16,8 +17,7 @@ const props = defineProps<{
   outline: Record<string, unknown> | null
   assets: Array<{ name: string; size?: number }>
   maxAvailableChapters: number
-  semanticSearchEffective?: boolean
-  vectorEnabled?: boolean
+  vectorReadiness: VectorReadinessContext
   workScale?: string
 }>()
 
@@ -30,8 +30,7 @@ const items = computed<ReadinessItem[]>(() =>
     outline: props.outline,
     assets: props.assets,
     maxAvailableChapters: props.maxAvailableChapters,
-    semanticSearchEffective: props.semanticSearchEffective,
-    vectorEnabled: props.vectorEnabled,
+    ...props.vectorReadiness,
     workScale: props.workScale,
   }),
 )
@@ -52,8 +51,7 @@ const progressPercent = computed(() => {
 const showVectorBanner = computed(() =>
   longFormVectorWarn({
     workScale: props.workScale || '',
-    vectorEnabled: props.vectorEnabled,
-    semanticSearchEffective: props.semanticSearchEffective,
+    ...props.vectorReadiness,
   }),
 )
 

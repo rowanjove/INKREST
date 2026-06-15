@@ -17,6 +17,51 @@ export interface ReadinessItem {
   warn?: boolean
 }
 
+export type VectorReadinessContext = {
+  semanticSearchEffective: boolean
+  vectorEnabled: boolean
+  embeddingBackend?: string
+  chromadbAvailable?: boolean
+  embeddingBackendHint?: string
+  vectorReadinessLevel?: string
+}
+
+/** Merge `/novel/readiness` with embedding status for UI gates and banners. */
+export function resolveVectorContextFromApis(
+  readyData: Record<string, unknown> | null | undefined,
+  embData: Record<string, unknown> | null | undefined,
+): VectorReadinessContext {
+  const vectorBlocksContinue = Boolean(readyData?.vector_blocks_continue)
+  const semanticFromEmb = Boolean(embData?.semantic_search_effective)
+  return {
+    semanticSearchEffective: vectorBlocksContinue ? false : semanticFromEmb,
+    vectorEnabled: embData?.vector_enabled !== false,
+    embeddingBackend: String(readyData?.embedding_backend || ''),
+    chromadbAvailable: Boolean(readyData?.chromadb_available),
+    embeddingBackendHint: String(readyData?.embedding_backend_hint || ''),
+    vectorReadinessLevel: String(readyData?.vector_readiness_level || 'auto'),
+  }
+}
+
+const LONG_FORM_SCALES = ['long', 'epic', 'infinite'] as const
+
+export function isLongFormScale(workScale: string): boolean {
+  return (LONG_FORM_SCALES as readonly string[]).includes(workScale)
+}
+
+function chromadbExpectationUnmet(ctx: {
+  workScale?: string
+  vectorEnabled?: boolean
+  embeddingBackend?: string
+  chromadbAvailable?: boolean
+}): boolean {
+  if (ctx.vectorEnabled === false) return false
+  if (!isLongFormScale(ctx.workScale || '')) return false
+  if (ctx.chromadbAvailable) return false
+  const backend = String(ctx.embeddingBackend || '').toLowerCase()
+  return backend === 'chromadb' || backend === ''
+}
+
 export function coreAssetsReady(
   assets: Array<{ name: string; size?: number }>,
 ): boolean {
@@ -31,17 +76,42 @@ export function buildReadinessItems(opts: {
   outline: Record<string, unknown> | null
   assets: Array<{ name: string; size?: number }>
   maxAvailableChapters: number
-  /** false when embedding is stub but project expects vectors */
   semanticSearchEffective?: boolean
   vectorEnabled?: boolean
   workScale?: string
+  embeddingBackend?: string
+  chromadbAvailable?: boolean
+  embeddingBackendHint?: string
+  vectorReadinessLevel?: string
 }): ReadinessItem[] {
   const outline = opts.outline
   const macro = (outline?.macro_outline as unknown[]) || []
   const scale = opts.workScale || String((outline?.scale_profile as { scale?: string })?.scale || '')
   const vectorOn = opts.vectorEnabled !== false
   const semanticOk = opts.semanticSearchEffective !== false
-  const longForm = ['long', 'epic', 'infinite'].includes(scale)
+  const longForm = isLongFormScale(scale)
+  const chromaMissing = chromadbExpectationUnmet({
+    workScale: scale,
+    vectorEnabled: opts.vectorEnabled,
+    embeddingBackend: opts.embeddingBackend,
+    chromadbAvailable: opts.chromadbAvailable,
+  })
+  const vectorWarn = vectorOn && (!semanticOk || chromaMissing)
+  const embeddingHint = (() => {
+    if (!vectorOn) return '短篇/微型档默认关闭向量，无需配置'
+    if (chromaMissing) {
+      return (
+        opts.embeddingBackendHint ||
+        '长篇默认 ChromaDB 向量；请安装 chromadb 或在设置中配置真实 Embedding'
+      )
+    }
+    if (longForm) {
+      return opts.embeddingBackend === 'chromadb'
+        ? '长篇连写使用 ChromaDB 召回；stub 时跨章去重与伏笔召回不可用'
+        : '长篇连写强烈建议配置 BGE/云端 Embedding；stub 时跨章去重与伏笔召回不可用'
+    }
+    return '设置 → Embedding：stub 时跨章去重/伏笔召回不可用'
+  })()
   return [
     {
       id: 'engine',
@@ -79,15 +149,15 @@ export function buildReadinessItems(opts: {
     },
     {
       id: 'embedding',
-      label: vectorOn ? '语义向量可用（非 stub）' : '语义向量（当前体量已关闭）',
+      label: vectorOn
+        ? longForm && opts.embeddingBackend === 'chromadb'
+          ? '语义向量（ChromaDB）'
+          : '语义向量可用（非 stub）'
+        : '语义向量（当前体量已关闭）',
       ok: true,
-      warn: vectorOn && !semanticOk,
+      warn: vectorWarn,
       route: '/config',
-      hint: vectorOn
-        ? longForm
-          ? '长篇连写强烈建议配置 BGE/云端 Embedding；stub 时跨章去重与伏笔召回不可用'
-          : '设置 → Embedding：stub 时跨章去重/伏笔召回不可用'
-        : '短篇/微型档默认关闭向量，无需配置',
+      hint: embeddingHint,
     },
   ]
 }
@@ -107,21 +177,20 @@ export function readinessTrafficLight(items: ReadinessItem[]): ReadinessTrafficL
   return readinessHasRed(items) ? 'red' : 'green'
 }
 
-const LONG_FORM_SCALES = ['long', 'epic', 'infinite'] as const
-
-export function isLongFormScale(workScale: string): boolean {
-  return (LONG_FORM_SCALES as readonly string[]).includes(workScale)
-}
-
 /** 长篇且向量未就绪：黄标建议，不阻断连写 */
 export function longFormVectorWarn(opts: {
   workScale: string
   vectorEnabled?: boolean
   semanticSearchEffective?: boolean
+  embeddingBackend?: string
+  chromadbAvailable?: boolean
+  vectorReadinessLevel?: string
 }): boolean {
   if (!isLongFormScale(opts.workScale)) return false
   if (opts.vectorEnabled === false) return false
-  return opts.semanticSearchEffective === false
+  if (opts.vectorReadinessLevel === 'ignore') return false
+  if (opts.semanticSearchEffective === false) return true
+  return chromadbExpectationUnmet(opts)
 }
 
 export const LONG_FORM_VECTOR_WARN_TEXT =

@@ -1,6 +1,13 @@
 import api from './client'
 
-
+export type TaskQueueSnapshot = {
+  scale?: string
+  max_concurrent_chapters: number
+  max_scene_workers?: number
+  active_task_count: number
+  running_chapters: string[]
+  novel_batch_task_id?: string | null
+}
 
 export const runChapter = (data: { chapter_id: string; goal: string; dry_run?: boolean }) =>
   api.post('/chapters/run', data)
@@ -13,6 +20,9 @@ export const getTask = (taskId: string) =>
 
 export const listTasks = () =>
   api.get('/chapters/tasks')
+
+export const getTaskQueue = () =>
+  api.get<TaskQueueSnapshot>('/chapters/tasks/queue')
 
 export const abortTask = (taskId: string) =>
   api.post(`/chapters/tasks/${taskId}/abort`)

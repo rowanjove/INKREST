@@ -3,14 +3,14 @@ import DashboardStats from '../DashboardStats.vue'
 import ProjectReadinessCard from '../workbench/ProjectReadinessCard.vue'
 import AgentProductionLine from '../workbench/AgentProductionLine.vue'
 import ScaleArchitecturePanel from '../workbench/ScaleArchitecturePanel.vue'
+import type { VectorReadinessContext } from '../../utils/projectReadiness'
 
 defineProps<{
   engineStatus: { ready: boolean; label: string; route: string }
   outline: Record<string, any> | null
   assets: any[]
   maxAvailableChapters: number
-  semanticSearchEffective: boolean
-  vectorEnabledForProject: boolean
+  vectorReadiness: VectorReadinessContext
   workScale: string
   scaleProfile: Record<string, any>
   chapterCountTotal: number
@@ -30,8 +30,7 @@ const emit = defineEmits<{
       :outline="outline"
       :assets="assets"
       :max-available-chapters="maxAvailableChapters"
-      :semantic-search-effective="semanticSearchEffective"
-      :vector-enabled="vectorEnabledForProject"
+      :vector-readiness="vectorReadiness"
       :work-scale="workScale"
     />
 
@@ -40,8 +39,7 @@ const emit = defineEmits<{
       :outline="outline"
       :assets="assets"
       :max-available-chapters="maxAvailableChapters"
-      :semantic-search-effective="semanticSearchEffective"
-      :vector-enabled="vectorEnabledForProject"
+      :vector-readiness="vectorReadiness"
       :work-scale="workScale"
       show-controls
     />

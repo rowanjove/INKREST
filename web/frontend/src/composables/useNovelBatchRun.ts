@@ -25,7 +25,12 @@ import {
   saveBatchForm,
   type BatchRunPhase,
 } from '../utils/batchRunForm'
-import { buildReadinessItems, readinessAllOk } from '../utils/projectReadiness'
+import {
+  buildReadinessItems,
+  readinessAllOk,
+  resolveVectorContextFromApis,
+  type VectorReadinessContext,
+} from '../utils/projectReadiness'
 import { isExternalPending } from '../utils/pipelineAlertFilters'
 import {
   estimateBatchTokenCost,
@@ -41,8 +46,7 @@ export type NovelBatchRunContext = {
   assets: Array<{ name: string; size?: number }>
   chapterCountTotal: number
   engineReady: boolean
-  semanticSearchEffective: boolean
-  vectorEnabled: boolean
+  vectorReadiness: VectorReadinessContext
   arcProgress: Record<string, any> | null
   batchPaused: boolean
   pauseReason: string
@@ -103,8 +107,7 @@ const ctx = ref<NovelBatchRunContext>({
   assets: [],
   chapterCountTotal: 0,
   engineReady: false,
-  semanticSearchEffective: true,
-  vectorEnabled: true,
+  vectorReadiness: resolveVectorContextFromApis({}, {}),
   arcProgress: null,
   batchPaused: false,
   pauseReason: '',
@@ -152,8 +155,7 @@ export function useNovelBatchRun() {
       outline: ctx.value.outline,
       assets: ctx.value.assets,
       maxAvailableChapters: maxAvailableChapters.value,
-      semanticSearchEffective: ctx.value.semanticSearchEffective,
-      vectorEnabled: ctx.value.vectorEnabled,
+      ...ctx.value.vectorReadiness,
       workScale: workScale.value,
     }),
   )
@@ -200,7 +202,6 @@ export function useNovelBatchRun() {
     try {
       const outlineData = outlineRes.data
       const progress = arcRes.data?.progress || batchRes.data || null
-      const vectorBlocksContinue = Boolean(readyRes.data?.vector_blocks_continue)
       const pricing = resolveDailyModelPricePer1k(configRes.data, modelsRes.data || [])
       modelPricePer1k.value = pricing.pricePer1k
       modelPriceLabel.value = pricing.modelLabel
@@ -210,10 +211,7 @@ export function useNovelBatchRun() {
         // 与工作台 loadWorkbench 一致，避免 authoritative_completed 偏大导致弹窗被静默拦截
         chapterCountTotal: countRes.data?.total ?? 0,
         engineReady: resolveEngine(configRes.data, modelsRes.data || []).ready,
-        semanticSearchEffective: vectorBlocksContinue
-          ? false
-          : Boolean(embRes.data?.semantic_search_effective),
-        vectorEnabled: embRes.data?.vector_enabled !== false,
+        vectorReadiness: resolveVectorContextFromApis(readyRes.data, embRes.data),
         arcProgress: progress,
         batchPaused: progress?.status === 'paused',
         pauseReason: String(progress?.pause_reason || ''),

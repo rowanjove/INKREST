@@ -4,15 +4,21 @@ import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { Clock, DataLine, Refresh } from '@element-plus/icons-vue'
 import EmptyStatePanel from './EmptyStatePanel.vue'
+import { getTaskQueue, type TaskQueueSnapshot } from '../api'
 import { useTasksStore } from '../stores/tasks'
 import { formatTaskStep } from '../utils/taskStepLabels'
 
 const tasksStore = useTasksStore()
 const { taskList: tasks } = storeToRefs(tasksStore)
 const refreshing = ref(false)
+const queueSnapshot = ref<TaskQueueSnapshot | null>(null)
 
 async function refreshTasks() {
-  await tasksStore.refreshTaskList()
+  const [, queueRes] = await Promise.all([
+    tasksStore.refreshTaskList(),
+    getTaskQueue().catch(() => ({ data: null })),
+  ])
+  queueSnapshot.value = queueRes.data
 }
 
 async function handleRefresh() {
@@ -61,6 +67,22 @@ const formatStatus = (status: string) => {
     default: return status
   }
 }
+
+const queueSummary = computed(() => {
+  const q = queueSnapshot.value
+  if (!q) return ''
+  const parts = [
+    `并发上限 ${q.max_concurrent_chapters} 章`,
+    `活跃任务 ${q.active_task_count}`,
+  ]
+  if (q.running_chapters?.length) {
+    parts.push(`运行中：第 ${q.running_chapters.join('、')} 章`)
+  }
+  if (q.novel_batch_task_id) {
+    parts.push('全书连写任务进行中')
+  }
+  return parts.join(' · ')
+})
 
 const failureStats = computed(() => {
   const recent = tasks.value.slice(0, 50)
@@ -135,6 +157,7 @@ const getProgressMessage = (task: any) => {
     <div class="panel-header">
       <h2 class="panel-title">任务流水日志</h2>
       <div class="panel-header-actions">
+        <span v-if="queueSummary" class="queue-summary muted">{{ queueSummary }}</span>
         <span class="muted">{{ tasks.length }} 条记录</span>
         <el-button
           size="small"
@@ -216,7 +239,8 @@ const getProgressMessage = (task: any) => {
 }
 .task-log-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .task-timeline-container { flex: 1; min-height: 0; padding: 24px; overflow-y: auto; }
-.panel-header-actions { display: flex; align-items: center; gap: 10px; }
+.panel-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.queue-summary { font-size: 12px; }
 .timeline-list { display: flex; flex-direction: column; }
 .timeline-item { display: flex; gap: 16px; }
 .timeline-node { display: flex; flex-direction: column; align-items: center; width: 16px; }

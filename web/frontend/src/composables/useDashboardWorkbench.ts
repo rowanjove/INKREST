@@ -6,6 +6,7 @@ import {
   getChapterCount,
   getConfig,
   getEmbeddingStatus,
+  getNovelReadiness,
   getNarrativeDebt,
   getOutline,
   getScaleProfile,
@@ -14,6 +15,10 @@ import {
   listModels,
 } from '../api'
 import { inferNextChapterId, resolveEngine } from '../utils/dashboardEngine'
+import {
+  resolveVectorContextFromApis,
+  type VectorReadinessContext,
+} from '../utils/projectReadiness'
 import { useChapterStore } from '../stores/chapter'
 import { useProjectStore } from '../stores/project'
 
@@ -29,8 +34,9 @@ export function useDashboardWorkbench() {
     label: '未配置可用模型',
     route: 'default',
   })
-  const semanticSearchEffective = ref(true)
-  const vectorEnabledForProject = ref(true)
+  const vectorReadiness = ref<VectorReadinessContext>(resolveVectorContextFromApis({}, {}))
+  const semanticSearchEffective = computed(() => vectorReadiness.value.semanticSearchEffective)
+  const vectorEnabledForProject = computed(() => vectorReadiness.value.vectorEnabled)
   const form = ref({
     chapter_id: '',
     goal: '推进主线冲突，制造清晰的章节钩子，并同步人物状态。',
@@ -116,6 +122,7 @@ export function useDashboardWorkbench() {
         { data: models },
         { data: config },
         embRes,
+        readyRes,
       ] = await Promise.all([
         listAssets(),
         listChapters({ offset: 0, limit: 50, sync: true, include_gaps: false }),
@@ -124,6 +131,7 @@ export function useDashboardWorkbench() {
         listModels(),
         getConfig(),
         getEmbeddingStatus().catch(() => ({ data: {} })),
+        getNovelReadiness().catch(() => ({ data: {} })),
       ])
       assets.value = assetData
       const chapterRows = chapters.items ?? chapters
@@ -132,8 +140,7 @@ export function useDashboardWorkbench() {
       form.value.chapter_id = inferNextChapterId(chapterRows)
       outline.value = outlineData && Object.keys(outlineData).length > 0 ? outlineData : null
       engineStatus.value = resolveEngine(config, models)
-      semanticSearchEffective.value = Boolean(embRes?.data?.semantic_search_effective)
-      vectorEnabledForProject.value = embRes?.data?.vector_enabled !== false
+      vectorReadiness.value = resolveVectorContextFromApis(readyRes.data, embRes.data)
     } catch {
       assets.value = []
       chaptersList.value = []
@@ -158,6 +165,7 @@ export function useDashboardWorkbench() {
     assets,
     outline,
     engineStatus,
+    vectorReadiness,
     semanticSearchEffective,
     vectorEnabledForProject,
     form,

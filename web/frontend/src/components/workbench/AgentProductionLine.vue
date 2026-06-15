@@ -23,6 +23,8 @@ import { useTasksStore, type ProgressEntry } from '../../stores/tasks'
 import {
   buildReadinessItems,
   readinessAllOk,
+  resolveVectorContextFromApis,
+  type VectorReadinessContext,
 } from '../../utils/projectReadiness'
 
 const props = withDefaults(
@@ -31,8 +33,7 @@ const props = withDefaults(
     outline?: Record<string, unknown> | null
     assets?: Array<{ name: string; size?: number }>
     maxAvailableChapters?: number
-    semanticSearchEffective?: boolean
-    vectorEnabled?: boolean
+    vectorReadiness?: VectorReadinessContext
     workScale?: string
     /** 是否显示连写启动等控制区（工作台 true，监控页 false） */
     showControls?: boolean
@@ -42,8 +43,7 @@ const props = withDefaults(
     outline: null,
     assets: () => [],
     maxAvailableChapters: 0,
-    semanticSearchEffective: true,
-    vectorEnabled: true,
+    vectorReadiness: () => resolveVectorContextFromApis({}, {}),
     workScale: '',
     showControls: true,
   },
@@ -71,8 +71,7 @@ const readinessOk = computed(() =>
       outline: props.outline,
       assets: props.assets,
       maxAvailableChapters: props.maxAvailableChapters,
-      semanticSearchEffective: props.semanticSearchEffective,
-      vectorEnabled: props.vectorEnabled,
+      ...props.vectorReadiness,
       workScale: props.workScale,
     }),
   ),

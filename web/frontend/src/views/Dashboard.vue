@@ -45,8 +45,7 @@ const {
   assets,
   outline,
   engineStatus,
-  semanticSearchEffective,
-  vectorEnabledForProject,
+  vectorReadiness,
   form,
   chapterCountTotal,
   calibration,
@@ -327,8 +326,7 @@ onUnmounted(() => {
           :outline="outline"
           :assets="assets"
           :max-available-chapters="maxAvailableChapters"
-          :semantic-search-effective="semanticSearchEffective"
-          :vector-enabled-for-project="vectorEnabledForProject"
+          :vector-readiness="vectorReadiness"
           :work-scale="workScale"
           :scale-profile="scaleProfile"
           :chapter-count-total="chapterCountTotal"

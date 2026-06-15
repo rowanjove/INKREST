@@ -41,8 +41,7 @@ const pendingReadiness = computed(() => readinessItems.value.filter((i) => !i.ok
 const showVectorAlert = computed(() =>
   longFormVectorWarn({
     workScale: workScale.value,
-    vectorEnabled: ctx.value.vectorEnabled,
-    semanticSearchEffective: ctx.value.semanticSearchEffective,
+    ...ctx.value.vectorReadiness,
   }),
 )
 </script>
