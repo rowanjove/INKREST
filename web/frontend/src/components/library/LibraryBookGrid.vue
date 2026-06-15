@@ -61,6 +61,7 @@ defineProps<{
             待处理 {{ project.pending_alert_count }} 章
           </button>
           <h2 class="book-title" @click.stop="onOpenDetails(project)">{{ project.name }}</h2>
+          <p v-if="project.author_label" class="book-author-label">{{ project.author_label }}</p>
         </div>
 
         <div class="cover-footer">
@@ -352,6 +353,14 @@ defineProps<{
 .book-title:hover {
   text-decoration: underline;
   color: #ffe1d1 !important;
+}
+
+.book-author-label {
+  margin: 2px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+  text-shadow: 0 1px 3px rgba(72, 50, 30, 0.35);
 }
 
 .cover-footer {

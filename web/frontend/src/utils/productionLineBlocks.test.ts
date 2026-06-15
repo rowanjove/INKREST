@@ -3,6 +3,7 @@ import {
   applyRunningPipelineOverlay,
   chapterPipelineTouched,
   rawBlockStatus,
+  settleGateBlockAfterChapterComplete,
   settleQueueBlockAfterChapterStart,
 } from './productionLineBlocks'
 import type { ProgressEntry } from '../stores/tasks'
@@ -71,5 +72,73 @@ describe('productionLineBlocks', () => {
       { step: 'ensure_queue', status: 'done', chapter_id: '', timestamp: 1 },
     ]
     expect(rawBlockStatus(['ensure_queue', 'managing_editor'], entries)).toBe('done')
+  })
+
+  it('settles gate block when audit is done but gate progress was never synced', () => {
+    const entries: ProgressEntry[] = [
+      { step: 'length_fix', status: 'done', chapter_id: '002', timestamp: 3 },
+      { step: 'auditor', status: 'done', chapter_id: '002', timestamp: 2 },
+    ]
+    const blocks = settleGateBlockAfterChapterComplete(
+      [
+        {
+          id: 'audit',
+          index: 4,
+          status: 'done',
+          detailLabel: '',
+          chapterId: '',
+          label: '审校',
+          desc: '',
+          steps: ['auditor', 'length_fix'],
+        },
+        {
+          id: 'gate',
+          index: 5,
+          status: 'idle',
+          detailLabel: '',
+          chapterId: '',
+          label: 'QA',
+          desc: '',
+          steps: ['unified_gate'],
+        },
+      ],
+      entries,
+      '002',
+    )
+    expect(blocks[1]?.status).toBe('done')
+  })
+
+  it('does not settle gate block when unified_gate was blocked', () => {
+    const entries: ProgressEntry[] = [
+      { step: 'length_fix', status: 'done', chapter_id: '002', timestamp: 2 },
+      { step: 'unified_gate', status: 'blocked', chapter_id: '002', timestamp: 3 },
+    ]
+    const blocks = settleGateBlockAfterChapterComplete(
+      [
+        {
+          id: 'audit',
+          index: 4,
+          status: 'done',
+          detailLabel: '',
+          chapterId: '',
+          label: '审校',
+          desc: '',
+          steps: ['auditor', 'length_fix'],
+        },
+        {
+          id: 'gate',
+          index: 5,
+          status: 'error',
+          detailLabel: '',
+          chapterId: '',
+          label: 'QA',
+          desc: '',
+          steps: ['unified_gate'],
+        },
+      ],
+      entries,
+      '002',
+    )
+    expect(blocks[1]?.status).toBe('error')
   })
 })

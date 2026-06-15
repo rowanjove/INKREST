@@ -227,7 +227,7 @@ def suggest_chapter_goal(chapter_id: str) -> Dict[str, Any]:
 直接输出该章节目标的文本，不要包含任何旁白、前言或 Markdown 标记。"""
 
     try:
-        predicted_goal = llm.generate(prompt).strip()
+        predicted_goal = llm.generate("managing_editor", prompt).strip()
         return {"goal": predicted_goal, "source": "ai_predicted", "message": "已由 AI 结合上下文自动预测该章大纲目标"}
     except Exception as e:
         ws_server.logger.warning("Failed to predict chapter goal using LLM: %s", e)

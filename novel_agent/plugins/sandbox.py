@@ -2,16 +2,33 @@
 
 from __future__ import annotations
 
+import logging
 import multiprocessing as mp
 import pickle
 from typing import Any, Callable, Optional, TypeVar
 
 T = TypeVar("T")
 
+logger = logging.getLogger("novel_agent.plugins.sandbox")
+
+_TRUSTED_HOOK_MODULE_PREFIXES = (
+    "novel_agent.plugins.",
+    "builtins.",
+    "test_plugin_sandbox",
+    "tests.",
+)
+
+
+def _assert_trusted_hook_callable(fn: Callable[..., Any]) -> None:
+    module = getattr(fn, "__module__", "") or ""
+    if not any(module.startswith(prefix) for prefix in _TRUSTED_HOOK_MODULE_PREFIXES):
+        raise RuntimeError(f"Untrusted sandbox hook module: {module or '<unknown>'}")
+
 
 def _child_run(blob: bytes, out_queue: mp.Queue) -> None:
     try:
         fn = pickle.loads(blob)
+        _assert_trusted_hook_callable(fn)
         out_queue.put(("ok", fn()))
     except Exception as exc:
         out_queue.put(("err", repr(exc)))

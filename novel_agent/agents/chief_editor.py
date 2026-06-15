@@ -69,6 +69,56 @@ class ChiefEditorAgent(PromptAgent):
         ctx = (scale_context or "").lower()
         return any(s in ctx for s in ("epic", "infinite", "超长篇", "500", "长篇"))
 
+    def _staged_skeleton_prompt(self, base: str) -> str:
+        return (
+            f"{base}\n\n【分段生成·第1步】先输出完整 L0 设定与 macro_outline 卷级骨架。"
+            "每卷必须有 arc_id、name、chapters 跨度、goal（可简短）；"
+            "turning_point、payoff 可暂写「待定」。不要逐章清单。"
+        )
+
+    def _build_enrich_prompt(
+        self,
+        base: str,
+        theme: str,
+        genre: str,
+        outline: Dict[str, Any],
+        batch: List[Dict[str, Any]],
+    ) -> str:
+        enrich_input = json.dumps(
+            {
+                "theme": theme,
+                "genre": genre,
+                "protagonist": outline.get("protagonist"),
+                "genre_genes": outline.get("genre_genes"),
+                "arcs_to_enrich": batch,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        return (
+            f"{base}\n\n【分段生成·第2步】仅润色下列卷的 turning_point 与 payoff，"
+            "保持 arc_id、name、chapters、goal 不变。只输出 JSON："
+            '{"macro_outline":[...]}' f"\n\n## 输入\n{enrich_input}"
+        )
+
+    def _merge_enriched_arcs(
+        self,
+        macro: List[Dict[str, Any]],
+        raw_patch: str,
+        offset: int,
+    ) -> None:
+        try:
+            patch = loads_json_object(raw_patch)
+            patched = patch.get("macro_outline") if isinstance(patch, dict) else None
+            if isinstance(patched, list) and patched:
+                by_id = {str(a.get("arc_id")): a for a in patched if isinstance(a, dict)}
+                for i, arc in enumerate(macro):
+                    aid = str(arc.get("arc_id") or "")
+                    if aid in by_id:
+                        macro[i] = {**arc, **by_id[aid]}
+        except Exception as exc:
+            logger.warning("Staged arc enrich batch %s failed: %s", offset, exc)
+
     def _plan_staged(
         self,
         theme: str,
@@ -81,12 +131,7 @@ class ChiefEditorAgent(PromptAgent):
         base = self._build_prompt(
             theme, genre, target_chapters, special_requirements, scale_context
         )
-        step1 = (
-            f"{base}\n\n【分段生成·第1步】先输出完整 L0 设定与 macro_outline 卷级骨架。"
-            "每卷必须有 arc_id、name、chapters 跨度、goal（可简短）；"
-            "turning_point、payoff 可暂写「待定」。不要逐章清单。"
-        )
-        raw1 = self.run(step1)
+        raw1 = self.run(self._staged_skeleton_prompt(base))
         outline = self._parse_and_validate_outline(raw1, theme, genre, target_chapters)
         macro = outline.get("macro_outline") or []
         if len(macro) <= 1:
@@ -95,34 +140,34 @@ class ChiefEditorAgent(PromptAgent):
         batch_size = 4
         for offset in range(0, len(macro), batch_size):
             batch = macro[offset : offset + batch_size]
-            enrich_input = json.dumps(
-                {
-                    "theme": theme,
-                    "genre": genre,
-                    "protagonist": outline.get("protagonist"),
-                    "genre_genes": outline.get("genre_genes"),
-                    "arcs_to_enrich": batch,
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-            step2 = (
-                f"{base}\n\n【分段生成·第2步】仅润色下列卷的 turning_point 与 payoff，"
-                "保持 arc_id、name、chapters、goal 不变。只输出 JSON："
-                '{"macro_outline":[...]}' f"\n\n## 输入\n{enrich_input}"
-            )
-            try:
-                raw2 = self.run(step2)
-                patch = loads_json_object(raw2)
-                patched = patch.get("macro_outline") if isinstance(patch, dict) else None
-                if isinstance(patched, list) and patched:
-                    by_id = {str(a.get("arc_id")): a for a in patched if isinstance(a, dict)}
-                    for i, arc in enumerate(macro):
-                        aid = str(arc.get("arc_id") or "")
-                        if aid in by_id:
-                            macro[i] = {**arc, **by_id[aid]}
-            except Exception as exc:
-                logger.warning("Staged arc enrich batch %s failed: %s", offset, exc)
+            step2 = self._build_enrich_prompt(base, theme, genre, outline, batch)
+            self._merge_enriched_arcs(macro, self.run(step2), offset)
+        outline["macro_outline"] = macro
+        return self._validate_outline(outline, theme, genre, target_chapters)
+
+    async def _aplan_staged(
+        self,
+        theme: str,
+        genre: str,
+        target_chapters: int,
+        special_requirements: str,
+        scale_context: str,
+    ) -> Dict[str, Any]:
+        """Two-phase: skeleton macro arcs, then enrich turning_point/payoff in batches asynchronously."""
+        base = self._build_prompt(
+            theme, genre, target_chapters, special_requirements, scale_context
+        )
+        raw1 = await self.arun(self._staged_skeleton_prompt(base))
+        outline = self._parse_and_validate_outline(raw1, theme, genre, target_chapters)
+        macro = outline.get("macro_outline") or []
+        if len(macro) <= 1:
+            return outline
+
+        batch_size = 4
+        for offset in range(0, len(macro), batch_size):
+            batch = macro[offset : offset + batch_size]
+            step2 = self._build_enrich_prompt(base, theme, genre, outline, batch)
+            self._merge_enriched_arcs(macro, await self.arun(step2), offset)
         outline["macro_outline"] = macro
         return self._validate_outline(outline, theme, genre, target_chapters)
 
@@ -155,7 +200,7 @@ class ChiefEditorAgent(PromptAgent):
     ) -> Dict[str, Any]:
         """Generate a macro outline for the novel asynchronously."""
         if self._should_stage_outline(target_chapters, scale_context):
-            return self._plan_staged(
+            return await self._aplan_staged(
                 theme, genre, target_chapters, special_requirements, scale_context
             )
         prompt = self._build_prompt(

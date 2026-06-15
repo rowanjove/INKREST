@@ -15,6 +15,8 @@ import { shouldPoll } from '../utils/pollingGate'
 import { subscribePolling, unsubscribePolling } from '../utils/pollingHub'
 import { isPipelineRunning, mapContextToPetState, type PetState } from '../utils/petState'
 import { formatTaskStep } from '../utils/taskStepLabels'
+import type { FactoryDashboard } from '../types/factory'
+import { formatFactoryState } from '../utils/factoryStatus'
 
 export type { PetState }
 
@@ -80,6 +82,7 @@ export interface AssistantContext {
     pending_retry_count?: number
     pending_gate_count?: number
   }
+  factory?: FactoryDashboard
 }
 
 export interface ChatMessage {
@@ -120,11 +123,13 @@ export const usePetStore = defineStore('pet', () => {
   const loading = ref(false)
   const lastError = ref('')
   const PET_POLL_KEY = 'pet-context'
+  const PIPELINE_START_GRACE_MS = 12_000
   let petPollingActive = false
   let pipelineChannel: BroadcastChannel | null = null
   let flashTimer: number | null = null
   let wasPipelineRunning = false
   let lastActiveFailedCount = 0
+  let pipelineStartedAt = 0
 
   function readIgnoredFailedTaskIds() {
     try {
@@ -147,8 +152,15 @@ export const usePetStore = defineStore('pet', () => {
 
   const novelBatchPaused = computed(() => Boolean(context.value?.novel_batch?.paused))
 
+  const factoryState = computed(() => context.value?.factory?.factory_status?.state)
+
   const statusLabel = computed(() => {
     if (novelBatchPaused.value) return '全书已暂停'
+    if (factoryState.value === 'blocked') return formatFactoryState('blocked')
+    if (factoryState.value === 'running' && state.value === 'working') {
+      return formatFactoryState('running')
+    }
+    if (factoryState.value === 'planning') return formatFactoryState('planning')
     if (state.value === 'working') return '正在生成'
     if (state.value === 'success') return '任务完成'
     if (state.value === 'error') return '遇到错误'
@@ -168,6 +180,10 @@ export const usePetStore = defineStore('pet', () => {
   })
 
   const statusDetail = computed(() => {
+    const factoryBrief = context.value?.factory?.operator_brief
+    if (factoryBrief?.summary && (factoryState.value === 'blocked' || factoryState.value === 'planning')) {
+      return factoryBrief.summary
+    }
     if (lastError.value) return lastError.value
     const batch = context.value?.novel_batch
     if (batch?.paused) {
@@ -216,6 +232,15 @@ export const usePetStore = defineStore('pet', () => {
     return mapContextToPetState(next, ignoredFailedTaskIds.value)
   }
 
+  function isRecentPipelineStart() {
+    return pipelineStartedAt > 0 && Date.now() - pipelineStartedAt <= PIPELINE_START_GRACE_MS
+  }
+
+  function steadyStateForContext(next: AssistantContext | null): PetState {
+    if (isRecentPipelineStart() && next?.backend_health === 'ok') return 'working'
+    return mapContextToState(next)
+  }
+
   function countActiveFailed(next: AssistantContext | null): number {
     if (!next) return 0
     return (next.failed_tasks || []).filter(
@@ -249,12 +274,14 @@ export const usePetStore = defineStore('pet', () => {
   }
 
   function applyContextState(next: AssistantContext) {
-    const running = isPipelineRunning(next)
+    const remoteRunning = isPipelineRunning(next)
+    const recentStart = isRecentPipelineStart()
+    const running = remoteRunning || recentStart
     const activeFailed = countActiveFailed(next)
-    const steady = mapContextToState(next)
+    const steady = steadyStateForContext(next)
 
     if (isHiddenAtEdge.value) {
-      wasPipelineRunning = running
+      wasPipelineRunning = remoteRunning
       lastActiveFailedCount = activeFailed
       return
     }
@@ -266,7 +293,9 @@ export const usePetStore = defineStore('pet', () => {
     }
 
     if (running) {
-      wasPipelineRunning = true
+      if (remoteRunning) {
+        wasPipelineRunning = true
+      }
       state.value = steady
     } else if (wasPipelineRunning) {
       wasPipelineRunning = false
@@ -362,7 +391,7 @@ export const usePetStore = defineStore('pet', () => {
       if (isHiddenAtEdge.value) {
         state.value = `hide-${isHiddenAtEdge.value}`
       } else {
-        state.value = mapContextToState(context.value)
+        state.value = steadyStateForContext(context.value)
       }
     }
   }
@@ -372,14 +401,24 @@ export const usePetStore = defineStore('pet', () => {
     if (edge) {
       state.value = `hide-${edge}`
     } else {
-      state.value = mapContextToState(context.value)
+      state.value = steadyStateForContext(context.value)
+    }
+  }
+
+  function markPipelineActivityStarted() {
+    pipelineStartedAt = Date.now()
+    if (!isHiddenAtEdge.value && !flashTimer) {
+      state.value = 'working'
     }
   }
 
   function bindPipelineChannel() {
     if (pipelineChannel || typeof BroadcastChannel === 'undefined') return
     pipelineChannel = new BroadcastChannel('inkrest-pipeline')
-    pipelineChannel.onmessage = () => {
+    pipelineChannel.onmessage = (event) => {
+      if (event.data?.type === 'started' || event.data?.type === 'pulse') {
+        markPipelineActivityStarted()
+      }
       void refreshContext()
     }
   }
@@ -495,8 +534,12 @@ export const usePetStore = defineStore('pet', () => {
         fixType === 'test_model'
           ? '测试模型连通性'
           : fixType === 'retry_task'
-          ? `重试第 ${payload.chapter_id} 章任务`
-          : '执行建议操作'
+            ? `重试第 ${payload.chapter_id} 章任务`
+            : fixType === 'auto_repair_chapter'
+              ? `自动修复第 ${payload.chapter_id} 章`
+              : fixType === 'rerun_gate'
+                ? `重跑第 ${payload.chapter_id} 章门禁`
+                : '执行建议操作'
       }`,
       timestamp: Date.now()
     })
@@ -514,6 +557,12 @@ export const usePetStore = defineStore('pet', () => {
           )
         } else if (fixType === 'retry_task') {
           replyText = SHANSHAN_FIX_REPLY.retryTaskOk
+          setTimeout(refreshContext, 500)
+        } else if (fixType === 'auto_repair_chapter') {
+          replyText = `${data.message || '自动修复已提交。'} 修复跑完后可到工作台继续连写。`
+          setTimeout(refreshContext, 500)
+        } else if (fixType === 'rerun_gate') {
+          replyText = data.message || '门禁重跑已提交。'
           setTimeout(refreshContext, 500)
         } else {
           replyText = data.message || '操作已完成。'

@@ -7,6 +7,7 @@ import yaml
 
 from novel_agent.state.sqlite_store import SQLiteStateStore
 from novel_agent.state.update_validator import validate_state_update
+from novel_agent.state.yaml_mirror import is_yaml_mirror_enabled
 
 
 def _safe_write_yaml(path: Path, data: Any) -> None:
@@ -219,6 +220,8 @@ class StateManager:
 
     def _apply_yaml_compat_update(self, update: Dict[str, Any]) -> None:
         """Keep legacy YAML state files in sync for existing projects and tools."""
+        if not is_yaml_mirror_enabled(self.root_dir):
+            return
         state_dir = self.root_dir / "state"
         state_dir.mkdir(parents=True, exist_ok=True)
         self._merge_yaml_list(state_dir / "events.yaml", "events", update.get("events", []))

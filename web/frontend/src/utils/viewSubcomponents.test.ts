@@ -66,6 +66,7 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('book-spine-shadow')
     expect(source).toContain('book-spine')
     expect(source).toContain('pending-badge')
+    expect(source).toContain('book-author-label')
     expect(source).toContain('aria-hidden="true"')
   })
 
@@ -122,6 +123,20 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('status-detail-desc')
     expect(source.replace(/\s/g, '')).toContain('>中止<')
     expect(source).toContain('🔧 修章')
+  })
+
+  it('PetBubbleStatusTab exposes factory command buttons', () => {
+    const source = read('components/pet/PetBubbleStatusTab.vue')
+    expect(source).toContain('factory-brief-box')
+    expect(source).toContain('factoryCommands')
+    expect(source).toContain('onFactoryIntent')
+    expect(source).toContain('onFactoryRepair')
+  })
+
+  it('usePetBubbleView jumps to pipeline after factory repair', () => {
+    const source = read('composables/usePetBubbleView.ts')
+    expect(source).toContain("navigate('/workspace?focus=pipeline')")
+    expect(source).toContain('auto_repair_chapter')
   })
 
   it('PetBubbleChatTab keeps welcome card modifier', () => {
@@ -199,7 +214,7 @@ describe('refactored view subcomponents', () => {
     const source = read('components/trope/TropeBlueprintPanel.vue')
     expect(source).toContain('blueprint-slots')
     expect(source).toContain('markdown-preview')
-    expect(source).toContain('以此新建作品')
+    expect(source).toContain('用此模板开书')
     expect(source).toContain('应用到当前作品')
   })
 
@@ -301,6 +316,13 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain("expand !== 'alerts'")
     expect(source).toContain('expandPendingPanel')
     expect(source).toContain('lastExpandedQuery')
+  })
+
+  it('App starts pending product tour after onboarding route transition', () => {
+    const source = read('App.vue')
+    expect(source).toContain('route.path')
+    expect(source).toContain('maybeAutoStart')
+    expect(source).toContain('isAppTourPending')
   })
 
   it('MonitorTabsPane wires LLM log viewer on logs tab', () => {

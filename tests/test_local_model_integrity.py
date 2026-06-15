@@ -81,8 +81,9 @@ class LocalModelIntegrityTests(unittest.TestCase):
         original_state = dict(config_routes.setup_state)
         config_routes.setup_state.update({"status": "idle", "step": "", "progress": 0, "message": "", "error": None})
         try:
-            with patch.object(config_routes.threading, "Thread") as thread_class:
-                response = config_routes.post_setup_local()
+            with patch.dict(os.environ, {config_routes.ALLOW_RUNTIME_INSTALL_ENV: "1"}):
+                with patch.object(config_routes.threading, "Thread") as thread_class:
+                    response = config_routes.post_setup_local()
             self.assertEqual(response["status"], "started")
             self.assertEqual(config_routes.setup_state["status"], "running")
             thread_class.return_value.start.assert_called_once()

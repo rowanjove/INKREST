@@ -11,7 +11,9 @@ export type MaintenanceSeed = {
 }
 
 async function fetchAccessToken(request: APIRequestContext): Promise<string> {
-  const setupRes = await request.get('/api/auth/local-setup')
+  const setupRes = await request.get('/api/auth/local-setup', {
+    headers: { 'X-Novel-Agent-Local-Client': '1' },
+  })
   if (!setupRes.ok()) return ''
   const body = (await setupRes.json()) as { token?: string }
   return body.token ?? ''

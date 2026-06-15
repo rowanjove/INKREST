@@ -2,11 +2,15 @@
 
 import json
 import logging
+import os
 import shutil
+import tempfile
+import threading
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
 
@@ -15,6 +19,7 @@ from web.helpers import _copy_default_assets, _copy_default_prompts, _write_yaml
 logger = logging.getLogger("web.project_manager")
 
 MAX_PINNED_PROJECTS = 10
+LIST_PROJECTS_CACHE_TTL_SEC = 5.0
 
 
 class ProjectManager:
@@ -23,26 +28,69 @@ class ProjectManager:
     def __init__(self, base_dir: Path):
         self.base_dir = base_dir
         self.registry_path = base_dir / "projects.json"
+        self._registry_lock = threading.Lock()
+        self._list_cache: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 
-    def _read_registry(self) -> Dict[str, Any]:
+    def _invalidate_list_cache(self) -> None:
+        self._list_cache = None
+
+    def _read_registry_unlocked(self) -> Dict[str, Any]:
         if not self.registry_path.exists():
             return {"projects": {}, "active_id": None}
         try:
             data = json.loads(self.registry_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to read projects registry: %s", exc)
             return {"projects": {}, "active_id": None}
         if not isinstance(data.get("projects"), dict):
             data["projects"] = {}
         if data.get("active_id") and data["projects"].get(data["active_id"]) is None:
             data["active_id"] = None
-            self._write_registry(data)
+            self._write_registry_unlocked(data)
         return data
 
-    def _write_registry(self, data: Dict[str, Any]) -> None:
-        self.registry_path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+    def _write_registry_unlocked(self, data: Dict[str, Any]) -> None:
+        self.registry_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix="projects_registry_",
+            suffix=".json",
+            dir=str(self.registry_path.parent),
         )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_name, self.registry_path)
+        finally:
+            if os.path.exists(tmp_name):
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+        self._invalidate_list_cache()
+
+    def _mutate_registry(
+        self,
+        mutator: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        with self._registry_lock:
+            data = self._read_registry_unlocked()
+            updated = mutator(data)
+            if updated is not None:
+                self._write_registry_unlocked(updated)
+                return updated
+            self._write_registry_unlocked(data)
+            return data
+
+    def _read_registry(self) -> Dict[str, Any]:
+        with self._registry_lock:
+            return self._read_registry_unlocked()
+
+    def _write_registry(self, data: Dict[str, Any]) -> None:
+        with self._registry_lock:
+            self._write_registry_unlocked(data)
 
     @staticmethod
     def _iso_to_epoch(iso: str) -> float:
@@ -81,35 +129,39 @@ class ProjectManager:
 
     def touch_activity(self, pid: str) -> None:
         """Record project edit time in registry (for library sort)."""
-        data = self._read_registry()
-        proj = data.get("projects", {}).get(pid)
-        if not proj:
-            return
-        proj["updated_at"] = datetime.now().isoformat()
-        self._write_registry(data)
+
+        def mutate(data: Dict[str, Any]) -> None:
+            proj = data.get("projects", {}).get(pid)
+            if not proj:
+                return
+            proj["updated_at"] = datetime.now().isoformat()
+
+        self._mutate_registry(mutate)
 
     def set_pinned(self, pid: str, pinned: bool) -> Dict[str, Any]:
-        data = self._read_registry()
-        projects = data.get("projects", {})
-        if pid not in projects:
-            raise HTTPException(404, f"Project {pid} not found")
+        def mutate(data: Dict[str, Any]) -> Dict[str, Any]:
+            projects = data.get("projects", {})
+            if pid not in projects:
+                raise HTTPException(404, f"Project {pid} not found")
 
-        proj = projects[pid]
-        if pinned:
-            if not proj.get("pinned"):
-                pinned_count = sum(1 for p in projects.values() if p.get("pinned"))
-                if pinned_count >= MAX_PINNED_PROJECTS:
-                    raise HTTPException(
-                        400,
-                        f"最多置顶 {MAX_PINNED_PROJECTS} 本书，请先取消其它置顶",
-                    )
-            proj["pinned"] = True
-            proj["pinned_at"] = datetime.now().isoformat()
-        else:
-            proj.pop("pinned", None)
-            proj.pop("pinned_at", None)
+            proj = projects[pid]
+            if pinned:
+                if not proj.get("pinned"):
+                    pinned_count = sum(1 for p in projects.values() if p.get("pinned"))
+                    if pinned_count >= MAX_PINNED_PROJECTS:
+                        raise HTTPException(
+                            400,
+                            f"最多置顶 {MAX_PINNED_PROJECTS} 本书，请先取消其它置顶",
+                        )
+                proj["pinned"] = True
+                proj["pinned_at"] = datetime.now().isoformat()
+            else:
+                proj.pop("pinned", None)
+                proj.pop("pinned_at", None)
+            return data
 
-        self._write_registry(data)
+        data = self._mutate_registry(mutate)
+        proj = data["projects"][pid]
         return {
             "id": pid,
             "pinned": bool(proj.get("pinned")),
@@ -118,6 +170,10 @@ class ProjectManager:
         }
 
     def list_projects(self) -> List[Dict[str, Any]]:
+        now = time.monotonic()
+        if self._list_cache and now - self._list_cache[0] < LIST_PROJECTS_CACHE_TTL_SEC:
+            return [dict(item) for item in self._list_cache[1]]
+
         data = self._read_registry()
         projects: List[Dict[str, Any]] = []
         for pid, info in data.get("projects", {}).items():
@@ -167,6 +223,7 @@ class ProjectManager:
                 "chapter_count": chapter_count,
                 "total_words": total_words,
                 "genre": meta.get("genre", ""),
+                "author_label": str(meta.get("author_label") or "").strip(),
                 "channel": meta.get("channel", ""),
                 "target_chapters": meta.get("target_chapters", 0),
                 "has_cover": any((project_dir / f"cover{suffix}").exists() for suffix in (".jpg", ".png", ".webp")),
@@ -180,6 +237,7 @@ class ProjectManager:
             return (1, -self._iso_to_epoch(str(act)))
 
         projects.sort(key=sort_key)
+        self._list_cache = (now, [dict(item) for item in projects])
         return projects
 
     def create_project(self, name: str, description: str = "") -> Dict[str, Any]:
@@ -195,7 +253,6 @@ class ProjectManager:
 
         config_path = project_dir / "config" / "pipeline.yaml"
         if not config_path.exists():
-            # llm / embedding live in repo config/pipeline.yaml (global for all books).
             _write_yaml(
                 config_path,
                 {
@@ -208,38 +265,57 @@ class ProjectManager:
             )
 
         now = datetime.now().isoformat()
-        data = self._read_registry()
-        if "projects" not in data:
-            data["projects"] = {}
-        data["projects"][pid] = {
-            "name": name,
-            "description": description,
-            "created_at": now,
-            "updated_at": now,
-            "pinned": False,
-        }
-        self._write_registry(data)
 
+        def mutate(data: Dict[str, Any]) -> Dict[str, Any]:
+            data.setdefault("projects", {})[pid] = {
+                "name": name,
+                "description": description,
+                "created_at": now,
+                "updated_at": now,
+                "pinned": False,
+            }
+            return data
+
+        self._mutate_registry(mutate)
         return {"id": pid, "name": name, "description": description}
 
+    def register_project(
+        self,
+        pid: str,
+        entry: Dict[str, Any],
+        *,
+        set_active: bool = False,
+    ) -> None:
+        def mutate(data: Dict[str, Any]) -> Dict[str, Any]:
+            data.setdefault("projects", {})[pid] = entry
+            if set_active:
+                data["active_id"] = pid
+            return data
+
+        self._mutate_registry(mutate)
+
     def delete_project(self, pid: str) -> None:
-        data = self._read_registry()
-        if pid not in data.get("projects", {}):
-            raise HTTPException(404, f"Project {pid} not found")
-        project_dir = self.base_dir / "projects" / pid
-        if project_dir.exists():
-            shutil.rmtree(project_dir)
-        del data["projects"][pid]
-        if data.get("active_id") == pid:
-            data["active_id"] = None
-        self._write_registry(data)
+        def mutate(data: Dict[str, Any]) -> Dict[str, Any]:
+            if pid not in data.get("projects", {}):
+                raise HTTPException(404, f"Project {pid} not found")
+            project_dir = self.base_dir / "projects" / pid
+            if project_dir.exists():
+                shutil.rmtree(project_dir)
+            del data["projects"][pid]
+            if data.get("active_id") == pid:
+                data["active_id"] = None
+            return data
+
+        self._mutate_registry(mutate)
 
     def switch_project(self, pid: str) -> Dict[str, Any]:
-        data = self._read_registry()
-        if pid not in data.get("projects", {}):
-            raise HTTPException(404, f"Project {pid} not found")
-        data["active_id"] = pid
-        self._write_registry(data)
+        def mutate(data: Dict[str, Any]) -> Dict[str, Any]:
+            if pid not in data.get("projects", {}):
+                raise HTTPException(404, f"Project {pid} not found")
+            data["active_id"] = pid
+            return data
+
+        data = self._mutate_registry(mutate)
         return {"id": pid, "name": data["projects"][pid]["name"]}
 
     def get_active_id(self) -> Optional[str]:

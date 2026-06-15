@@ -21,11 +21,18 @@ from web.routes.assistant import router as assistant_router
 from web.routes.covers import router as covers_router
 from web.routes.outlines import router as outlines_router
 from web.routes.agent_api import router as agent_api_router
-from web.security import AccessTokenMiddleware, authorize_websocket
+from web.routes.factory import router as factory_router
+from web.security import (
+    ACCESS_TOKEN_ENV,
+    ACCESS_TOKEN_HEADER,
+    AccessTokenMiddleware,
+    authorize_websocket,
+    _tokens_match,
+)
 from web.routes.system import router as system_router
 from web.routes.auth import router as auth_router
 
-app = FastAPI(title="Novel Agent API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Novel Agent API", version="1.0.0", lifespan=lifespan)
 app.add_middleware(AccessTokenMiddleware)
 
 _logger = logging.getLogger("web.app")
@@ -97,6 +104,7 @@ app.include_router(plugins_router)
 app.include_router(covers_router)
 app.include_router(outlines_router)
 app.include_router(agent_api_router)
+app.include_router(factory_router)
 app.include_router(system_router)
 app.include_router(auth_router)
 
@@ -109,6 +117,15 @@ if os.environ.get("E2E_FIXTURES", "").strip() in ("1", "true", "yes"):
 def _require_enabled_web_extension(loaded_plugin) -> None:
     if not loaded_plugin.enabled:
         raise HTTPException(404, "Plugin web extension is disabled")
+
+
+def _require_access_token(request: Request) -> None:
+    expected = os.environ.get(ACCESS_TOKEN_ENV, "")
+    if not expected:
+        return
+    supplied = request.headers.get(ACCESS_TOKEN_HEADER, "")
+    if not _tokens_match(supplied, expected):
+        raise HTTPException(401, "Invalid or missing access token")
 
 
 _mounted_web_extensions = {}
@@ -142,7 +159,10 @@ def mount_plugin_web_extensions(pm) -> None:
             previous_count = len(app.router.routes)
             app.include_router(
                 plugin_router,
-                dependencies=[Depends(_enabled_web_extension_dependency(name))],
+                dependencies=[
+                    Depends(_require_access_token),
+                    Depends(_enabled_web_extension_dependency(name)),
+                ],
             )
             new_routes = app.router.routes[previous_count:]
             if new_routes:
@@ -159,8 +179,8 @@ def mount_plugin_web_extensions(pm) -> None:
 try:
     from web.context import get_plugin_manager
     mount_plugin_web_extensions(get_plugin_manager())
-except Exception:
-    pass
+except Exception as exc:
+    _logger.warning("Plugin web extensions were not mounted: %s", exc)
 
 # Serve Vue frontend
 DIST_DIR = Path(__file__).resolve().parent / "frontend" / "dist"

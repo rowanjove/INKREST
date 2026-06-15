@@ -38,6 +38,13 @@ def main() -> int:
     index_js = sorted((DST / "assets").glob("index-*.js"))
     label = index_js[0].name if index_js else "(no index chunk)"
     print(f"Synced frontend dist -> {DST} ({label})")
+
+    manifest_src = ROOT / "web" / "factory_modes.json"
+    manifest_dst = DST.parents[1] / "factory_modes.json"
+    if manifest_src.is_file():
+        manifest_dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(manifest_src, manifest_dst)
+        print(f"Synced factory manifest -> {manifest_dst}")
     return 0
 
 

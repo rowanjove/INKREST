@@ -186,7 +186,12 @@ class SecurityRegressionTests(unittest.TestCase):
             self.assertTrue(os.environ["NOVEL_AGENT_ACCESS_TOKEN"])
 
     def test_loopback_local_setup_returns_token(self):
-        from web.security import bootstrap_loopback_access_token, ACCESS_TOKEN_ENV
+        from web.security import (
+            LOCAL_SETUP_HEADER,
+            LOCAL_SETUP_HEADER_VALUE,
+            bootstrap_loopback_access_token,
+            ACCESS_TOKEN_ENV,
+        )
 
         with patch.dict(
             os.environ,
@@ -199,7 +204,12 @@ class SecurityRegressionTests(unittest.TestCase):
             os.environ.pop(ACCESS_TOKEN_ENV, None)
             bootstrap_loopback_access_token(self.base_dir)
             client = TestClient(web_app)
-            response = client.get("/api/auth/local-setup")
+            rejected = client.get("/api/auth/local-setup")
+            response = client.get(
+                "/api/auth/local-setup",
+                headers={LOCAL_SETUP_HEADER: LOCAL_SETUP_HEADER_VALUE},
+            )
+        self.assertEqual(rejected.status_code, 403)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json().get("token"))
 
@@ -224,6 +234,83 @@ class SecurityRegressionTests(unittest.TestCase):
             )
         self.assertEqual(denied.status_code, 401)
         self.assertEqual(allowed.status_code, 200)
+
+    def test_local_model_setup_is_disabled_without_explicit_opt_in(self):
+        from fastapi import HTTPException
+        from web.routes.config import post_setup_local
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NOVEL_AGENT_ALLOW_RUNTIME_INSTALL", None)
+            with patch("web.routes.config.threading.Thread") as thread_cls:
+                with self.assertRaises(HTTPException) as ctx:
+                    post_setup_local()
+
+        self.assertEqual(ctx.exception.status_code, 403)
+        thread_cls.assert_not_called()
+
+    def test_model_endpoint_allows_loopback_for_local_first_models(self):
+        from web.security import validate_outbound_model_base_url
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NOVEL_AGENT_ALLOW_PRIVATE_MODEL_ENDPOINTS", None)
+            self.assertEqual(
+                validate_outbound_model_base_url("http://127.0.0.1:11434/v1"),
+                "http://127.0.0.1:11434/v1",
+            )
+            self.assertEqual(
+                validate_outbound_model_base_url("http://localhost:1234/v1"),
+                "http://localhost:1234/v1",
+            )
+
+    def test_model_endpoint_rejects_private_lan_endpoint(self):
+        from web.security import validate_outbound_model_base_url
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NOVEL_AGENT_ALLOW_PRIVATE_MODEL_ENDPOINTS", None)
+            with self.assertRaisesRegex(ValueError, "private or local networks"):
+                validate_outbound_model_base_url("http://192.168.1.20:9999/v1")
+
+    def test_export_markdown_matches_requested_chapter_id_exactly(self):
+        from web.routes.database import export_markdown_internal
+
+        chapters_dir = self.base_dir / "workspace" / "chapters"
+        for chapter_id, text in (
+            ("001", "only chapter one"),
+            ("011", "wrong chapter eleven"),
+            ("101", "wrong chapter one hundred one"),
+        ):
+            chapter_dir = chapters_dir / f"chapter_{chapter_id}"
+            chapter_dir.mkdir(parents=True)
+            (chapter_dir / "chapter_final.txt").write_text(text, encoding="utf-8")
+
+        output_path = self.tmpdir / "export.md"
+
+        export_markdown_internal(
+            self.base_dir,
+            output_path,
+            chapter_ids=["1"],
+            title="Exact Export",
+        )
+
+        exported = output_path.read_text(encoding="utf-8")
+        self.assertIn("only chapter one", exported)
+        self.assertNotIn("wrong chapter eleven", exported)
+        self.assertNotIn("wrong chapter one hundred one", exported)
+
+    def test_export_markdown_raises_when_selection_has_no_chapters(self):
+        from web.routes.database import export_markdown_internal
+
+        chapter_dir = self.base_dir / "workspace" / "chapters" / "chapter_001"
+        chapter_dir.mkdir(parents=True)
+        (chapter_dir / "chapter_final.txt").write_text("chapter one", encoding="utf-8")
+
+        with self.assertRaises(ValueError):
+            export_markdown_internal(
+                self.base_dir,
+                self.tmpdir / "empty.md",
+                chapter_ids=["999"],
+                title="Empty Export",
+            )
 
     def test_websocket_rejects_query_string_token(self):
         from web.security import ACCESS_TOKEN_ENV, ACCESS_TOKEN_HEADER, websocket_has_access_token
@@ -321,6 +408,46 @@ class SecurityRegressionTests(unittest.TestCase):
             for path in (root / rel).rglob("*.ts"):
                 source = path.read_text(encoding="utf-8")
                 self.assertNotIn("execSync(", source, str(path.relative_to(root)))
+
+    def test_import_zip_slip_traversal_denied(self):
+        client = TestClient(web_app)
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("../traversal_target.txt", "evil data")
+        
+        response = client.post(
+            "/api/projects/import-zip",
+            files={"file": ("traversal.zip", payload.getvalue(), "application/zip")},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("traversal", response.json()["detail"].lower())
+        
+        outside_file = self.base_dir / "traversal_target.txt"
+        parent_outside_file = self.base_dir.parent / "traversal_target.txt"
+        self.assertFalse(outside_file.exists())
+        self.assertFalse(parent_outside_file.exists())
+
+    def test_db_write_lock_always_returns_result_in_async_context(self):
+        import asyncio
+        from novel_agent.state.sqlite_schema import db_write_lock
+        
+        class MockStore:
+            def __init__(self, db_path):
+                self.db_path = db_path
+            
+            @db_write_lock
+            def write_something(self, val):
+                return {"result": val}
+        
+        store = MockStore(self.base_dir / "test.db")
+        store.db_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        async def call_in_loop():
+            return store.write_something("hello")
+        
+        res = asyncio.run(call_in_loop())
+        self.assertIsInstance(res, dict)
+        self.assertEqual(res, {"result": "hello"})
 
 
 if __name__ == "__main__":

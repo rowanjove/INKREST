@@ -61,12 +61,14 @@ class TestFallbackVectorStore(unittest.TestCase):
         
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT INTO vector_embeddings VALUES (?, ?, ?, ?, ?)",
-                ("id_1024", "prose_chunk", "文本1", vec_1024_blob, '{"chapter": "001"}')
+                "INSERT INTO vector_embeddings (id, type, text, embedding, metadata, chapter_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("id_1024", "prose_chunk", "文本1", vec_1024_blob, '{"chapter": "001"}', "001"),
             )
             conn.execute(
-                "INSERT INTO vector_embeddings VALUES (?, ?, ?, ?, ?)",
-                ("id_1536", "prose_chunk", "文本2", vec_1536_blob, '{"chapter": "002"}')
+                "INSERT INTO vector_embeddings (id, type, text, embedding, metadata, chapter_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("id_1536", "prose_chunk", "文本2", vec_1536_blob, '{"chapter": "002"}', "002"),
             )
             conn.commit()
             

@@ -1,6 +1,7 @@
 import { type Ref } from 'vue'
 import { shouldPoll } from '../utils/pollingGate'
 import { useChapterStore } from '../stores/chapter'
+import { useFactoryStore } from '../stores/factory'
 import { useTasksStore } from '../stores/tasks'
 
 export function useDashboardPolling(options: {
@@ -9,6 +10,7 @@ export function useDashboardPolling(options: {
 }) {
   const { activeTab, loadSerialData } = options
   const chapterStore = useChapterStore()
+  const factoryStore = useFactoryStore()
   const tasksStore = useTasksStore()
 
   let timer: number | undefined
@@ -20,6 +22,7 @@ export function useDashboardPolling(options: {
       if (!shouldPoll()) return
       if (tasksStore.isRunning) {
         chapterStore.refreshAll()
+        void factoryStore.refreshDashboard()
       }
       if (activeTab.value === 'serialization') {
         void loadSerialData()

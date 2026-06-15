@@ -337,12 +337,17 @@ class ApiChaptersTests(ApiTestBase):
             self.assertEqual(res_json["source"], "outline_preset")
 
             # Case 2: No chapter preset, triggers AI generation
-            # Mock the PipelineConfig and LLM response
+            # Fake the PipelineConfig while preserving the real LLM generate(role, prompt) contract.
             with patch("novel_agent.pipeline.PipelineConfig.from_config") as mock_from_config:
-                mock_llm = MagicMock()
-                mock_llm.generate.return_value = "AI预测出来的第三章目标"
+                class FakeLLM:
+                    def generate(self, role, prompt):
+                        self.role = role
+                        self.prompt = prompt
+                        return "AI预测出来的第三章目标"
+
+                fake_llm = FakeLLM()
                 mock_config = MagicMock()
-                mock_config.get_llm.return_value = mock_llm
+                mock_config.get_llm.return_value = fake_llm
                 mock_from_config.return_value = mock_config
 
                 response = client.get("/api/chapters/003/suggest-goal")
@@ -350,6 +355,7 @@ class ApiChaptersTests(ApiTestBase):
                 res_json = response.json()
                 self.assertEqual(res_json["goal"], "AI预测出来的第三章目标")
                 self.assertEqual(res_json["source"], "ai_predicted")
+                self.assertEqual(fake_llm.role, "managing_editor")
         finally:
             web_server._active_project_id = original_active
             web_server.BASE_DIR = original_base

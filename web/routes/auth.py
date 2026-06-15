@@ -13,6 +13,7 @@ from web.security import (
     bootstrap_loopback_access_token,
     is_loopback_client,
     is_loopback_host,
+    is_trusted_local_setup_request,
     BIND_HOST_ENV,
 )
 
@@ -31,6 +32,8 @@ def local_access_setup(request: Request) -> Dict[str, Any]:
         raise HTTPException(403, "Local setup is only available on loopback bind hosts")
     if not is_loopback_client(request):
         raise HTTPException(403, "Local setup is only available to loopback clients")
+    if not is_trusted_local_setup_request(request):
+        raise HTTPException(403, "Local setup requires a trusted same-origin client")
     token = bootstrap_loopback_access_token()
     if not token:
         raise HTTPException(503, "Access token is not configured")

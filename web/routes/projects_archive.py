@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from fastapi import APIRouter, HTTPException, UploadFile, File
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
@@ -67,7 +68,17 @@ def _extract_and_validate_zip(tmp_path: Path, project_dir: Path) -> None:
             member_path = (project_dir / info.filename).resolve()
             if resolved_dest not in member_path.parents and member_path != resolved_dest:
                 raise HTTPException(400, f"Zip member attempts directory traversal: {info.filename}")
-        zf.extractall(project_dir)
+        
+        # 安全地逐个解包到已验证的物理绝对路径，规避 extractall 二次解析路径导致的防御绕过
+        import shutil
+        for info in infos:
+            member_path = (project_dir / info.filename).resolve()
+            if info.is_dir():
+                member_path.mkdir(parents=True, exist_ok=True)
+            else:
+                member_path.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info) as source, open(member_path, "wb") as target:
+                    shutil.copyfileobj(source, target)
 
 
 def _parse_imported_project_metadata(project_dir: Path) -> Tuple[str, str, bool, str]:
@@ -100,9 +111,6 @@ def _parse_imported_project_metadata(project_dir: Path) -> Tuple[str, str, bool,
 
 def _register_imported_project(pid: str, name: str, description: str, import_pinned: bool, import_pinned_at: str) -> None:
     now = datetime.now().isoformat()
-    registry = ws_server.project_manager._read_registry()
-    if "projects" not in registry:
-        registry["projects"] = {}
     entry: Dict[str, Any] = {
         "name": name,
         "description": description,
@@ -110,15 +118,85 @@ def _register_imported_project(pid: str, name: str, description: str, import_pin
         "updated_at": now,
     }
     if import_pinned:
+        registry = ws_server.project_manager._read_registry()
         pinned_count = sum(1 for p in registry.get("projects", {}).values() if p.get("pinned"))
         if pinned_count < MAX_PINNED_PROJECTS:
             entry["pinned"] = True
             entry["pinned_at"] = import_pinned_at or now
-    registry["projects"][pid] = entry
-    ws_server.project_manager._write_registry(registry)
+    ws_server.project_manager.register_project(pid, entry)
+
+
+class BatchExportRequest(BaseModel):
+    project_ids: List[str]
 
 
 # ---- API Endpoints ----
+
+@router.post("/api/projects/batch-export-zip")
+def batch_export_projects_zip(req: BatchExportRequest) -> FileResponse:
+    if not req.project_ids:
+        raise HTTPException(400, "project_ids is required")
+    if len(req.project_ids) > 20:
+        raise HTTPException(400, "A single batch export supports at most 20 projects")
+
+    data = ws_server.project_manager._read_registry()
+    projects = data.get("projects", {})
+    unique_ids: List[str] = []
+    for pid in req.project_ids:
+        ws_server._validate_id(pid, "project_id")
+        if pid not in projects:
+            raise HTTPException(404, f"Project {pid} not found")
+        if pid not in unique_ids:
+            unique_ids.append(pid)
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False, prefix="studio_batch_export_")
+    tmp_path = Path(tmp.name)
+    tmp.close()
+
+    try:
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            manifest = {
+                "exported_at": datetime.now().isoformat(),
+                "project_ids": unique_ids,
+                "count": len(unique_ids),
+            }
+            zf.writestr("batch_export_manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+            for pid in unique_ids:
+                project_dir = ws_server.BASE_DIR / "projects" / pid
+                info = projects.get(pid, {})
+                info_data = {
+                    "name": info.get("name", pid),
+                    "description": info.get("description", ""),
+                    "pinned": bool(info.get("pinned")),
+                    "pinned_at": info.get("pinned_at") or "",
+                    "exported_at": datetime.now().isoformat(),
+                }
+                zf.writestr(
+                    f"{pid}/project_info.json",
+                    json.dumps(info_data, ensure_ascii=False, indent=2),
+                )
+                for path in project_dir.rglob("*"):
+                    if not path.is_file() or path.is_symlink():
+                        continue
+                    try:
+                        path.resolve().relative_to(project_dir.resolve())
+                    except ValueError:
+                        continue
+                    rel_path = path.relative_to(project_dir).as_posix()
+                    if rel_path == "project_info.json" or _is_executable_archive_member(rel_path):
+                        continue
+                    zf.write(str(path), f"{pid}/{rel_path}")
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(500, f"Batch export failed: {exc}") from exc
+
+    return FileResponse(
+        str(tmp_path),
+        filename="inkrest-studio-batch-export.zip",
+        media_type="application/octet-stream",
+        background=BackgroundTask(tmp_path.unlink, missing_ok=True),
+    )
+
 
 @router.get("/api/projects/{pid}/export-zip")
 def export_project_zip(pid: str) -> FileResponse:

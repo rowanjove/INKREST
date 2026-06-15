@@ -63,6 +63,48 @@ class ApiProjectsTests(ApiTestBase):
             web_server._active_project_id = original_active
             web_server.BASE_DIR = original_base
 
+    def test_update_author_label_persists_and_lists(self):
+        original_active = web_server._active_project_id
+        original_base = web_server.BASE_DIR
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            web_server._active_project_id = None
+            pid = "author_label_proj"
+            project_dir = self.tmpdir / "projects" / pid
+            (project_dir / "config").mkdir(parents=True)
+            (project_dir / "config" / "project_meta.json").write_text("{}", encoding="utf-8")
+            registry = {
+                "projects": {
+                    pid: {
+                        "name": "标签测试书",
+                        "description": "",
+                        "created_at": "2026-06-13T00:00:00",
+                        "updated_at": "2026-06-13T00:00:00",
+                    }
+                },
+                "active_id": pid,
+            }
+            (self.tmpdir / "projects.json").write_text(json.dumps(registry), encoding="utf-8")
+            web_server.project_manager = web_server.ProjectManager(self.tmpdir)
+
+            client = TestClient(web_app)
+            response = client.put(
+                f"/api/projects/{pid}/author-label",
+                json={"author_label": "夜雨笔名"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["author_label"], "夜雨笔名")
+
+            meta = json.loads((project_dir / "config" / "project_meta.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["author_label"], "夜雨笔名")
+
+            listed = client.get("/api/projects").json()
+            matched = next(item for item in listed if item["id"] == pid)
+            self.assertEqual(matched["author_label"], "夜雨笔名")
+        finally:
+            web_server._active_project_id = original_active
+            web_server.BASE_DIR = original_base
+
     def test_create_project_saves_resolved_scale_profile(self):
         original_active = web_server._active_project_id
         original_base = web_server.BASE_DIR

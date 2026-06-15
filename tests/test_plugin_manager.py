@@ -2,6 +2,7 @@ import shutil
 import tempfile
 import unittest
 import uuid
+from unittest.mock import patch
 from pathlib import Path
 
 import yaml
@@ -265,6 +266,40 @@ PLUGIN_CLASS = TestHook
         finally:
             web_app.router.routes[:] = original_routes
             _mounted_web_extensions.pop("test_dynamic", None)
+
+    def test_web_extension_route_requires_access_token_outside_api_prefix(self):
+        route_path = f"/extension-{uuid.uuid4().hex}"
+        router = APIRouter()
+
+        @router.get(route_path)
+        def endpoint():
+            return {"status": "ok"}
+
+        class Extension:
+            def get_router(self):
+                return router
+
+        loaded = type("Loaded", (), {"enabled": True, "instance": Extension()})()
+        pm = type("Manager", (), {"allow_web_extensions": True, "plugins": {"test_token_guard": loaded}})()
+        original_routes = list(web_app.router.routes)
+        try:
+            mount_plugin_web_extensions(pm)
+            client = TestClient(web_app)
+            with patch.dict("os.environ", {"NOVEL_AGENT_ACCESS_TOKEN": "plugin-token"}):
+                denied = client.get(route_path)
+                allowed = client.get(route_path, headers={"X-Novel-Agent-Token": "plugin-token"})
+
+            self.assertEqual(denied.status_code, 401)
+            self.assertEqual(allowed.status_code, 200)
+        finally:
+            web_app.router.routes[:] = original_routes
+            _mounted_web_extensions.pop("test_token_guard", None)
+
+    def test_plugin_routes_reject_invalid_plugin_name(self):
+        client = TestClient(web_app)
+        response = client.put("/api/plugins/bad%5Cname/toggle", json={"enabled": True})
+
+        self.assertEqual(response.status_code, 400)
 
     def test_enable_disable_toggle(self):
         pm = PluginManager(self.temp_dir)

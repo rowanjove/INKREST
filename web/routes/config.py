@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 import web.context as ws_server
 import web.helpers as ws_helpers
+from web.security import ALLOW_RUNTIME_INSTALL_ENV, validate_outbound_model_base_url
 from web.model_library import ModelLibrary
 
 ws_server._mask_config_secrets = ws_helpers._mask_config_secrets
@@ -28,6 +29,13 @@ from novel_agent.pipeline import (
 )
 
 router = APIRouter()
+
+
+def _validated_model_base_url(raw_url: str) -> str:
+    try:
+        return validate_outbound_model_base_url(raw_url)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _cleanup_llm_flat_keys(llm: Dict[str, Any]) -> None:
@@ -264,11 +272,12 @@ def test_embedding_config(req: EmbeddingTestRequest) -> Dict[str, Any]:
             test_model = "text-embedding-3"
         elif provider in ("dashscope", "bailian"):
             root = (base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1").rstrip("/")
-            test_url = f"{root}/embeddings"
+            test_url = f"{_validated_model_base_url(root)}/embeddings"
             test_key = api_key
             test_model = model if model else "text-embedding-v3"
         else:  # openai
-            test_url = f"{base_url.rstrip('/')}/embeddings" if base_url else "https://api.openai.com/v1/embeddings"
+            root = _validated_model_base_url(base_url or "https://api.openai.com/v1")
+            test_url = f"{root}/embeddings"
             test_key = api_key
             test_model = model if model else "text-embedding-3-small"
             
@@ -328,54 +337,24 @@ setup_state = {
 def run_pip_install(args: list) -> None:
     import sys
     import subprocess
-    import importlib
 
-    # Try 1: Use sys.executable (works for both dev and frozen modes via main.py python-stub interceptor)
+    # Use only the current interpreter; never fall back to PATH python/pip.
     cmd = [sys.executable, "-m", "pip", "install"] + args
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0, timeout=300)
+        res = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            timeout=300,
+        )
         if res.returncode == 0:
             return
-        ws_server.logger.warning(f"sys.executable pip install failed with code {res.returncode}. stdout: {res.stdout}, stderr: {res.stderr}")
+        raise RuntimeError(
+            f"pip install failed with code {res.returncode}. stderr: {res.stderr.strip()}"
+        )
     except Exception as e:
-        ws_server.logger.warning(f"sys.executable pip install raised exception: {e}")
-
-    try:
-        cmd = ["python", "-m", "pip", "install"] + args
-        res = subprocess.run(cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0, timeout=300)
-        if res.returncode == 0:
-            return
-    except Exception:
-        pass
-
-    # Try 3: Try running "python3" from PATH
-    try:
-        cmd = ["python3", "-m", "pip", "install"] + args
-        res = subprocess.run(cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0, timeout=300)
-        if res.returncode == 0:
-            return
-    except Exception:
-        pass
-
-    # Try 4: In-process execution using pip API (if bundled or available in sys.path)
-    try:
-        importlib.invalidate_caches()
-        try:
-            from pip._internal import main as pipmain
-        except ImportError:
-            try:
-                from pip import main as pipmain
-            except ImportError:
-                import pip._internal.main as pipmain_mod
-                pipmain = pipmain_mod.main
-        
-        ret = pipmain(["install"] + args)
-        if ret == 0:
-            return
-        else:
-            raise RuntimeError(f"Pip in-process returned exit code {ret}")
-    except Exception as e:
-        raise RuntimeError(f"无法找到或执行 pip 安装环境: {str(e)}")
+        raise RuntimeError(f"Unable to run pip install with the current interpreter: {str(e)}")
 
 
 def _load_model_sha256() -> Dict[str, str]:
@@ -661,6 +640,11 @@ def rebuild_embedding_index():
 @router.post("/api/config/embedding/setup-local")
 def post_setup_local():
     global setup_state
+    if os.environ.get(ALLOW_RUNTIME_INSTALL_ENV, "").lower() not in ("1", "true", "yes"):
+        raise HTTPException(
+            403,
+            f"Runtime dependency installation is disabled. Set {ALLOW_RUNTIME_INSTALL_ENV}=1 to enable it.",
+        )
     with setup_lock:
         if setup_state["status"] == "running":
             return {"status": "already_running"}

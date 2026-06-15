@@ -11,6 +11,20 @@ from novel_agent.logging_config import get_logger
 
 logger = get_logger("agents.base")
 
+def _assert_safe_model_base_url(base_url: str) -> None:
+    from urllib.parse import urlparse
+
+    from web.security import (
+        is_dev_model_host,
+        is_loopback_host,
+        validate_outbound_model_base_url,
+    )
+
+    host = urlparse(str(base_url or "")).hostname or ""
+    if is_loopback_host(host) or is_dev_model_host(host):
+        return
+    validate_outbound_model_base_url(base_url)
+
 
 # Re-export for backward compatibility
 __all__ = [
@@ -197,6 +211,7 @@ class OpenAILLM:
     def generate(self, role: str, prompt: str) -> str:
         from novel_agent.progress import check_aborted
         check_aborted()
+        _assert_safe_model_base_url(self.base_url)
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         headers: Dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
@@ -272,6 +287,7 @@ class OpenAILLM:
     async def agenerate(self, role: str, prompt: str) -> str:
         from novel_agent.progress import check_aborted
         check_aborted()
+        _assert_safe_model_base_url(self.base_url)
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         headers: Dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:

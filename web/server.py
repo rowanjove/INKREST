@@ -31,6 +31,7 @@ from web.routes import assets as _route_assets  # noqa: F401
 from web.routes import assistant as _route_assistant  # noqa: F401
 from web.routes import covers as _route_covers  # noqa: F401
 from web.routes import outlines as _route_outlines  # noqa: F401
+from web.routes import factory as _route_factory  # noqa: F401
 
 # Models re-export
 from web.models import (
@@ -52,6 +53,8 @@ _project_lock = _ctx._project_lock
 # ---- Context helpers ----
 get_root_dir = _ctx.get_root_dir
 require_project_root = _ctx.require_project_root
+activate_project = _ctx.activate_project
+reset_plugin_manager = _ctx.reset_plugin_manager
 _get_task_manager = _ctx._get_task_manager
 get_project_store = _ctx.get_project_store
 _has_active_tasks = _ctx._has_active_tasks

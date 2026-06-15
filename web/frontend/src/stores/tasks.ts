@@ -10,7 +10,17 @@ function pulsePetPipelineRefresh() {
     /* BroadcastChannel unavailable */
   }
 }
+import {
+  buildTasksWebSocketUrl,
+  RUNTIME_LOG_POLL_INTERVAL_MS,
+  TASK_POLL_INTERVAL_MS,
+  TASK_WS_BACKUP_POLL_MS,
+  TASK_WS_HEARTBEAT_MS,
+  TASK_WS_RECONNECT_MS,
+} from '../composables/useTaskTransport'
 import { shouldPoll } from '../utils/pollingGate'
+import { PRODUCTION_BLOCKS } from '../constants/pipelineDisplay'
+import { chapterHasGateFailure } from '../utils/productionLineBlocks'
 import { usePipelineAlertsStore } from './pipelineAlerts'
 
 export interface LogEntry {
@@ -226,8 +236,29 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
+  const GATE_STEPS = PRODUCTION_BLOCKS.find((block) => block.id === 'gate')?.steps ?? []
+
+  function ensureGateProgressDone(chapterId: string) {
+    if (!chapterId || chapterHasGateFailure(progress.value, chapterId)) return
+    const now = Date.now()
+    for (const step of GATE_STEPS) {
+      const idx = progress.value.findIndex(
+        (entry) => entry.chapter_id === chapterId && entry.step === step,
+      )
+      if (idx < 0) {
+        progress.value.push({
+          step,
+          status: 'done',
+          chapter_id: chapterId,
+          timestamp: now,
+        })
+      } else if (progress.value[idx].status === 'running') {
+        progress.value[idx] = { ...progress.value[idx], status: 'done', timestamp: now }
+      }
+    }
+  }
+
   function markComplete(chapterId: string) {
-    isRunning.value = false
     progress.value.forEach(p => {
       if (p.chapter_id === chapterId && p.status === 'running') {
         p.status = 'done'
@@ -236,6 +267,13 @@ export const useTasksStore = defineStore('tasks', () => {
         p.status = 'done'
       }
     })
+    ensureGateProgressDone(chapterId)
+    const hasOtherRunning = progress.value.some(
+      (entry) => entry.status === 'running' && entry.chapter_id !== chapterId,
+    )
+    if (!hasOtherRunning) {
+      isRunning.value = false
+    }
     try {
       usePipelineAlertsStore().fetchAlerts()
     } catch {
@@ -277,18 +315,39 @@ export const useTasksStore = defineStore('tasks', () => {
     step?: string
     message?: string
     chapter_id?: string
+    type?: string
+    status?: string
   }) {
     if (row.id != null && row.id <= lastRuntimeLogId.value) return
     if (row.id != null) lastRuntimeLogId.value = Math.max(lastRuntimeLogId.value, row.id)
     const ts = row.timestamp
     const timestamp =
       typeof ts === 'number' ? (ts > 1e12 ? ts : ts * 1000) : Date.now()
+    const rowType = row.type || 'log'
+    const chapterId = row.chapter_id || ''
+
+    if (rowType === 'progress' && row.step) {
+      const status = (row.status || 'running') as ProgressEntry['status']
+      addProgress({
+        step: row.step,
+        status,
+        chapter_id: chapterId,
+        timestamp,
+      })
+      return
+    }
+
+    if (rowType === 'complete' && chapterId) {
+      markComplete(chapterId)
+      return
+    }
+
     addLog({
       timestamp,
       step: row.step || '',
       message: row.message || '',
       level: normalizeLogLevel(row.level, row.message || ''),
-      chapter_id: row.chapter_id,
+      chapter_id: chapterId,
     })
   }
 
@@ -311,7 +370,7 @@ export const useTasksStore = defineStore('tasks', () => {
     runtimeLogPollConsumers += 1
     if (runtimeLogTimer) return
     pollRuntimeLogs()
-    runtimeLogTimer = window.setInterval(pollRuntimeLogs, 3000)
+    runtimeLogTimer = window.setInterval(pollRuntimeLogs, RUNTIME_LOG_POLL_INTERVAL_MS)
   }
 
   function stopRuntimeLogPolling() {
@@ -344,19 +403,8 @@ export const useTasksStore = defineStore('tasks', () => {
   let wsUsePollingFallback = false
   let taskPollConsumers = 0
   let wsAllowReconnect = true
-  const WS_BACKUP_POLL_MS = 4000
-
-
-  const isTauriClient =
-    typeof window !== 'undefined' &&
-    ((window as any).__TAURI_METADATA__ !== undefined ||
-      (window as any).__TAURI_INTERNALS__ !== undefined ||
-      window.location.protocol === 'tauri:')
-
   function wsTasksUrl(): string {
-    if (isTauriClient) return 'ws://127.0.0.1:8000/ws/tasks'
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${proto}//${window.location.host}/ws/tasks`
+    return buildTasksWebSocketUrl()
   }
 
   function isNovelPipelineTask(task: TaskSummary): boolean {
@@ -460,7 +508,7 @@ export const useTasksStore = defineStore('tasks', () => {
       if (wsSocket?.readyState === WebSocket.OPEN) {
         wsSocket.send('ping')
       }
-    }, 45000)
+    }, TASK_WS_HEARTBEAT_MS)
   }
 
   function stopWsHeartbeat() {
@@ -508,7 +556,7 @@ export const useTasksStore = defineStore('tasks', () => {
         stopWsHeartbeat()
         stopWsBackupPoll()
         if (!wsUsePollingFallback && wsAllowReconnect && taskPollConsumers > 0) {
-          wsFallbackTimer = window.setTimeout(connectTaskWebSocket, 5000)
+          wsFallbackTimer = window.setTimeout(connectTaskWebSocket, TASK_WS_RECONNECT_MS)
         }
       }
     } catch {
@@ -520,7 +568,7 @@ export const useTasksStore = defineStore('tasks', () => {
   function startPollingFallback() {
     if (pollingTimer) return
     pollTasks()
-    pollingTimer = window.setInterval(pollTasks, 2000)
+    pollingTimer = window.setInterval(pollTasks, TASK_POLL_INTERVAL_MS)
   }
 
   function startWsBackupPoll() {
@@ -528,7 +576,7 @@ export const useTasksStore = defineStore('tasks', () => {
     void pollTasks()
     wsBackupPollTimer = window.setInterval(() => {
       void pollTasks()
-    }, WS_BACKUP_POLL_MS)
+    }, TASK_WS_BACKUP_POLL_MS)
   }
 
   function stopWsBackupPoll() {

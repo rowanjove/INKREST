@@ -123,3 +123,25 @@ def format_work_snapshot_line(work: Dict[str, Any]) -> str:
     outline_ok = "已有卷纲" if work.get("has_macro_outline") else "卷纲待完善"
     target_part = f"/{target}" if target > 0 else ""
     return f"{scale}，已写 {written}{target_part} 章，{outline_ok}"
+
+
+def format_factory_brief(factory: Dict[str, Any]) -> str:
+    """Compact factory-console summary for the pet assistant."""
+    status = factory.get("factory_status") if isinstance(factory.get("factory_status"), dict) else {}
+    brief = factory.get("operator_brief") if isinstance(factory.get("operator_brief"), dict) else {}
+    repair = factory.get("repair") if isinstance(factory.get("repair"), dict) else {}
+    mode = factory.get("mode_profile") if isinstance(factory.get("mode_profile"), dict) else {}
+    state = str(status.get("state") or "unknown")
+    completed = int(status.get("completed_chapters") or 0)
+    target = int(status.get("target_chapters") or 0)
+    blocked = int(repair.get("blocked_count") or 0)
+    progress = f"{completed}/{target}" if target else str(completed)
+    lines = [
+        f"模式 {mode.get('label') or '新手全自动'}",
+        f"状态 {state}，进度 {progress} 章",
+    ]
+    if blocked:
+        lines.append(f"阻断 {blocked} 章")
+    if brief.get("summary"):
+        lines.append(str(brief["summary"]))
+    return "；".join(lines)

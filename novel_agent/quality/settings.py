@@ -20,8 +20,12 @@ _SCALE_PERSONA_DEFAULTS: Dict[str, str] = {
 
 
 def resolve_quality_mode(root_dir: Path) -> str:
+    from novel_agent.control.factory_policy import factory_effect
     from novel_agent.pipeline import load_pipeline_settings
 
+    factory_mode = factory_effect(root_dir, "quality_mode")
+    if isinstance(factory_mode, str) and factory_mode in VALID_QUALITY_MODES:
+        return factory_mode
     raw = load_pipeline_settings(root_dir).get("chapter", {}).get("quality_mode", "report_only")
     mode = str(raw or "report_only").strip()
     return mode if mode in VALID_QUALITY_MODES else "report_only"
@@ -42,8 +46,12 @@ def quality_gate_blocks(report: Dict[str, Any], mode: str) -> bool:
 
 
 def resolve_quality_auto_rewrite(root_dir: Path) -> bool:
+    from novel_agent.control.factory_policy import factory_effect
     from novel_agent.pipeline import load_pipeline_settings
 
+    factory_rewrite = factory_effect(root_dir, "quality_auto_rewrite")
+    if factory_rewrite is not None:
+        return bool(factory_rewrite)
     chapter = load_pipeline_settings(root_dir).get("chapter", {})
     if "quality_auto_rewrite" in chapter:
         return bool(chapter.get("quality_auto_rewrite"))
@@ -57,8 +65,12 @@ def default_persona_mode_for_scale(scale: str) -> str:
 
 def resolve_persona_evaluations(root_dir: Path) -> str:
     """Resolved mode: off | full | on_fail_only (never returns auto)."""
+    from novel_agent.control.factory_policy import factory_effect
     from novel_agent.pipeline import load_pipeline_settings
 
+    factory_persona = factory_effect(root_dir, "persona_evaluations")
+    if isinstance(factory_persona, str) and factory_persona in VALID_PERSONA_MODES:
+        return factory_persona
     raw_value = load_pipeline_settings(root_dir).get("chapter", {}).get(
         "persona_evaluations", "auto"
     )

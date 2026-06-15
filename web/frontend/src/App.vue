@@ -27,6 +27,8 @@ import {
 } from './api'
 import SetupWizard from './components/SetupWizard.vue'
 import FirstBookGuide from './components/workbench/FirstBookGuide.vue'
+const AppTourOverlay = defineAsyncComponent(() => import('./components/AppTourOverlay.vue'))
+import { isAppTourPending, isOnboardingCompleted, useAppTour } from './composables/useAppTour'
 const NovelBatchRunDialog = defineAsyncComponent(
   () => import('./components/NovelBatchRunDialog.vue'),
 )
@@ -47,6 +49,20 @@ const handleWizardCompleted = () => {
 const route = useRoute()
 const router = useRouter()
 const projectStore = useProjectStore()
+const {
+  active: tourActive,
+  stepIndex: tourStepIndex,
+  currentStep: tourStep,
+  totalSteps: tourTotalSteps,
+  nextStep: tourNextStep,
+  prevStep: tourPrevStep,
+  skipTour,
+  maybeAutoStart,
+  openTour,
+} = useAppTour(router)
+provide('openAppTour', () => {
+  void openTour(0)
+})
 const tasksStore = useTasksStore()
 type EngineStage = { label: string; detail: string; ok: boolean; warn?: boolean }
 
@@ -95,7 +111,16 @@ function onPipelineStarted() {
 }
 
 onMounted(async () => {
+  await projectStore.fetchProjects()
   await projectStore.fetchCurrent()
+  if (
+    !isOnboardingCompleted() &&
+    projectStore.projects.length === 0 &&
+    route.path !== '/onboarding' &&
+    !isPetRoute.value
+  ) {
+    await router.push('/onboarding')
+  }
   await loadEngineStatus()
   tasksStore.connectElectronEvents()
   tasksStore.startPolling()
@@ -123,12 +148,25 @@ onMounted(async () => {
       void checkBackendHealth()
     }, 10_000)
   }
+
+  if (isOnboardingCompleted() && !isPetRoute.value) {
+    void maybeAutoStart()
+  }
 })
 
 watch(
   () => projectStore.currentProject?.id,
   () => {
     void loadEngineStatus()
+  },
+)
+
+watch(
+  () => route.path,
+  () => {
+    if (isOnboardingCompleted() && isAppTourPending() && !isPetRoute.value) {
+      void maybeAutoStart()
+    }
   },
 )
 
@@ -462,6 +500,7 @@ const loadEngineStatus = async () => {
           <template #reference>
             <button
               class="engine-pill"
+              data-tour="engine-pill"
               :class="{ checking: engineChecking, ready: engineReady && !engineChecking, warn: engineWarn && !engineChecking }"
             >
               <span class="engine-dot" />
@@ -518,6 +557,7 @@ const loadEngineStatus = async () => {
 
         <button
           class="nav-item settings-btn"
+          data-tour="config-nav"
           :class="{ active: activePath === '/config' }"
           @click="router.push('/config')"
         >
@@ -535,6 +575,16 @@ const loadEngineStatus = async () => {
       :visible="showSetupWizard"
       @close="showSetupWizard = false"
       @completed="handleWizardCompleted"
+    />
+
+    <AppTourOverlay
+      :visible="tourActive"
+      :step="tourStep"
+      :step-index="tourStepIndex"
+      :total-steps="tourTotalSteps"
+      @next="tourNextStep"
+      @prev="tourPrevStep"
+      @skip="skipTour"
     />
 
     <FirstBookGuide

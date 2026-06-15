@@ -19,7 +19,7 @@ defineProps<{
 </script>
 
 <template>
-  <main class="blueprint-workbench">
+  <main class="blueprint-workbench" data-tour="trope-workbench">
     <div class="workbench-header">
       <h3>套路组装工作台</h3>
       <div class="workbench-actions">
@@ -29,7 +29,7 @@ defineProps<{
           @click="onOpenCreateDialog"
           :icon="MagicStick"
         >
-          以此新建作品
+          用此模板开书
         </el-button>
         <el-button
           type="primary"

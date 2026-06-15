@@ -346,11 +346,21 @@ async def get_assistant_context() -> Dict[str, Any]:
     except Exception:
         pass
 
+    factory: Dict[str, Any] = {}
+    try:
+        if root:
+            from web.routes.factory import get_factory_dashboard
+
+            factory = get_factory_dashboard()
+    except Exception:
+        factory = {}
+
     return {
         "backend_health": "ok",
         "active_project": _active_project_summary(),
         "pipeline_active": pipeline_active,
         "work": work,
+        "factory": factory,
         "running_tasks": running,
         "failed_tasks": failed,
         "recent_logs": merged_recent,
@@ -635,7 +645,43 @@ async def execute_assistant_fix(req: FixRequest) -> Dict[str, Any]:
             }
         except Exception as exc:
             return {"success": False, "error": str(exc)}
-            
+
+    elif fix_type == "auto_repair_chapter":
+        chapter_id = payload.get("chapter_id")
+        if not chapter_id:
+            raise HTTPException(400, "Missing chapter_id in payload")
+        try:
+            from web.routes.chapters.tasks import rewrite_chapter
+
+            task = await rewrite_chapter(str(chapter_id))
+            return {
+                "success": True,
+                "task_id": task.task_id,
+                "message": f"第 {chapter_id} 章已提交自动修复",
+            }
+        except HTTPException as exc:
+            return {"success": False, "error": str(exc.detail)}
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}
+
+    elif fix_type == "rerun_gate":
+        chapter_id = payload.get("chapter_id")
+        if not chapter_id:
+            raise HTTPException(400, "Missing chapter_id in payload")
+        try:
+            from web.routes.chapters.tasks import rerun_chapter_gate
+
+            task = await rerun_chapter_gate(str(chapter_id))
+            return {
+                "success": True,
+                "task_id": task.task_id,
+                "message": f"第 {chapter_id} 章已提交门禁重跑",
+            }
+        except HTTPException as exc:
+            return {"success": False, "error": str(exc.detail)}
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}
+
     else:
         raise HTTPException(400, f"Unsupported fix type: {fix_type}")
 

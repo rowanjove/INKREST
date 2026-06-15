@@ -10,10 +10,14 @@ import ThemeRoot from './ThemeRoot.vue'
 import router from './router'
 import { bootstrapLocalAccessToken } from './api'
 
-initTheme()
-void bootstrapLocalAccessToken()
+async function startApp() {
+  initTheme()
+  await bootstrapLocalAccessToken()
 
-const app = createApp(ThemeRoot)
-app.use(createPinia())
-app.use(router)
-app.mount('#app')
+  const app = createApp(ThemeRoot)
+  app.use(createPinia())
+  app.use(router)
+  app.mount('#app')
+}
+
+void startApp()

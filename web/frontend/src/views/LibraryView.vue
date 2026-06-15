@@ -1,15 +1,53 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { Document, Plus, Upload } from '@element-plus/icons-vue'
+import { computed, defineAsyncComponent, inject, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { Document, MagicStick, Plus, Upload } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { apiErrorMessage, importDemoProject } from '../api'
 import EmptyStatePanel from '../components/EmptyStatePanel.vue'
 import LibraryBookGrid from '../components/library/LibraryBookGrid.vue'
 import LibraryDialogs from '../components/library/LibraryDialogs.vue'
+const StudioProductionBoard = defineAsyncComponent(
+  () => import('../components/studio/StudioProductionBoard.vue'),
+)
 import { useProjectStore } from '../stores/project'
 import { useLibraryProjects, MAX_PINNED } from '../composables/useLibraryProjects'
 import { useLibraryDescription } from '../composables/useLibraryDescription'
 import { useLibraryCover } from '../composables/useLibraryCover'
 
+const router = useRouter()
 const projectStore = useProjectStore()
+const libraryTab = ref<'books' | 'studio'>('books')
+const importingDemo = ref(false)
+const openAppTour = inject<(() => void) | undefined>('openAppTour', undefined)
+
+const emptyLibraryActions = computed(() => [
+  { label: '导入示例书', type: 'primary' as const, icon: MagicStick, onClick: importDemo },
+  { label: '新建小说', type: 'success' as const, plain: true, icon: Plus, onClick: goCreate },
+  { label: '导入项目包', type: 'warning' as const, plain: true, icon: Upload, onClick: triggerUpload },
+  { label: '安装向导', type: 'default' as const, plain: true, onClick: goOnboarding },
+])
+
+async function importDemo() {
+  importingDemo.value = true
+  try {
+    const { data } = await importDemoProject()
+    await projectStore.fetchProjects()
+    await projectStore.fetchCurrent()
+    ElMessage.success(
+      data.status === 'existing' ? '示例书已打开，可进入工厂控制台体验' : '示例书已导入，可进入工厂控制台体验',
+    )
+    router.push('/workspace?focus=pipeline')
+  } catch (error: unknown) {
+    ElMessage.error(apiErrorMessage(error, '示例书导入失败'))
+  } finally {
+    importingDemo.value = false
+  }
+}
+
+function goOnboarding() {
+  router.push('/onboarding')
+}
 
 const {
   searchQuery,
@@ -94,10 +132,10 @@ void fileInput
 
 <template>
   <section class="library-page">
-    <header class="page-head">
+    <header class="page-head" data-tour="library-header">
       <div class="page-title-area">
         <h1>我的书库</h1>
-        <p>选择项目继续创作，或用预设创建一本新小说。</p>
+        <p>选择项目继续创作；首次使用可先导入示例书，约 1 分钟跑通工厂流程。</p>
       </div>
       <div class="header-actions">
         <el-input
@@ -107,6 +145,17 @@ void fileInput
           placeholder="搜索书名、题材、简介…"
           clearable
         />
+        <el-button v-if="openAppTour" text type="primary" @click="openAppTour()">新手引导</el-button>
+        <el-button
+          v-if="projectStore.projects.length === 0"
+          type="primary"
+          plain
+          :icon="MagicStick"
+          :loading="importingDemo"
+          @click="importDemo"
+        >
+          导入示例书
+        </el-button>
         <el-button type="warning" plain :icon="Upload" @click="triggerUpload">导入项目包</el-button>
         <el-button type="primary" :icon="Plus" @click="goCreate">新建小说</el-button>
         <input
@@ -119,16 +168,21 @@ void fileInput
       </div>
     </header>
 
+    <el-tabs v-model="libraryTab" class="library-tabs">
+      <el-tab-pane label="书库" name="books" />
+      <el-tab-pane label="工作室看板" name="studio" />
+    </el-tabs>
+
+    <StudioProductionBoard v-if="libraryTab === 'studio'" />
+
+    <template v-else>
     <EmptyStatePanel
       v-if="projectStore.projects.length === 0"
       class="empty-library"
       :icon="Document"
-      title="还没有小说项目"
-      description="创建项目后即可进入多 Agent 工作台。"
-      :actions="[
-        { label: '导入项目包', type: 'warning', plain: true, icon: Upload, onClick: triggerUpload },
-        { label: '新建小说', type: 'primary', icon: Plus, onClick: goCreate },
-      ]"
+      title="书库还是空的"
+      description="推荐先导入示例书体验工厂全流程；也可走安装向导配置环境，或直接新建作品。"
+      :actions="emptyLibraryActions"
     />
 
     <p
@@ -157,6 +211,8 @@ void fileInput
       :on-handle-delete="handleDelete"
       :on-handle-export-format="handleExportFormat"
     />
+
+    </template>
 
     <LibraryDialogs
       v-model:details-visible="detailsVisible"
@@ -204,9 +260,13 @@ void fileInput
 </template>
 
 <style scoped>
+.library-tabs {
+  margin-top: -4px;
+}
+
 .library-page {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   align-content: start;
   gap: 16px;
   min-height: calc(100vh - 120px);

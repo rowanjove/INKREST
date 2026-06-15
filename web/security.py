@@ -8,8 +8,10 @@ import ipaddress
 import json
 import os
 import secrets
+import socket
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -18,11 +20,15 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 ACCESS_TOKEN_ENV = "NOVEL_AGENT_ACCESS_TOKEN"
 ACCESS_TOKEN_HEADER = "X-Novel-Agent-Token"
+LOCAL_SETUP_HEADER = "X-Novel-Agent-Local-Client"
+LOCAL_SETUP_HEADER_VALUE = "1"
 BIND_HOST_ENV = "NOVEL_AGENT_HOST"
 ALLOW_REMOTE_ENV = "NOVEL_AGENT_ALLOW_REMOTE"
 DISABLE_LOCAL_TOKEN_ENV = "NOVEL_AGENT_DISABLE_LOCAL_TOKEN"
 LOCAL_TOKEN_FILENAME = ".local_access_token"
 PUBLIC_API_PATHS = frozenset({"/api/health", "/api/auth/local-setup"})
+ALLOW_RUNTIME_INSTALL_ENV = "NOVEL_AGENT_ALLOW_RUNTIME_INSTALL"
+ALLOW_PRIVATE_MODEL_ENDPOINTS_ENV = "NOVEL_AGENT_ALLOW_PRIVATE_MODEL_ENDPOINTS"
 
 
 def _tokens_match(supplied: str, expected: str) -> bool:
@@ -32,6 +38,16 @@ def _tokens_match(supplied: str, expected: str) -> bool:
     if len(supplied) != len(expected):
         return False
     return hmac.compare_digest(supplied, expected)
+
+
+def is_trusted_local_setup_request(request: Request) -> bool:
+    """Reject cross-site fetches that try to steal the loopback access token."""
+    if request.headers.get(LOCAL_SETUP_HEADER) != LOCAL_SETUP_HEADER_VALUE:
+        return False
+    sec_fetch_site = request.headers.get("sec-fetch-site", "").strip().lower()
+    if sec_fetch_site and sec_fetch_site not in ("same-origin", "same-site", "none"):
+        return False
+    return True
 
 
 def is_loopback_client(request: Request) -> bool:
@@ -88,6 +104,16 @@ def bootstrap_loopback_access_token(root_dir: Optional[Path] = None) -> Optional
     return token
 
 
+def is_dev_model_host(host: str) -> bool:
+    """Hosts used by unit tests and local mocks (skip live DNS guard)."""
+    normalized = (host or "").strip().lower()
+    if not normalized:
+        return False
+    if normalized in ("test", "testserver", "invalid", "localhost"):
+        return True
+    return normalized.endswith((".test", ".invalid", ".localhost"))
+
+
 def is_loopback_host(host: str) -> bool:
     normalized = host.strip().lower()
     if normalized == "localhost":
@@ -105,6 +131,35 @@ def require_remote_token(host: str, allow_remote: bool, token: str) -> None:
         raise ValueError("Non-loopback binding requires --allow-remote")
     if not token:
         raise ValueError("Remote serving requires NOVEL_AGENT_ACCESS_TOKEN")
+
+
+def _allows_private_model_endpoints() -> bool:
+    return os.environ.get(ALLOW_PRIVATE_MODEL_ENDPOINTS_ENV, "").lower() in ("1", "true", "yes")
+
+
+def validate_outbound_model_base_url(raw_url: str) -> str:
+    """Reject model endpoints that can target local or private networks."""
+    url = str(raw_url or "").strip()
+    parsed = urlparse(url)
+    host = parsed.hostname
+    if not host:
+        raise ValueError("Model endpoint host is required")
+    try:
+        addr_infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        raise ValueError(f"Model endpoint host cannot be resolved: {host}") from exc
+    resolved_ips = [ipaddress.ip_address(info[4][0]) for info in addr_infos]
+    is_loopback = bool(resolved_ips) and all(ip.is_loopback for ip in resolved_ips)
+    for ip in resolved_ips:
+        if ip.is_loopback:
+            continue
+        if ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            if not _allows_private_model_endpoints():
+                raise ValueError("Model endpoint cannot target private or local networks")
+    if parsed.scheme != "https" and not is_loopback:
+        if not _allows_private_model_endpoints():
+            raise ValueError("Model endpoint must use https")
+    return url.rstrip("/")
 
 
 def enforce_remote_auth_at_startup() -> None:

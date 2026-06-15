@@ -110,6 +110,24 @@ BATCH_BANNER = ROOT / "web" / "frontend" / "src" / "components" / "BatchRunStatu
 AGENT_PRODUCTION_LINE = (
     ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "AgentProductionLine.vue"
 )
+FACTORY_CONTROL_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "FactoryControlPanel.vue"
+)
+PRODUCTION_PLAN_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "ProductionPlanPanel.vue"
+)
+FACTORY_PIPELINE_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "FactoryPipelinePanel.vue"
+)
+REPAIR_COMMAND_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "RepairCommandPanel.vue"
+)
+LONGFORM_STABILITY_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "LongformStabilityPanel.vue"
+)
+NATURALNESS_RISK_PANEL = (
+    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "NaturalnessRiskPanel.vue"
+)
 CHAPTER_DETAIL = ROOT / "web" / "frontend" / "src" / "views" / "ChapterDetail.vue"
 CHAPTER_DETAIL_HEADER = (
     ROOT / "web" / "frontend" / "src" / "components" / "chapter" / "ChapterDetailHeader.vue"
@@ -180,6 +198,55 @@ def test_dashboard_auto_accepts_pending_state_candidates() -> None:
     assert "candidate.status === 'pending'" in serial_source
     assert "await approveAllProjectCandidates(pid)" in serial_source
     assert "默认自动通过" in serialization_pane
+
+
+def test_onboarding_view_exposes_three_step_flow() -> None:
+    source = (ROOT / "web" / "frontend" / "src" / "views" / "OnboardingView.vue").read_text(encoding="utf-8")
+    assert "SystemReadinessPanel" in source
+    assert "importDemoProject" in source
+    assert "el-steps" in source
+    assert "跳过向导，直接去书库" in source
+    assert "进入工厂控制台" in source
+
+
+def test_library_view_exposes_studio_tab() -> None:
+    source = (ROOT / "web" / "frontend" / "src" / "views" / "LibraryView.vue").read_text(encoding="utf-8")
+    assert "StudioProductionBoard" in source
+    assert "工作室看板" in source
+    assert "importDemoProject" in source
+    assert "导入示例书" in source
+
+
+def test_dashboard_exposes_factory_first_screen_panels() -> None:
+    dashboard = DASHBOARD.read_text(encoding="utf-8")
+    assert "FactoryControlPanel" in dashboard
+    assert "ProductionPlanPanel" in dashboard
+    assert "FactoryPipelinePanel" in dashboard
+    assert "LongformStabilityPanel" in dashboard
+    assert "NaturalnessRiskPanel" in dashboard
+    assert "factory-risk-grid" in dashboard
+    assert ':quality="qualitySummary"' in dashboard
+    assert "RepairCommandPanel" in dashboard
+    assert '@next-step="handleProductionPlanNextStep"' in dashboard
+    assert "useFactoryStore" in dashboard
+    assert "factory-first-screen" in dashboard
+    assert "factory-control-panel" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")
+    assert "factory-export-check" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")
+    assert "production-plan-panel" in PRODUCTION_PLAN_PANEL.read_text(encoding="utf-8")
+    assert "factory-pipeline-panel" in FACTORY_PIPELINE_PANEL.read_text(encoding="utf-8")
+    assert "quality-summary-strip" in FACTORY_PIPELINE_PANEL.read_text(encoding="utf-8")
+    assert "longform-stability-panel" in LONGFORM_STABILITY_PANEL.read_text(encoding="utf-8")
+    assert "naturalness-risk-panel" in NATURALNESS_RISK_PANEL.read_text(encoding="utf-8")
+    assert "repair-command-panel" in REPAIR_COMMAND_PANEL.read_text(encoding="utf-8")
+    assert "继续生产" in REPAIR_COMMAND_PANEL.read_text(encoding="utf-8")
+    assert "continueProduction" in REPAIR_COMMAND_PANEL.read_text(encoding="utf-8")
+    assert "continueProduction" in dashboard
+    assert "openBatchRunDialog" in dashboard
+    assert "useFactoryAdvancedView" in dashboard
+    assert "showFactoryAdvanced" in dashboard
+    assert "factory-repair-compact" in dashboard
+    assert "factory-author-label" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")
+    assert "展开高级指标" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")
 
 
 def test_pet_abort_button_uses_short_label() -> None:
@@ -330,7 +397,10 @@ def test_embedding_config_stays_collapsed_by_default() -> None:
 
 
 def test_api_errors_prefer_backend_detail_over_status_text() -> None:
+    api_client = ROOT / "web" / "frontend" / "src" / "api" / "client.ts"
     api_source = FRONTEND_API.read_text(encoding="utf-8")
+    if api_client.is_file():
+        api_source = api_client.read_text(encoding="utf-8") + "\n" + api_source
     library_source = LIBRARY_PROJECTS.read_text(encoding="utf-8")
     chapter_list_source = CHAPTER_LIST_COMPOSABLE.read_text(encoding="utf-8")
     writer_chapter_source = WRITER_CHAPTER.read_text(encoding="utf-8")
@@ -737,7 +807,7 @@ def test_trope_blueprint_panel_keeps_slots_and_preview() -> None:
     source = TROPE_BLUEPRINT_PANEL.read_text(encoding="utf-8")
     assert "blueprint-slots" in source
     assert "markdown-preview" in source
-    assert "以此新建作品" in source
+    assert "用此模板开书" in source
     assert "应用到当前作品" in source
 
 

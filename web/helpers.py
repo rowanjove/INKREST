@@ -74,6 +74,11 @@ def _template_assets_dir() -> Path:
     return BASE_DIR / "assets"
 
 
+def _demo_projects_dir() -> Path:
+    """Bundled demo novels (dev repo assets/ or Electron templates/assets/)."""
+    return _template_assets_dir() / "demo_projects"
+
+
 def _copy_default_assets(target_assets: Path) -> None:
     default_assets = _template_assets_dir()
     if not default_assets.exists():
@@ -163,13 +168,11 @@ def _copy_default_prompts(target_prompts: Path) -> None:
     defaults_src = default_prompts / "defaults"
     defaults_dst = target_prompts / "defaults"
     defaults_dst.mkdir(exist_ok=True)
-    for f in default_prompts.glob("*.md"):
-        target = defaults_dst / f.name
-        shutil.copy2(f, target)
     if defaults_src.exists():
         for f in defaults_src.glob("*.md"):
             target = defaults_dst / f.name
-            shutil.copy2(f, target)
+            if not target.exists():
+                shutil.copy2(f, target)
 
 
 def _init_prompt_defaults(root: Path) -> None:

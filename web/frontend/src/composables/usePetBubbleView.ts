@@ -3,6 +3,7 @@ import { usePetStore } from '../stores/pet'
 import { abortTask } from '../api'
 import { SHANSHAN_SUGGESTED_QUESTIONS } from '../constants/shanshanCopy'
 import { renderPetMarkdown } from '../utils/petMarkdown'
+import { resolveFactoryIntent } from './useFactoryActions'
 
 export type PetBubbleTab = 'status' | 'chat'
 
@@ -104,10 +105,27 @@ export function usePetBubbleView() {
   async function handleActionClick(action: PetAction) {
     if (action.type === 'navigate') {
       navigate((action.payload?.route as string) || '/')
-    } else {
-      await pet.executeFix(action.type, action.payload || {})
-      scrollToBottom()
+      return
     }
+    if (action.type === 'factory_intent') {
+      const intent = String(action.payload?.intent || '')
+      if (intent) {
+        resolveFactoryIntent(intent, { navigate })
+      }
+      return
+    }
+    await pet.executeFix(action.type, action.payload || {})
+    scrollToBottom()
+  }
+
+  function handleFactoryIntent(intent: string) {
+    resolveFactoryIntent(intent, { navigate })
+  }
+
+  async function handleFactoryRepair(chapterId: string) {
+    await pet.executeFix('auto_repair_chapter', { chapter_id: chapterId })
+    scrollToBottom()
+    navigate('/workspace?focus=pipeline')
   }
 
   async function handleAbortRunningTask() {
@@ -139,6 +157,8 @@ export function usePetBubbleView() {
     handleSend,
     handleSuggestQuestion,
     handleActionClick,
+    handleFactoryIntent,
+    handleFactoryRepair,
     handleAbortRunningTask,
     scrollToBottom,
     setChatContainer,

@@ -98,6 +98,11 @@ class ExportersTests(unittest.TestCase):
         self.assertIn("第 001 章", content)
         self.assertIn("雨一直在下。", content)
 
+    def test_export_txt_raises_value_error_if_selection_has_no_chapters(self):
+        self._create_dummy_chapter("001", "Title", "Body")
+        with self.assertRaises(ValueError):
+            export_txt(self.tmpdir, self.tmpdir / "empty.txt", chapter_ids=["999"])
+
     # -----------------------------------------------------------------------
     # EPUB Exporter Tests
     # -----------------------------------------------------------------------

@@ -29,6 +29,23 @@ logger = get_logger("state.vector_store")
 _SQLITE_VECTOR_SCAN_CAP = 2500
 
 
+def normalize_chapter_id_value(chapter_id: str) -> str:
+    value = str(chapter_id or "").strip()
+    if value.isdigit():
+        return f"{int(value):03d}"
+    return value
+
+
+def chapter_id_from_metadata(metadata: Optional[Dict[str, Any]]) -> str:
+    if not metadata:
+        return ""
+    raw = metadata.get("chapter") or metadata.get("chapter_id") or ""
+    text = str(raw).strip().lower().replace("chapter_", "")
+    if not text:
+        return ""
+    return normalize_chapter_id_value(text)
+
+
 def chapter_num_from_metadata(metadata: Optional[Dict[str, Any]]) -> Optional[int]:
     if not metadata:
         return None
@@ -180,14 +197,62 @@ class SQLiteEmbeddingVectorStore:
                     type TEXT,
                     text TEXT,
                     embedding BLOB,
-                    metadata TEXT
+                    metadata TEXT,
+                    chapter_id TEXT
                 )
                 """
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_vector_embeddings_type ON vector_embeddings(type)"
             )
+            columns = {
+                row[1] for row in conn.execute("pragma table_info(vector_embeddings)").fetchall()
+            }
+            if "chapter_id" not in columns:
+                conn.execute("ALTER TABLE vector_embeddings ADD COLUMN chapter_id TEXT")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vector_embeddings_chapter_id "
+                "ON vector_embeddings(chapter_id)"
+            )
+            self._backfill_chapter_ids(conn)
             conn.commit()
+
+    def _backfill_chapter_ids(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute(
+            "SELECT id, metadata FROM vector_embeddings "
+            "WHERE chapter_id IS NULL OR chapter_id = ''"
+        ).fetchall()
+        updates = []
+        for row_id, metadata_raw in rows:
+            meta: Dict[str, Any] = {}
+            if metadata_raw:
+                try:
+                    meta = json.loads(metadata_raw)
+                except json.JSONDecodeError:
+                    meta = {}
+            chapter_id = chapter_id_from_metadata(meta)
+            if chapter_id:
+                updates.append((chapter_id, row_id))
+        if updates:
+            conn.executemany(
+                "UPDATE vector_embeddings SET chapter_id = ? WHERE id = ?",
+                updates,
+            )
+
+    def _clear_hnsw_disk_cache(self) -> None:
+        if hasattr(self, "_hnsw_indices"):
+            self._hnsw_indices.clear()
+            self._hnsw_labels.clear()
+        for dim in (384, 768, 1536, 1024):
+            bin_path = self.root_dir / "data" / f"hnsw_index_{dim}.bin"
+            json_path = self.root_dir / "data" / f"hnsw_labels_{dim}.json"
+            for path in (bin_path, json_path):
+                if not path.exists():
+                    continue
+                try:
+                    path.unlink()
+                except OSError as exc:
+                    logger.warning("Failed to remove HNSW cache file %s: %s", path, exc)
 
     def close(self) -> None:
         self._client.close()
@@ -470,22 +535,25 @@ class SQLiteEmbeddingVectorStore:
                 if embeddings is not None:
                     emb_blob = embeddings[idx].astype(np.float32).tobytes()
 
+                chapter_id = chapter_id_from_metadata(chunk.metadata)
                 conn.execute(
                     """
-                    INSERT INTO vector_embeddings (id, type, text, embedding, metadata)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO vector_embeddings (id, type, text, embedding, metadata, chapter_id)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                       type=excluded.type,
                       text=excluded.text,
                       embedding=coalesce(excluded.embedding, vector_embeddings.embedding),
-                      metadata=excluded.metadata
+                      metadata=excluded.metadata,
+                      chapter_id=excluded.chapter_id
                     """,
                     (
                         chunk.id,
                         chunk.type,
                         chunk.text,
                         emb_blob,
-                        json.dumps(chunk.metadata, ensure_ascii=False)
+                        json.dumps(chunk.metadata, ensure_ascii=False),
+                        chapter_id,
                     )
                 )
             conn.commit()
@@ -533,36 +601,44 @@ class SQLiteEmbeddingVectorStore:
             except Exception as e:
                 logger.error("Failed to delete vectors from ChromaDB: %s", e)
 
-        # Clear HNSW caches
-        if hasattr(self, "_hnsw_indices"):
-            self._hnsw_indices.clear()
-            self._hnsw_labels.clear()
-        for dim in [384, 768, 1536, 1024]:
-            bin_path = self.root_dir / "data" / f"hnsw_index_{dim}.bin"
-            json_path = self.root_dir / "data" / f"hnsw_labels_{dim}.json"
-            if bin_path.exists():
-                try: bin_path.unlink()
-                except: pass
-            if json_path.exists():
-                try: json_path.unlink()
-                except: pass
+        self._clear_hnsw_disk_cache()
+
+    def _chapter_id_candidates(self, chapter_id: str) -> List[str]:
+        normalized = normalize_chapter_id_value(chapter_id)
+        candidates = {str(chapter_id).strip(), normalized}
+        if normalized.isdigit():
+            candidates.add(str(int(normalized)))
+        return [value for value in candidates if value]
 
     @db_write_lock
     def delete_chapter_vectors(self, chapter_id: str) -> None:
-        ids_to_delete = []
+        ids_to_delete: List[str] = []
+        candidates = self._chapter_id_candidates(chapter_id)
         with safe_connection(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT id, metadata FROM vector_embeddings").fetchall()
-            for row in rows:
-                meta = {}
-                if row["metadata"]:
-                    try:
-                        meta = json.loads(row["metadata"])
-                    except json.JSONDecodeError:
-                        pass
-                ch = meta.get("chapter") or meta.get("chapter_id")
-                if str(ch) == str(chapter_id):
-                    ids_to_delete.append(row["id"])
+            if candidates:
+                placeholders = ",".join("?" for _ in candidates)
+                rows = conn.execute(
+                    f"SELECT id FROM vector_embeddings WHERE chapter_id IN ({placeholders})",
+                    candidates,
+                ).fetchall()
+                ids_to_delete.extend(row["id"] for row in rows)
+
+            if not ids_to_delete:
+                legacy_rows = conn.execute(
+                    "SELECT id, metadata FROM vector_embeddings "
+                    "WHERE chapter_id IS NULL OR chapter_id = ''"
+                ).fetchall()
+                for row in legacy_rows:
+                    meta = {}
+                    if row["metadata"]:
+                        try:
+                            meta = json.loads(row["metadata"])
+                        except json.JSONDecodeError:
+                            pass
+                    stored = chapter_id_from_metadata(meta)
+                    if stored in candidates or str(meta.get("chapter") or meta.get("chapter_id") or "") == str(chapter_id):
+                        ids_to_delete.append(row["id"])
 
             if ids_to_delete:
                 conn.executemany(
@@ -579,19 +655,7 @@ class SQLiteEmbeddingVectorStore:
             except Exception as e:
                 logger.error("Failed to delete chapter vectors from ChromaDB: %s", e)
 
-        # Clear HNSW caches
-        if hasattr(self, "_hnsw_indices"):
-            self._hnsw_indices.clear()
-            self._hnsw_labels.clear()
-        for dim in [384, 768, 1536, 1024]:
-            bin_path = self.root_dir / "data" / f"hnsw_index_{dim}.bin"
-            json_path = self.root_dir / "data" / f"hnsw_labels_{dim}.json"
-            if bin_path.exists():
-                try: bin_path.unlink()
-                except: pass
-            if json_path.exists():
-                try: json_path.unlink()
-                except: pass
+        self._clear_hnsw_disk_cache()
 
     # -- search helpers ------------------------------------------------------
 

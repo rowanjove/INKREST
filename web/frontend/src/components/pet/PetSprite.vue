@@ -41,7 +41,7 @@ const stateConfig = computed<SpriteConfig>(() => {
   if (props.state === 'hide-bottom') return { file: hideBottomPng, frames: 1, fps: 1 }
   if (props.state === 'success') return { file: successSheet, frames: 12, fps: 12, badge: successBadge }
   if (props.state === 'error') return { file: errorSheet, frames: 12, fps: 12, badge: errorBadge }
-  if (props.state === 'offline') return { file: errorSheet, frames: 12, fps: 8, badge: errorBadge }
+  if (props.state === 'offline') return { file: errorSheet, frames: 12, fps: 8 }
   return { file: idleSheet, frames: 24, fps: 12 }
 })
 

@@ -35,8 +35,8 @@ def append_runtime_log(entry: Dict[str, Any]) -> int:
     chapter_id = str(entry.get("chapter_id") or "")
     message = str(entry.get("message") or entry.get("error") or "")
 
+    status = str(entry.get("status") or "")
     if msg_type == "progress" and not message:
-        status = str(entry.get("status") or "")
         message = f"{step} · {status}" if step else status
         if status in ("error", "blocked"):
             level = "error"
@@ -64,6 +64,8 @@ def append_runtime_log(entry: Dict[str, Any]) -> int:
             "source": str(entry.get("source") or "agent"),
             "type": msg_type,
         }
+        if msg_type == "progress" and status:
+            item["status"] = status
         _buffer.append(item)
         return _seq
 

@@ -94,6 +94,21 @@ async def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
     except Exception:
         work_str = "未加载作品概况"
 
+    factory = context_data.get("factory") or {}
+    try:
+        from novel_agent.services.assistant_snapshot import format_factory_brief
+
+        factory_str = format_factory_brief(factory) if factory else "工厂状态未加载"
+    except Exception:
+        factory_str = "工厂状态未加载"
+    factory_commands = factory.get("commands") if isinstance(factory.get("commands"), list) else []
+    factory_command_lines = [
+        f"- {item.get('label')}: {item.get('reason')}"
+        for item in factory_commands[:4]
+        if isinstance(item, dict)
+    ]
+    factory_commands_str = "\n".join(factory_command_lines) if factory_command_lines else "无"
+
     failed_lines = []
     for t in failed_tasks:
         line = f"- 章节 {t.get('chapter_id')}: 错误 [{t.get('error')}]"
@@ -159,6 +174,9 @@ async def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
 【小说生成系统当前状态】
 - 当前活跃项目: {proj_name}
 - 作品概况: {work_str}
+- AI 工厂控制台: {factory_str}
+- 工厂建议动作:
+{factory_commands_str}
 - 全书批量: {batch_str}
 - 待处理章节（运行监控同源）:
 {pending_str}
@@ -207,7 +225,12 @@ async def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
   '/chapters/{{章号}}' 章节详情（统一门禁报告在此，章号如 001、012）
 - test_model: 测试当前模型连通性。不需要参数。
 - retry_task: 重新运行任务。参数包含 {{"chapter_id": "章节号", "goal": "章节目标"}}
-- 若失败任务有 gate_summary 且与门禁相关，优先建议 navigate 到该章详情，再视情况 retry_task。
+- auto_repair_chapter: 提交章节自动修复（降 AI 味/质量阻断）。参数 {{"chapter_id": "章节号"}}
+- rerun_gate: 只重跑门禁（用户已改稿后）。参数 {{"chapter_id": "章节号"}}
+- factory_intent: 执行工厂控制台建议动作。参数 {{"intent": "create|plan|run|monitor|repair|export"}}
+- 若失败任务有 gate_summary 且与门禁相关，优先建议 navigate 到该章详情，再视情况 auto_repair_chapter 或 rerun_gate。
+- 工厂状态为 blocked 时，优先解释 operator_brief，并给出 factory_intent repair 或 auto_repair_chapter。
+- 用户问「继续写」「为什么停了」「导出」时，优先使用 factory_intent 与上方「工厂建议动作」列表对齐。
 """
     
     try:

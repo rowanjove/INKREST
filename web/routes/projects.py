@@ -37,12 +37,13 @@ from web.models import (
     RewriteDescriptionRequest,
     UpdateDescriptionRequest,
     UpdatePlatformRequest,
+    UpdateAuthorLabelRequest,
 )
 from novel_agent.control.scale_profile import resolve_scale_profile
 from novel_agent.control.chapter_window import build_pacing_report, normalize_chapter_window
 from novel_agent.control.genre_genes import ensure_genre_genes
 from novel_agent.control.outline_structure import normalize_macro_outline
-from web.tasks import TaskManager
+
 
 router = APIRouter()
 
@@ -78,9 +79,28 @@ def get_current_project() -> Dict[str, Any]:
     return {"id": ws_server._active_project_id, "name": info.get("name", ws_server._active_project_id)}
 
 
+_SENSITIVE_LOG_KEYS = frozenset({
+    "token", "access_token", "api_key", "password", "secret", "authorization",
+})
+
+
+def _sanitize_debug_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    sanitized: Dict[str, Any] = {}
+    for key, value in payload.items():
+        lowered = str(key).lower()
+        if lowered in _SENSITIVE_LOG_KEYS or lowered.endswith("_token") or lowered.endswith("_key"):
+            sanitized[key] = "***"
+        elif isinstance(value, dict):
+            sanitized[key] = _sanitize_debug_payload(value)
+        else:
+            sanitized[key] = value
+    return sanitized
+
+
 @router.post("/api/pet/debug-log")
 def pet_debug_log(payload: Dict[str, Any]):
-    ws_server.logger.info(f"[PET DEBUG] {json.dumps(payload, ensure_ascii=False)}")
+    safe_payload = _sanitize_debug_payload(payload if isinstance(payload, dict) else {})
+    ws_server.logger.info("[PET DEBUG] %s", json.dumps(safe_payload, ensure_ascii=False))
     return {"status": "ok"}
 
 
@@ -168,6 +188,101 @@ def create_project(req: ProjectCreateRequest) -> Dict[str, Any]:
     return result
 
 
+def _demo_projects_root() -> Path:
+    return ws_helpers._demo_projects_dir()
+
+
+def _find_existing_demo_project(demo_id: str) -> Optional[str]:
+    data = ws_server.project_manager._read_registry()
+    for pid in data.get("projects", {}):
+        meta_path = ws_server.BASE_DIR / "projects" / pid / "config" / "project_meta.json"
+        if not meta_path.is_file():
+            continue
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if str(meta.get("demo_id") or "") == demo_id:
+            return pid
+    return None
+
+
+def _demo_project_title(outline: Dict[str, Any]) -> str:
+    chosen = str(outline.get("chosen_title") or "").strip()
+    if chosen:
+        return chosen
+    options = outline.get("title_options")
+    if isinstance(options, list) and options:
+        first = str(options[0]).strip()
+        if first:
+            return first
+    return "示例书"
+
+
+@router.post("/api/projects/import-demo")
+def import_demo_project(demo_id: str = Query("demo-factory-novel")) -> Dict[str, Any]:
+    ws_server._validate_id(demo_id, "demo_id")
+    existing = _find_existing_demo_project(demo_id)
+    if existing:
+        with ws_server._project_lock:
+            if ws_server._active_project_id and ws_server._active_project_id != existing:
+                ws_server._ensure_no_active_tasks("switch projects")
+            ws_server.project_manager.switch_project(existing)
+            ws_server.activate_project(existing)
+        info = ws_server.project_manager._read_registry().get("projects", {}).get(existing, {})
+        return {
+            "id": existing,
+            "name": info.get("name", existing),
+            "description": info.get("description", ""),
+            "status": "existing",
+            "demo_id": demo_id,
+        }
+
+    source = _demo_projects_root() / demo_id
+    if not source.is_dir():
+        raise HTTPException(404, f"Demo project '{demo_id}' not found")
+
+    pid = uuid.uuid4().hex[:8]
+    project_dir = ws_server.BASE_DIR / "projects" / pid
+
+    outline = {}
+    outline_path = source / "workspace" / "outline.json"
+    if outline_path.is_file():
+        try:
+            outline = json.loads(outline_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            outline = {}
+    title = _demo_project_title(outline)
+    description = "内置示例书，用于体验工厂生产流程。"
+    now = datetime.now().isoformat()
+
+    with ws_server._project_lock:
+        if ws_server._active_project_id:
+            ws_server._ensure_no_active_tasks("switch projects")
+        shutil.copytree(source, project_dir)
+        ws_server.project_manager.register_project(
+            pid,
+            {
+                "name": title,
+                "description": description,
+                "created_at": now,
+                "updated_at": now,
+                "pinned": True,
+                "pinned_at": now,
+            },
+            set_active=True,
+        )
+        ws_server.activate_project(pid)
+
+    return {
+        "id": pid,
+        "name": title,
+        "description": description,
+        "status": "imported",
+        "demo_id": demo_id,
+    }
+
+
 @router.delete("/api/projects/{pid}")
 def delete_project(pid: str) -> Dict[str, str]:
     ws_server._validate_id(pid, "project_id")
@@ -186,10 +301,7 @@ def switch_project(pid: str) -> Dict[str, Any]:
         if ws_server._active_project_id and ws_server._active_project_id != pid:
             ws_server._ensure_no_active_tasks("switch projects")
         result = ws_server.project_manager.switch_project(pid)
-        ws_server._active_project_id = pid
-        ws_server._task_manager = TaskManager(ws_server.get_root_dir())
-        ws_server._ensure_dirs(ws_server.get_root_dir())
-        ws_server._init_prompt_defaults(ws_server.get_root_dir())
+        ws_server.activate_project(pid)
     return result
 
 
@@ -320,6 +432,31 @@ def rewrite_description(pid: str, req: RewriteDescriptionRequest) -> Dict[str, s
         return {"description": rewritten}
     except Exception as e:
         raise model_provider_http_error("简介重写", e)
+
+
+@router.put("/api/projects/{pid}/author-label")
+def update_author_label(pid: str, req: UpdateAuthorLabelRequest) -> Dict[str, str]:
+    ws_server._validate_id(pid, "project_id")
+    registry = ws_server.project_manager._read_registry()
+    if pid not in registry.get("projects", {}):
+        raise HTTPException(404, "Project not found")
+    project_dir = ws_server.BASE_DIR / "projects" / pid
+    meta_path = project_dir / "config" / "project_meta.json"
+    meta: Dict[str, Any] = {}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    label = (req.author_label or "").strip()
+    if label:
+        meta["author_label"] = label
+    else:
+        meta.pop("author_label", None)
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    ws_server.project_manager.touch_activity(pid)
+    return {"status": "updated", "author_label": label}
 
 
 @router.post("/api/projects/{pid}/update-description")

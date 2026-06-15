@@ -20,6 +20,8 @@ const {
   handleSend,
   handleSuggestQuestion,
   handleActionClick,
+  handleFactoryIntent,
+  handleFactoryRepair,
   handleAbortRunningTask,
   setChatContainer,
   setChatInputRef,
@@ -79,6 +81,8 @@ onBeforeUnmount(() => {
       :on-open-monitor-for-batch="openMonitorForBatch"
       :on-navigate="navigate"
       :on-action-click="handleActionClick"
+      :on-factory-intent="handleFactoryIntent"
+      :on-factory-repair="handleFactoryRepair"
       :on-abort-running-task="handleAbortRunningTask"
     />
 

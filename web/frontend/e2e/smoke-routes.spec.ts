@@ -28,6 +28,16 @@ test.describe('route smoke coverage', () => {
     await expect(page.locator('.blueprint-slots, .trope-workshop-layout').first()).toBeVisible()
   })
 
+  test('onboarding wizard renders three-step flow', async ({ page, request }) => {
+    await injectLocalAccessToken(page, request)
+    await page.goto('/onboarding')
+    await expect(page.getByRole('heading', { name: '欢迎使用栖墨 INKREST' })).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect(page.getByText('跳过向导，直接去书库')).toBeVisible()
+    await expect(page.getByText('系统就绪')).toBeVisible()
+  })
+
   test('library home renders empty or grid', async ({ page, request }) => {
     await injectLocalAccessToken(page, request)
     await page.goto('/')

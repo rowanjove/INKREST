@@ -8,21 +8,47 @@ export function usePetWindowInteraction() {
   const dragging = ref(false)
   const pointerStart = ref<{ x: number; y: number } | null>(null)
   const moved = ref(false)
+  const activePointerId = ref<number | null>(null)
   let clickTimer: number | null = null
+  let hideTimer: number | null = null
+
+  function ignorePointerButton(event: PointerEvent | MouseEvent) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  function isPrimaryPointerButton(event: PointerEvent) {
+    return event.isPrimary && event.button === 0
+  }
+
+  function clearHideTimer() {
+    if (hideTimer) {
+      window.clearTimeout(hideTimer)
+      hideTimer = null
+    }
+  }
 
   async function onPointerDown(event: PointerEvent) {
+    if (!isPrimaryPointerButton(event)) {
+      if (event.button !== 2) {
+        ignorePointerButton(event)
+      }
+      return
+    }
+    clearHideTimer()
     if (pet.isHiddenAtEdge) {
       await edgeDock.restoreFromEdge()
     }
     pointerStart.value = { x: event.screenX, y: event.screenY }
     moved.value = false
     dragging.value = true
+    activePointerId.value = event.pointerId
     pet.setDragging(true)
     ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   }
 
   async function onPointerMove(event: PointerEvent) {
-    if (!dragging.value || !pointerStart.value) return
+    if (!dragging.value || !pointerStart.value || event.pointerId !== activePointerId.value) return
     const dx = event.screenX - pointerStart.value.x
     const dy = event.screenY - pointerStart.value.y
     if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return
@@ -32,8 +58,13 @@ export function usePetWindowInteraction() {
   }
 
   async function onPointerUp(event: PointerEvent) {
+    if (event.pointerId !== activePointerId.value) return
     dragging.value = false
-    ;(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId)
+    activePointerId.value = null
+    pointerStart.value = null
+    if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) {
+      ;(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId)
+    }
     if (moved.value) {
       await edgeDock.applyEdgeDockIfNeeded()
       if (!pet.isHiddenAtEdge) {
@@ -44,9 +75,19 @@ export function usePetWindowInteraction() {
   }
 
   async function onMouseEnter() {
+    clearHideTimer()
     if (pet.isHiddenAtEdge) {
       await edgeDock.restoreFromEdge()
     }
+  }
+
+  function onMouseLeave() {
+    clearHideTimer()
+    if (dragging.value) return
+    hideTimer = window.setTimeout(() => {
+      hideTimer = null
+      void edgeDock.hideToRevealedEdgeIfNeeded()
+    }, 420)
   }
 
   function onClick() {
@@ -63,6 +104,16 @@ export function usePetWindowInteraction() {
     }, 180)
   }
 
+  function onMouseDown(event: MouseEvent) {
+    if (event.button !== 0 && event.button !== 2) {
+      ignorePointerButton(event)
+    }
+  }
+
+  function onAuxClick(event: MouseEvent) {
+    ignorePointerButton(event)
+  }
+
   function onContextMenu(event: MouseEvent) {
     event.preventDefault()
     window.electronAPI?.showPetContextMenu?.()
@@ -74,6 +125,7 @@ export function usePetWindowInteraction() {
   })
 
   onBeforeUnmount(() => {
+    clearHideTimer()
     pet.stopPolling()
   })
 
@@ -82,7 +134,10 @@ export function usePetWindowInteraction() {
     onPointerDown,
     onPointerMove,
     onPointerUp,
+    onMouseDown,
+    onAuxClick,
     onMouseEnter,
+    onMouseLeave,
     onClick,
     onContextMenu,
   }

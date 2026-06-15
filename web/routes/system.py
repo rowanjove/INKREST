@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends
 
 import web.context as ctx
+import web.helpers as ws_helpers
 from web.context import get_root_dir
 from web.deps import ProjectSession, get_project_session
 
@@ -91,3 +93,40 @@ def system_readiness(session: ProjectSession = Depends(get_project_session)) -> 
 
     all_ok = all(c.get("ok", True) for c in checks.values() if isinstance(c, dict))
     return {"ok": all_ok, "checks": checks, "active_project_id": session.project_id}
+
+
+@router.get("/api/system/onboarding")
+def onboarding_status() -> Dict[str, Any]:
+    """Lightweight status for first-run onboarding wizard."""
+    registry = ctx.project_manager._read_registry()
+    projects = registry.get("projects") or {}
+    project_count = len(projects)
+    demo_available = (ws_helpers._demo_projects_dir() / "demo-factory-novel").is_dir()
+
+    llm_ready = False
+    if project_count > 0 or ctx._active_project_id:
+        try:
+            root = get_root_dir()
+            from novel_agent.pipeline import llm_config_error
+
+            llm_ready = llm_config_error(root) is None
+        except Exception:
+            llm_ready = False
+    else:
+        config_dir = ctx.BASE_DIR / "config"
+        if (config_dir / "pipeline.yaml").is_file() or (config_dir / "models.json").is_file():
+            try:
+                from novel_agent.pipeline import llm_config_error
+
+                llm_ready = llm_config_error(ctx.BASE_DIR) is None
+            except Exception:
+                llm_ready = False
+
+    return {
+        "has_projects": project_count > 0,
+        "project_count": project_count,
+        "llm_ready": llm_ready,
+        "demo_available": demo_available,
+        "demo_id": "demo-factory-novel",
+        "suggested_next": "import_demo" if not project_count else ("configure_llm" if not llm_ready else "open_factory"),
+    }

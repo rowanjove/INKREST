@@ -1,0 +1,80 @@
+import factoryModes from '../constants/factoryModes.json'
+import type {
+  FactoryDashboard,
+  FactoryMode,
+  FactoryRiskLevel,
+  FactoryState,
+} from '../types/factory'
+
+export type FactoryActionIntent =
+  | 'create'
+  | 'plan'
+  | 'run'
+  | 'monitor'
+  | 'repair'
+  | 'export'
+
+export interface FactoryPrimaryAction {
+  label: string
+  intent: FactoryActionIntent
+}
+
+const MODE_LABELS = factoryModes.labels as Record<FactoryMode, string>
+const MODE_ORDER = factoryModes.modes as FactoryMode[]
+
+const STATE_LABELS: Record<FactoryState, string> = {
+  empty: '等待开书',
+  planning: '计划待完善',
+  ready: '可以生产',
+  running: '生产中',
+  blocked: '等待修复',
+  complete: '生产完成',
+}
+
+export function formatFactoryMode(mode: FactoryMode): string {
+  return MODE_LABELS[mode] ?? mode
+}
+
+export function factoryModeOptions(): Array<{ value: FactoryMode; label: string }> {
+  return MODE_ORDER.map((mode) => ({ value: mode, label: formatFactoryMode(mode) }))
+}
+
+export function formatFactoryState(state: FactoryState): string {
+  return STATE_LABELS[state] ?? state
+}
+
+export function formatFactoryIntent(intent: FactoryActionIntent): string {
+  const labels: Record<FactoryActionIntent, string> = {
+    create: '新建作品',
+    plan: '补齐计划',
+    run: '继续生产',
+    monitor: '查看进度',
+    repair: '自动修复',
+    export: '导出检查',
+  }
+  return labels[intent] ?? intent
+}
+
+export function getFactoryTone(riskLevel: FactoryRiskLevel): 'success' | 'warning' | 'danger' {
+  if (riskLevel === 'high') return 'danger'
+  if (riskLevel === 'medium') return 'warning'
+  return 'success'
+}
+
+export function getFactoryPrimaryAction(dashboard: FactoryDashboard): FactoryPrimaryAction {
+  switch (dashboard.factory_status.state) {
+    case 'empty':
+      return { label: '新建作品', intent: 'create' }
+    case 'planning':
+      return { label: '生成生产计划', intent: 'plan' }
+    case 'running':
+      return { label: '查看生产进度', intent: 'monitor' }
+    case 'blocked':
+      return { label: '自动修复', intent: 'repair' }
+    case 'complete':
+      return { label: '导出作品', intent: 'export' }
+    case 'ready':
+    default:
+      return { label: '开始生产', intent: 'run' }
+  }
+}

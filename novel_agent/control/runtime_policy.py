@@ -8,6 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from novel_agent.control.factory_policy import (
+    factory_effect,
+    load_project_factory_mode,
+)
 from novel_agent.control.scale_profile import (
     SCALE_PROFILES,
     is_vector_enabled_for_project,
@@ -145,6 +149,7 @@ class RuntimePolicy:
     target_chapters: int = 0
     pipeline_tier: str = "standard"
     audit_profile: str = "standard"
+    factory_mode: str = "newbie_auto"
 
     def planning_hint(self) -> str:
         return PLANNING_MODE_HINTS.get(
@@ -156,6 +161,9 @@ class RuntimePolicy:
 def resolve_pipeline_tier(root_dir: Path, scale: str) -> str:
     from novel_agent.pipeline import load_pipeline_settings
 
+    factory_tier = factory_effect(root_dir, "pipeline_tier")
+    if isinstance(factory_tier, str) and factory_tier in ("economy", "standard", "premium"):
+        return factory_tier
     runtime = load_pipeline_settings(root_dir).get("runtime", {}) or {}
     raw = str(runtime.get("pipeline_tier") or "").strip().lower()
     if raw in ("economy", "standard", "premium"):
@@ -166,6 +174,9 @@ def resolve_pipeline_tier(root_dir: Path, scale: str) -> str:
 def resolve_audit_profile(root_dir: Path, pipeline_tier: str) -> str:
     from novel_agent.pipeline import load_pipeline_settings
 
+    factory_profile = factory_effect(root_dir, "audit_profile")
+    if isinstance(factory_profile, str) and factory_profile in AUDIT_PROFILE_BY_TIER:
+        return factory_profile
     runtime = load_pipeline_settings(root_dir).get("runtime", {}) or {}
     raw = str(runtime.get("audit_profile") or "").strip().lower()
     if raw in AUDIT_PROFILE_BY_TIER:
@@ -182,6 +193,9 @@ def get_audit_profile_flags(root_dir: Path) -> Dict[str, Any]:
     overrides = runtime.get("audit_profile_overrides") or {}
     if isinstance(overrides, dict):
         base.update({k: v for k, v in overrides.items() if k in base})
+    factory_override = factory_effect(root_dir, "max_rewrites_override")
+    if factory_override is not None:
+        base["max_rewrites_override"] = factory_override
     return base
 
 
@@ -209,6 +223,7 @@ def resolve_runtime_policy(root_dir: Path) -> RuntimePolicy:
         target_chapters=int(profile.get("target_chapters") or profile.get("max_chapters") or 0),
         pipeline_tier=tier,
         audit_profile=audit_profile,
+        factory_mode=load_project_factory_mode(root_dir),
     )
 
 

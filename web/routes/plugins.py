@@ -4,6 +4,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from web.context import get_plugin_manager
+from web.helpers import _validate_id
 
 router = APIRouter(prefix="/api/plugins", tags=["plugins"])
 
@@ -79,6 +80,7 @@ def reload_plugins():
 @router.post("/{name}/trust")
 def trust_plugin(name: str):
     """Explicitly trust a local plugin, then import and activate it."""
+    name = _validate_id(name, "plugin_name")
     pm = get_plugin_manager()
     if not pm.trust_local_plugin(name):
         raise HTTPException(404, f"Local plugin {name} not found")
@@ -91,6 +93,7 @@ def trust_plugin(name: str):
 @router.get("/{name}")
 def get_plugin(name: str):
     """Get single plugin detailed information."""
+    name = _validate_id(name, "plugin_name")
     pm = get_plugin_manager()
     for item in pm.list_plugin_catalog():
         if item.get("name") == name:
@@ -101,6 +104,7 @@ def get_plugin(name: str):
 @router.delete("/{name}")
 def delete_plugin(name: str):
     """Uninstall a local plugin (remove files and registry)."""
+    name = _validate_id(name, "plugin_name")
     pm = get_plugin_manager()
     if not pm.uninstall_plugin_by_id(name):
         raise HTTPException(404, f"Plugin {name} not found")
@@ -111,6 +115,7 @@ def delete_plugin(name: str):
 @router.put("/{name}/toggle")
 def toggle_plugin(name: str, req: ToggleRequest):
     """Enable or disable a plugin."""
+    name = _validate_id(name, "plugin_name")
     pm = get_plugin_manager()
     catalog = {p["name"]: p for p in pm.list_plugin_catalog()}
     row = catalog.get(name)
@@ -149,6 +154,7 @@ def toggle_plugin(name: str, req: ToggleRequest):
 @router.put("/{name}/config")
 def update_plugin_config(name: str, req: ConfigUpdateRequest):
     """Update plugin configuration."""
+    name = _validate_id(name, "plugin_name")
     pm = get_plugin_manager()
     if name not in pm.plugins:
         pm._load_state_config()
@@ -167,6 +173,7 @@ def update_plugin_config(name: str, req: ConfigUpdateRequest):
 @router.get("/{name}/schema")
 def get_plugin_schema(name: str):
     """Get the JSON schema for configuring a plugin."""
+    name = _validate_id(name, "plugin_name")
     pm = get_plugin_manager()
     for item in pm.list_plugin_catalog():
         if item.get("name") == name:

@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import List, Optional
 
+from novel_agent.exporters.chapter_selection import filter_chapter_dirs
 from novel_agent.logging_config import get_logger
 
 logger = get_logger("exporters.txt")
@@ -29,12 +30,7 @@ def export_txt(
     if not chapters_dir.exists():
         raise FileNotFoundError(f"Chapters directory not found: {chapters_dir}")
 
-    chapter_dirs = sorted(chapters_dir.glob("chapter_*"))
-    if chapter_ids:
-        chapter_dirs = [
-            d for d in chapter_dirs
-            if any(d.name.endswith(cid) for cid in chapter_ids)
-        ]
+    chapter_dirs = filter_chapter_dirs(sorted(chapters_dir.glob("chapter_*")), chapter_ids)
 
     parts: list[str] = []
     for ch_dir in chapter_dirs:
@@ -66,6 +62,8 @@ def export_txt(
             parts.append(text)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not parts:
+        raise ValueError("No chapters found to export")
     content = "\n\n\n".join(parts)
     output_path.write_text(content, encoding="utf-8")
     logger.info("Exported %d chapters to %s", len(parts), output_path)

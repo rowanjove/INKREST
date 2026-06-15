@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { usePetStore } from '../../stores/pet'
 import { SHANSHAN_BATCH_PAUSE_HINT } from '../../constants/shanshanCopy'
 import type { PetAction } from '../../composables/usePetBubbleView'
+import { factoryCommandButtonTone } from '../../composables/useFactoryActions'
+import { formatFactoryIntent } from '../../utils/factoryStatus'
 
 defineProps<{
   diagnoseCollapsed: boolean
@@ -10,10 +13,24 @@ defineProps<{
   onOpenMonitorForBatch: () => void
   onNavigate: (route: string) => void
   onActionClick: (action: PetAction) => void
+  onFactoryIntent: (intent: string) => void
+  onFactoryRepair: (chapterId: string) => void
   onAbortRunningTask: () => void
 }>()
 
 const pet = usePetStore()
+
+const factoryDashboard = computed(() => pet.context?.factory || null)
+const factoryCommands = computed(() => factoryDashboard.value?.commands || [])
+const factoryBrief = computed(() => factoryDashboard.value?.operator_brief || null)
+const firstRepairItem = computed(() => factoryDashboard.value?.repair?.items?.[0] || null)
+
+function briefTagClass(severity: string) {
+  if (severity === 'danger') return 'danger'
+  if (severity === 'warning') return 'warning'
+  if (severity === 'success') return 'success'
+  return 'info'
+}
 </script>
 
 <template>
@@ -75,6 +92,44 @@ const pet = usePetStore()
         </button>
       </div>
     </div>
+
+    <section v-if="factoryDashboard" class="factory-brief-box">
+      <div class="factory-brief-head">
+        <span class="factory-brief-kicker">工厂管家</span>
+        <span
+          v-if="factoryBrief"
+          class="factory-brief-tag"
+          :class="briefTagClass(factoryBrief.severity)"
+        >
+          {{ formatFactoryIntent(factoryBrief.next_intent) }}
+        </span>
+      </div>
+      <p v-if="factoryBrief?.summary" class="factory-brief-summary">{{ factoryBrief.summary }}</p>
+      <p v-if="firstRepairItem?.manual_hint" class="factory-repair-hint">
+        {{ firstRepairItem.manual_hint }}
+      </p>
+      <div v-if="factoryCommands.length" class="factory-command-row">
+        <button
+          v-for="command in factoryCommands"
+          :key="command.id"
+          type="button"
+          class="action-pill-mini"
+          :class="factoryCommandButtonTone(command.tone) || 'default'"
+          :title="command.reason"
+          @click="onFactoryIntent(command.intent)"
+        >
+          {{ command.label }}
+        </button>
+      </div>
+      <button
+        v-if="firstRepairItem && firstRepairItem.recommended_action === 'auto_repair'"
+        type="button"
+        class="factory-repair-btn"
+        @click="onFactoryRepair(firstRepairItem.chapter_id)"
+      >
+        自动修复 {{ firstRepairItem.title }}
+      </button>
+    </section>
 
     <div class="diagnose-box-compact">
       <div class="diagnose-header-row" style="cursor: pointer; user-select: none;" @click="onToggleDiagnoseCollapsed">
@@ -301,6 +356,112 @@ const pet = usePetStore()
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+.factory-brief-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #e4eaf2;
+  border-radius: 8px;
+  background: var(--color-bg-surface-muted);
+  flex: none;
+}
+
+.factory-brief-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.factory-brief-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  color: #4a5568;
+}
+
+.factory-brief-tag {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.factory-brief-tag.danger {
+  color: #c53030;
+  background: #fff5f5;
+}
+
+.factory-brief-tag.warning {
+  color: #dd6b20;
+  background: #fffaf0;
+}
+
+.factory-brief-tag.success {
+  color: #2f855a;
+  background: #f0fff4;
+}
+
+.factory-brief-tag.info {
+  color: #2b6cb0;
+  background: #ebf8ff;
+}
+
+.factory-brief-summary,
+.factory-repair-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #536176;
+}
+
+.factory-command-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.factory-command-row .action-pill-mini.primary {
+  border-color: #007aff;
+  background: #007aff;
+  color: #fff;
+}
+
+.factory-command-row .action-pill-mini.warning {
+  border-color: #e6a23c;
+  background: #fdf6ec;
+  color: #b88230;
+}
+
+.factory-command-row .action-pill-mini.danger {
+  border-color: #f56c6c;
+  background: #fef0f0;
+  color: #c53030;
+}
+
+.factory-command-row .action-pill-mini.success {
+  border-color: #48a868;
+  background: #f0fff4;
+  color: #2f855a;
+}
+
+.factory-repair-btn {
+  align-self: flex-start;
+  border: 1px solid #007aff;
+  background: #e6f0ff;
+  color: #007aff;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.factory-repair-btn:hover {
+  background: #007aff;
+  color: #fff;
 }
 
 .diagnose-box-compact {

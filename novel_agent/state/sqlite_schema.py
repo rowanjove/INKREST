@@ -47,13 +47,6 @@ def db_write_lock(func):
     def wrapper(self, *args, **kwargs):
         write_queue = SQLiteWriteQueue.get_instance(self.db_path)
         future = write_queue.submit(func, self, *args, **kwargs)
-        try:
-            import asyncio
-            loop = asyncio.get_running_loop()
-            if loop.is_running():
-                return asyncio.wrap_future(future)
-        except RuntimeError:
-            pass
         return future.result()
     return wrapper
 

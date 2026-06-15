@@ -297,3 +297,7 @@ class UpdateDescriptionRequest(BaseModel):
 
 class UpdatePlatformRequest(BaseModel):
     platform: str
+
+
+class UpdateAuthorLabelRequest(BaseModel):
+    author_label: str = ""

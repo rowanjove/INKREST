@@ -2,8 +2,18 @@
 import PetSprite from '../components/pet/PetSprite.vue'
 import { usePetWindowInteraction } from '../composables/usePetWindowInteraction'
 
-const { pet, onPointerDown, onPointerMove, onPointerUp, onMouseEnter, onClick, onContextMenu } =
-  usePetWindowInteraction()
+const {
+  pet,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onMouseDown,
+  onAuxClick,
+  onMouseEnter,
+  onMouseLeave,
+  onClick,
+  onContextMenu,
+} = usePetWindowInteraction()
 </script>
 
 <template>
@@ -15,7 +25,10 @@ const { pet, onPointerDown, onPointerMove, onPointerUp, onMouseEnter, onClick, o
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
+      @mousedown="onMouseDown"
+      @auxclick="onAuxClick"
       @mouseenter="onMouseEnter"
+      @mouseleave="onMouseLeave"
       @click="onClick"
     >
       <PetSprite :state="pet.state" :size="pet.settings.size" />

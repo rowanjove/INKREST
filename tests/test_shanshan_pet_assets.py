@@ -51,6 +51,7 @@ def test_shanshan_sprite_uses_directional_assets_and_status_badges() -> None:
     assert "props.state === 'hide-bottom') return { file: hideBottomPng" in source
     assert "props.state === 'working') return { file: workingSheet" in source
     assert "props.state === 'error') return { file: errorSheet" in source
+    assert "props.state === 'offline') return { file: errorSheet, frames: 12, fps: 8 }" in source
     assert "badge: successBadge" in source
     assert "badge: errorBadge" in source
 
@@ -119,10 +120,37 @@ def test_pet_view_edge_auto_hide_hooks() -> None:
     dock_source = edge_dock.read_text(encoding="utf-8")
 
     assert "usePetWindowInteraction" in shell_source
+    assert '@mouseleave="onMouseLeave"' in shell_source
     assert "usePetEdgeDock" in window_source
     assert "applyEdgeDockIfNeeded" in window_source
     assert "restoreFromEdge" in window_source
+    assert "onMouseLeave" in window_source
+    assert "hideToRevealedEdgeIfNeeded" in window_source
     assert "setHiddenAtEdge" in dock_source or "setHiddenAtEdge" in PET_STORE.read_text(encoding="utf-8")
+
+
+def test_pet_window_ignores_non_primary_mouse_buttons() -> None:
+    pet_view = ROOT / "web" / "frontend" / "src" / "views" / "PetView.vue"
+    pet_window = ROOT / "web" / "frontend" / "src" / "composables" / "usePetWindowInteraction.ts"
+    shell_source = pet_view.read_text(encoding="utf-8")
+    window_source = pet_window.read_text(encoding="utf-8")
+
+    assert "event.button === 0" in window_source
+    assert "event.button !== 2" in window_source
+    assert "event.isPrimary" in window_source
+    assert "ignorePointerButton" in window_source
+    assert "onAuxClick" in window_source
+    assert '@mousedown="onMouseDown"' in shell_source
+    assert '@auxclick="onAuxClick"' in shell_source
+
+
+def test_pet_store_marks_working_on_pipeline_broadcast() -> None:
+    source = PET_STORE.read_text(encoding="utf-8")
+
+    assert "markPipelineActivityStarted" in source
+    assert "isRecentPipelineStart" in source
+    assert "event.data?.type === 'started'" in source
+    assert "state.value = 'working'" in source
 
 
 def test_pet_bubble_refresh_indicator_does_not_shift_layout() -> None:

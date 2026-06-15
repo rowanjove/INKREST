@@ -11,7 +11,7 @@
     "build:analyze": "rimraf dist && vue-tsc -b && npx cross-env ANALYZE=1 vite build",
     "check:bundle": "python ../../scripts/check_frontend_bundle.py dist",
     "build:electron": "rimraf dist-electron && tsc -p tsconfig.electron.json",
-    "build:backend": "cd ../.. && python -m PyInstaller --noconfirm --clean --onedir --name novel-agent-backend --distpath build/python-runtime --workpath build/pyinstaller-work --add-data \"web/frontend/dist;web/frontend/dist\" --add-data \"prompts;prompts\" --add-data \"presets;presets\" --exclude-module onnxruntime --exclude-module transformers --exclude-module torch --collect-all uvicorn --collect-all fastapi --collect-all pydantic --collect-all pydantic_core --collect-all novel_agent --collect-all pip main.py",
+    "build:backend": "cd ../.. && python -m PyInstaller --noconfirm --clean --onedir --name novel-agent-backend --distpath build/python-runtime --workpath build/pyinstaller-work --add-data \"web/frontend/dist;web/frontend/dist\" --add-data \"web/factory_modes.json;web\" --add-data \"prompts;prompts\" --add-data \"presets;presets\" --exclude-module onnxruntime --exclude-module transformers --exclude-module torch --collect-all uvicorn --collect-all fastapi --collect-all pydantic --collect-all pydantic_core --collect-all novel_agent --collect-all pip main.py",
     "sync:python-runtime": "cd ../.. && python scripts/sync_frontend_to_runtime.py",
     "electron:pack": "npm run build && npm run sync:python-runtime && npm run build:electron && electron-builder --win --dir",
     "electron:build": "npm run build && npm run build:electron && npm run build:backend && electron-builder --win",

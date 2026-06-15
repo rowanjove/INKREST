@@ -25,6 +25,7 @@ from novel_agent.services.chapter_index_sync import sync_chapters_from_disk
 from novel_agent.control.narrative_debt import classify_debt
 from novel_agent.control.scale_profile import build_upgrade_pressure, resolve_scale_profile
 from novel_agent.dashboard import build_dashboard_html
+from novel_agent.exporters.chapter_export import collect_export_chapters, iter_export_chapters
 
 router = APIRouter()
 
@@ -64,96 +65,38 @@ def clear_database(
 
 
 def export_markdown_internal(root_dir: Path, output_path: Path, chapter_ids: Optional[List[str]] = None, title: str = "未命名小说"):
-    chapters_dir = root_dir / "workspace" / "chapters"
-    if not chapters_dir.exists():
-        raise FileNotFoundError("Chapters directory not found")
+    parts = [f"# {title}\n"]
+    for chapter in iter_export_chapters(root_dir, chapter_ids):
+        number = int(chapter.chapter_id) if chapter.chapter_id.isdigit() else chapter.chapter_id
+        header = f"## 第 {number} 章"
+        if chapter.title:
+            header += f" {chapter.title}"
+        parts.append(f"{header}\n\n{chapter.text}")
 
-    chapter_dirs = sorted(chapters_dir.glob("chapter_*"))
-    if chapter_ids:
-        chapter_dirs = [
-            d for d in chapter_dirs
-            if any(d.name.endswith(cid) for cid in chapter_ids)
-        ]
-
-    parts = []
-    parts.append(f"# {title}\n")
-    for ch_dir in chapter_dirs:
-        final_path = ch_dir / "chapter_final.txt"
-        if not final_path.exists():
-            continue
-
-        text = final_path.read_text(encoding="utf-8").strip()
-        if not text:
-            continue
-
-        chapter_id = ch_dir.name.replace("chapter_", "")
-        plan_path = ch_dir / "plan.json"
-        ch_title = ""
-        if plan_path.exists():
-            import json
-            try:
-                plan = json.loads(plan_path.read_text(encoding="utf-8"))
-                ch_title = plan.get("chapter_title", "")
-            except Exception:
-                pass
-        
-        header = f"## 第 {int(chapter_id) if chapter_id.isdigit() else chapter_id} 章"
-        if ch_title:
-            header += f" {ch_title}"
-        
-        parts.append(f"{header}\n\n{text}")
-
+    if len(parts) <= 1:
+        raise ValueError("No chapters found to export")
     output_path.write_text("\n\n".join(parts), encoding="utf-8")
 
 
 def export_docx_internal(root_dir: Path, output_path: Path, chapter_ids: Optional[List[str]] = None, title: str = "未命名小说"):
     import docx
+
+    chapters = collect_export_chapters(root_dir, chapter_ids)
+    if not chapters:
+        raise ValueError("No chapters found to export")
+
     doc = docx.Document()
     doc.add_heading(title, 0)
-    
-    chapters_dir = root_dir / "workspace" / "chapters"
-    if not chapters_dir.exists():
-        raise FileNotFoundError("Chapters directory not found")
-
-    chapter_dirs = sorted(chapters_dir.glob("chapter_*"))
-    if chapter_ids:
-        chapter_dirs = [
-            d for d in chapter_dirs
-            if any(d.name.endswith(cid) for cid in chapter_ids)
-        ]
-
-    for ch_dir in chapter_dirs:
-        final_path = ch_dir / "chapter_final.txt"
-        if not final_path.exists():
-            continue
-
-        text = final_path.read_text(encoding="utf-8").strip()
-        if not text:
-            continue
-
-        chapter_id = ch_dir.name.replace("chapter_", "")
-        plan_path = ch_dir / "plan.json"
-        ch_title = ""
-        if plan_path.exists():
-            import json
-            try:
-                plan = json.loads(plan_path.read_text(encoding="utf-8"))
-                ch_title = plan.get("chapter_title", "")
-            except Exception:
-                pass
-        
-        header = f"第 {int(chapter_id) if chapter_id.isdigit() else chapter_id} 章"
-        if ch_title:
-            header += f"  {ch_title}"
-            
+    for chapter in chapters:
+        number = int(chapter.chapter_id) if chapter.chapter_id.isdigit() else chapter.chapter_id
+        header = f"第 {number} 章"
+        if chapter.title:
+            header += f"  {chapter.title}"
         doc.add_heading(header, level=1)
-        
-        # Add paragraphs
-        for p in text.split("\n"):
-            p_clean = p.strip()
-            if p_clean:
-                doc.add_paragraph(p_clean)
-                
+        for paragraph in chapter.text.split("\n"):
+            paragraph_clean = paragraph.strip()
+            if paragraph_clean:
+                doc.add_paragraph(paragraph_clean)
     doc.save(str(output_path))
 
 

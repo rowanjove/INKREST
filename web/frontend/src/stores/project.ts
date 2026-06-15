@@ -20,6 +20,7 @@ export interface Project {
   chapter_count?: number
   total_words?: number
   genre?: string
+  author_label?: string
   channel?: string
   target_chapters?: number
   has_cover?: boolean

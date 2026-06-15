@@ -14,6 +14,7 @@ import { PRODUCTION_BLOCKS, PIPELINE_STEP_LABELS } from '../../constants/pipelin
 import {
   applyRunningPipelineOverlay,
   rawBlockStatus,
+  settleGateBlockAfterChapterComplete,
   settleQueueBlockAfterChapterStart,
   type BlockStatus,
 } from '../../utils/productionLineBlocks'
@@ -111,6 +112,7 @@ const blockViews = computed(() => {
   })
 
   raw = settleQueueBlockAfterChapterStart(raw, entries, chapter)
+  raw = settleGateBlockAfterChapterComplete(raw, entries, chapter)
 
   if (userPaused.value) {
     return raw.map((b) => {

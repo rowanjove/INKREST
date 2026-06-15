@@ -105,3 +105,55 @@ export function settleQueueBlockAfterChapterStart(
     return { ...block, status: 'done' as BlockStatus, detailLabel: '', chapterId: '' }
   })
 }
+
+const GATE_BLOCK = PRODUCTION_BLOCKS.find((block) => block.id === 'gate')
+const GATE_STEPS = new Set(GATE_BLOCK?.steps ?? [])
+const AUDIT_BLOCK = PRODUCTION_BLOCKS.find((block) => block.id === 'audit')
+
+export function chapterHasGateFailure(entries: ProgressEntry[], chapterId: string): boolean {
+  if (!chapterId) return false
+  return entries.some(
+    (entry) =>
+      entry.chapter_id === chapterId &&
+      GATE_STEPS.has(entry.step) &&
+      (entry.status === 'error' || entry.status === 'blocked'),
+  )
+}
+
+/** S6 进度常因轮询漏包未入库；审校已绿且本章无 running 时推断门禁完成。 */
+export function settleGateBlockAfterChapterComplete(
+  blocks: ProductionBlockView[],
+  entries: ProgressEntry[],
+  activeChapterId: string,
+): ProductionBlockView[] {
+  if (!activeChapterId) return blocks
+  const gateBlock = blocks.find((block) => block.id === 'gate')
+  if (!gateBlock || gateBlock.status !== 'idle') return blocks
+  if (chapterHasGateFailure(entries, activeChapterId)) return blocks
+
+  const auditSteps = AUDIT_BLOCK?.steps ?? []
+  if (rawBlockStatus(auditSteps, entries) !== 'done') return blocks
+
+  const chapterRunning = entries.some(
+    (entry) => entry.chapter_id === activeChapterId && entry.status === 'running',
+  )
+  if (chapterRunning) return blocks
+
+  const hasGateProgress = entries.some(
+    (entry) => entry.chapter_id === activeChapterId && GATE_STEPS.has(entry.step),
+  )
+  const hasCompletionEvidence =
+    hasGateProgress ||
+    entries.some(
+      (entry) =>
+        entry.chapter_id === activeChapterId &&
+        entry.step === 'length_fix' &&
+        entry.status === 'done',
+    )
+  if (!hasCompletionEvidence) return blocks
+
+  return blocks.map((block) => {
+    if (block.id !== 'gate') return block
+    return { ...block, status: 'done' as BlockStatus, detailLabel: '', chapterId: '' }
+  })
+}

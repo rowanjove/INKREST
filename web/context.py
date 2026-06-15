@@ -19,7 +19,7 @@ else:
 # ---- Active project tracking ----
 _active_project_id: Optional[str] = None
 _task_manager: Optional[TaskManager] = None
-_project_lock = threading.Lock()
+_project_lock = threading.RLock()
 
 # Lazy load managers to prevent circular imports during module loading
 def __getattr__(name: str):
@@ -85,6 +85,28 @@ def _has_active_tasks() -> bool:
 def _ensure_no_active_tasks(action: str) -> None:
     if _has_active_tasks():
         raise HTTPException(409, f"Cannot {action} while generation tasks are running")
+
+
+def reset_plugin_manager() -> None:
+    """Release plugin resources when switching projects."""
+    global _plugin_manager
+    if _plugin_manager is not None:
+        _plugin_manager.shutdown()
+        _plugin_manager = None
+
+
+def activate_project(project_id: str) -> None:
+    """Sync in-memory active project, task manager, and plugin scope."""
+    global _active_project_id, _task_manager
+    from web.helpers import _ensure_dirs, _init_prompt_defaults
+
+    with _project_lock:
+        _active_project_id = project_id
+        root = get_root_dir()
+        _task_manager = TaskManager(root)
+        _ensure_dirs(root)
+        _init_prompt_defaults(root)
+        reset_plugin_manager()
 
 
 _plugin_manager: Optional[Any] = None

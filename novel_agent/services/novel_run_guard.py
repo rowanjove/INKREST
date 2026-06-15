@@ -143,14 +143,20 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
         warnings.append(str(stale.get("message") or "卷队列与大纲不一致"))
 
     try:
+        from novel_agent.control.runtime_policy import is_semantic_search_effective
+        from novel_agent.control.vector_readiness import resolve_vector_readiness_level
         from novel_agent.pipeline import load_pipeline_settings
 
         emb = load_pipeline_settings(root).get("embedding", {}) or {}
         provider = str(emb.get("provider") or "").strip().lower()
         scale = str((outline.get("scale_profile") or {}).get("scale") or "")
-        if scale in ("long", "epic", "infinite") and provider in ("", "stub", "none"):
+        vector_stub = provider in ("", "stub", "none") or not is_semantic_search_effective(root)
+        level = resolve_vector_readiness_level(root, scale, vector_stub=vector_stub)
+        if level == "block":
+            pending.append({"id": "vector", "label": "长篇模式需配置有效 Embedding（非 stub）"})
+        elif level == "warn":
             warnings.append(
-                "长篇/超长篇且 Embedding 为 stub：跨章去重与伏笔召回不可用，建议在设置中配置向量。"
+                "长篇/超长篇且 Embedding 未就绪：跨章去重与伏笔召回不可用，请在设置中配置真实向量。"
             )
     except Exception:
         pass
@@ -166,6 +172,18 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
     except Exception:
         pass
 
+    factory_mode = ""
+    yaml_mirror_warnings: List[str] = []
+    try:
+        from novel_agent.control.factory_policy import load_project_factory_mode
+        from novel_agent.state.yaml_mirror import check_yaml_mirror_drift
+
+        factory_mode = load_project_factory_mode(root)
+        yaml_mirror_warnings = check_yaml_mirror_drift(root)
+        warnings.extend(yaml_mirror_warnings)
+    except Exception:
+        pass
+
     return {
         "ok": len(pending) == 0 and queue_ok and not stale.get("stale"),
         "pending": pending,
@@ -173,6 +191,8 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
         "remaining_chapters": remaining,
         "arc_queue_stale": stale,
         "has_arcs": bool(load_workspace_arcs(root)),
+        "factory_mode": factory_mode,
+        "yaml_mirror_warnings": yaml_mirror_warnings,
     }
 
 

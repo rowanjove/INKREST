@@ -43,6 +43,7 @@ export function useLibraryProjects() {
           p.name,
           p.description,
           p.genre,
+          p.author_label,
           channelLabel(p.channel),
           p.id,
         ]

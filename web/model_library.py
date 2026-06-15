@@ -8,6 +8,7 @@ import yaml
 from fastapi import HTTPException
 
 from web.helpers import SECRET_MASK, SECRET_KEYS, _write_yaml
+from web.security import validate_outbound_model_base_url
 from novel_agent.pipeline import resolve_global_config_dir, load_global_pipeline_file, write_pipeline_file
 
 
@@ -16,6 +17,13 @@ SLOT_DAILY = "daily"
 SLOT_REASONING = "reasoning"
 SLOT_BACKUP = "backup"
 VALID_SLOTS = frozenset({SLOT_EMPTY, SLOT_DAILY, SLOT_REASONING, SLOT_BACKUP})
+
+
+def _validated_model_base_url(raw_url: str) -> str:
+    try:
+        return validate_outbound_model_base_url(raw_url)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _default_slots() -> Dict[str, Any]:
@@ -335,7 +343,8 @@ class ModelLibrary:
 
         if cfg.get("type") == "image":
             import httpx
-            url = f"{cfg.get('base_url', 'https://api.openai.com/v1').rstrip('/')}/images/generations"
+            root = _validated_model_base_url(cfg.get("base_url") or "https://api.openai.com/v1")
+            url = f"{root}/images/generations"
             headers = {
                 "Authorization": f"Bearer {cfg.get('api_key', '')}",
                 "Content-Type": "application/json"
@@ -361,7 +370,7 @@ class ModelLibrary:
                 return {"success": False, "error": str(e)}
 
         llm = OpenAILLM(
-            base_url=cfg.get("base_url", "https://api.openai.com/v1"),
+            base_url=_validated_model_base_url(cfg.get("base_url") or "https://api.openai.com/v1"),
             api_key=cfg.get("api_key", ""),
             model=cfg.get("model", "gpt-4o-mini"),
             max_tokens=cfg.get("max_tokens", 4096),

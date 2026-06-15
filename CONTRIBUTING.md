@@ -67,12 +67,14 @@ python scripts/perf_api_baseline.py --check
 ## 发布清单（portable / Electron）
 
 1. 确认 `pytest tests/ --ignore=tests/smoke`、`npm run test:unit`、`npm run build`、`npm run check:bundle` 全绿
-2. 对齐 `web/frontend/package.json` 的 `version` 与发版说明
-3. 更新 `CHANGELOG`（如有）与用户可见文案
-4. 桌面端：`cd web/frontend && npm run electron:pack`（或全量 `npm run electron:build`）
-5. 交付路径：`web/frontend/dist-desktop/win-unpacked/栖墨.exe`（勿混用未 sync 的旧 portable）
-6. 可选：`python scripts/verify_bundle_manifest.py <产物目录>`
-7. 打包后冒烟：开书 → 连写弹窗可开 → 任务日志有进度 → 山山状态同步
+2. 对齐版本号：`python scripts/sync_version.py`（以根目录 `VERSION` 为准，同步 `package.json` 与 `web/app.py`）
+3. 发布前校验：`python scripts/validate_release.py`
+4. 更新发版说明
+5. 更新 `CHANGELOG`（如有）与用户可见文案
+6. 桌面端：`cd web/frontend && npm run electron:pack`（或全量 `npm run electron:build`）
+7. 交付路径：`web/frontend/dist-desktop/win-unpacked/栖墨.exe`（勿混用未 sync 的旧 portable）
+8. 可选：`python scripts/verify_bundle_manifest.py <产物目录>`
+9. 打包后冒烟：开书 → 连写弹窗可开 → 任务日志有进度 → 山山状态同步
 
 ## 长跑与混沌测试（可选）
 

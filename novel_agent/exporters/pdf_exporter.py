@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import List, Optional
 
+from novel_agent.exporters.chapter_selection import filter_chapter_dirs
 from novel_agent.logging_config import get_logger
 
 logger = get_logger("exporters.pdf")
@@ -64,12 +65,7 @@ def export_pdf(
     if not chapters_dir.exists():
         raise FileNotFoundError(f"Chapters directory not found: {chapters_dir}")
 
-    chapter_dirs = sorted(chapters_dir.glob("chapter_*"))
-    if chapter_ids:
-        chapter_dirs = [
-            d for d in chapter_dirs
-            if any(d.name.endswith(cid) for cid in chapter_ids)
-        ]
+    chapter_dirs = filter_chapter_dirs(sorted(chapters_dir.glob("chapter_*")), chapter_ids)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc = SimpleDocTemplate(

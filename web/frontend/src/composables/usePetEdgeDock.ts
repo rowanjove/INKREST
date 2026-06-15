@@ -53,6 +53,7 @@ function clampToWorkArea(pos: { x: number; y: number }, bounds: Bounds, workArea
  */
 export function usePetEdgeDock(pet: ReturnType<typeof usePetStore>) {
   const expandedPosition = ref<{ x: number; y: number } | null>(null)
+  const revealedEdge = ref<PetEdge | null>(null)
 
   async function readBounds(): Promise<{ bounds: Bounds; workArea: WorkArea } | null> {
     const api = window.electronAPI
@@ -88,10 +89,12 @@ export function usePetEdgeDock(pet: ReturnType<typeof usePetStore>) {
     const ctx = await readBounds()
     if (!ctx) {
       pet.setHiddenAtEdge(null)
+      revealedEdge.value = null
       return
     }
     const { bounds, workArea } = ctx
     const edge = pet.isHiddenAtEdge
+    revealedEdge.value = edge
     let target = expandedPosition.value
     if (!target && edge) {
       const peek = dockedPosition(edge, bounds, workArea)
@@ -114,9 +117,21 @@ export function usePetEdgeDock(pet: ReturnType<typeof usePetStore>) {
     await window.electronAPI?.savePetPosition?.()
   }
 
+  /** 鼠标离开已展开的贴边窗口后，回到刚才的贴边隐藏状态。 */
+  async function hideToRevealedEdgeIfNeeded() {
+    const edge = revealedEdge.value
+    if (!edge || pet.isHiddenAtEdge) return
+    const ctx = await readBounds()
+    if (!ctx) return
+    const pos = dockedPosition(edge, ctx.bounds, ctx.workArea)
+    await window.electronAPI?.setPetWindowBounds?.(pos)
+    pet.setHiddenAtEdge(edge)
+  }
+
   return {
     expandedPosition,
     applyEdgeDockIfNeeded,
     restoreFromEdge,
+    hideToRevealedEdgeIfNeeded,
   }
 }

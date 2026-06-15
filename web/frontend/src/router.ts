@@ -5,6 +5,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'library', component: () => import('./views/LibraryView.vue') },
+    { path: '/onboarding', name: 'onboarding', component: () => import('./views/OnboardingView.vue') },
     { path: '/create', name: 'create', component: () => import('./views/CreateWizard.vue') },
     { path: '/reader', name: 'reader', component: () => import('./views/ReaderView.vue') },
     { path: '/workspace', name: 'dashboard', component: () => import('./views/Dashboard.vue') },
@@ -49,6 +50,7 @@ const router = createRouter({
 router.beforeEach((to) => {
   if (
     to.name === 'library' ||
+    to.name === 'onboarding' ||
     to.name === 'create' ||
     to.name === 'config' ||
     to.name === 'plugins' ||

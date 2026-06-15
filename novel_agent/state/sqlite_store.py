@@ -49,8 +49,9 @@ class SQLiteStateStore(SchemaMixin, StateRepositoryMixin, HistoryRepositoryMixin
                 cur = conn.execute(f"DELETE FROM [{table}]")
                 cleared[table] = cur.rowcount
             conn.commit()
-            conn.execute("VACUUM")
-            conn.commit()
+            if include_operational:
+                conn.execute("VACUUM")
+                conn.commit()
         logger.info(
             "Cleared narrative SQLite state (%s tables, operational=%s)",
             len(cleared),

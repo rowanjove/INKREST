@@ -42,6 +42,14 @@ def resolve_compress_schedule(root_dir: Path) -> Tuple[int, int, int]:
 
 
 def resolve_batch_fail_streak_max(root_dir: Path) -> int:
+    from novel_agent.control.factory_policy import factory_effect
+
+    factory_max = factory_effect(root_dir, "batch_fail_streak_max")
+    if factory_max is not None:
+        try:
+            return max(1, int(factory_max))
+        except (TypeError, ValueError):
+            pass
     runtime = load_pipeline_settings(root_dir).get("runtime", {}) or {}
     raw = runtime.get("batch_fail_streak_max", _DEFAULT_FAIL_STREAK)
     try:
