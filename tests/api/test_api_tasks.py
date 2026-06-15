@@ -1,5 +1,8 @@
 from tests.api._base import *  # noqa: F403
 
+import web.context as web_context
+from web.project_task_registry import ProjectTaskRegistry
+
 class ApiTasksTests(ApiTestBase):
 
     def test_task_manager_rejects_duplicate_running_chapter(self):
@@ -80,28 +83,34 @@ class ApiTasksTests(ApiTestBase):
         self.assertTrue(abort_result)
         self.assertEqual(manager.get_task(batch_id)["status"], "failed")
 
-    def test_switch_project_rejects_when_active_tasks_are_running(self):
+    def test_switch_project_allows_background_tasks_via_registry(self):
         original_active = web_server._active_project_id
         original_manager = web_server._task_manager
         original_project_manager = web_server.project_manager
+        original_registry = web_context._task_registry
         try:
             web_server.project_manager = web_server.ProjectManager(self.tmpdir)
             first = web_server.project_manager.create_project("first")
             second = web_server.project_manager.create_project("second")
-            web_server.project_manager.switch_project(first["id"])
+            registry = ProjectTaskRegistry()
+            web_context._task_registry = registry
             web_server._active_project_id = first["id"]
-            manager = TaskManager(self.tmpdir / "projects" / first["id"])
-            manager._running_tasks["task-a"] = MagicMock()
-            web_server._task_manager = manager
+            web_server._task_manager = None
+            manager_a = registry.get(self.tmpdir / "projects" / first["id"])
+            manager_a._running_tasks["task-a"] = MagicMock()
 
-            with self.assertRaises(Exception) as ctx:
-                web_server.switch_project(second["id"])
+            result = web_server.switch_project(second["id"])
 
-            self.assertEqual(getattr(ctx.exception, "status_code", None), 409)
+            self.assertEqual(result.get("id"), second["id"])
+            manager_b = registry.get(self.tmpdir / "projects" / second["id"])
+            self.assertIsNot(manager_a, manager_b)
+            self.assertTrue(registry.has_active_tasks(self.tmpdir / "projects" / first["id"]))
+            self.assertFalse(registry.has_active_tasks(self.tmpdir / "projects" / second["id"]))
         finally:
             web_server._active_project_id = original_active
             web_server._task_manager = original_manager
             web_server.project_manager = original_project_manager
+            web_context._task_registry = original_registry
 
     def test_clear_database_removes_narrative_debt_tables(self):
         original_active = web_server._active_project_id

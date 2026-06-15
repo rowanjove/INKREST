@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 from typing import Any, Optional
 from fastapi import HTTPException
+from web.project_task_registry import ProjectTaskRegistry
 from web.tasks import TaskManager
 
 # ---- Base directory (where projects.json and projects/ live) ----
@@ -18,7 +19,8 @@ else:
 
 # ---- Active project tracking ----
 _active_project_id: Optional[str] = None
-_task_manager: Optional[TaskManager] = None
+_task_manager: Optional[TaskManager] = None  # optional test override
+_task_registry = ProjectTaskRegistry.shared()
 _project_lock = threading.RLock()
 
 # Lazy load managers to prevent circular imports during module loading
@@ -52,14 +54,9 @@ def require_project_root() -> Path:
 
 
 def _get_task_manager() -> TaskManager:
-    global _task_manager
-    root_dir = get_root_dir()
-    if (
-        _task_manager is None
-        or Path(_task_manager.root_dir).resolve() != root_dir.resolve()
-    ):
-        _task_manager = TaskManager(root_dir)
-    return _task_manager
+    if _task_manager is not None:
+        return _task_manager
+    return _task_registry.get(get_root_dir())
 
 
 def get_project_store(project_id: str):
@@ -75,11 +72,14 @@ def get_project_store(project_id: str):
 
 
 def _has_active_tasks() -> bool:
-    if _task_manager is None:
+    root = get_root_dir()
+    if _task_manager is not None:
+        if not Path(_task_manager.root_dir).exists():
+            return False
+        return _task_manager.has_active_tasks()
+    if not root.exists():
         return False
-    if not Path(_task_manager.root_dir).exists():
-        return False
-    return _task_manager.has_active_tasks()
+    return _task_registry.has_active_tasks(root)
 
 
 def _ensure_no_active_tasks(action: str) -> None:
@@ -103,7 +103,8 @@ def activate_project(project_id: str) -> None:
     with _project_lock:
         _active_project_id = project_id
         root = get_root_dir()
-        _task_manager = TaskManager(root)
+        _task_manager = None
+        _task_registry.get(root)
         _ensure_dirs(root)
         _init_prompt_defaults(root)
         reset_plugin_manager()

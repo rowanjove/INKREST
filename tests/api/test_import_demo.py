@@ -1,6 +1,5 @@
 import os
 import shutil
-from fastapi import HTTPException
 
 from tests.api._base import *  # noqa: F403
 
@@ -75,24 +74,36 @@ class ImportDemoTests(ApiTestBase):
             web_server._active_project_id = original_active
             web_server.BASE_DIR = original_base
 
-    def test_import_demo_project_blocks_when_current_project_has_running_tasks(self):
+    def test_import_demo_project_allows_switch_while_background_tasks_run(self):
+        import web.context as web_context
+        from web.project_task_registry import ProjectTaskRegistry
+        from unittest.mock import MagicMock
+
         active_dir = self.tmpdir / "projects" / "active"
         active_dir.mkdir(parents=True)
+        (active_dir / "config").mkdir(parents=True)
+        (active_dir / "config" / "pipeline.yaml").write_text(
+            "llm:\n  default:\n    provider: static\n",
+            encoding="utf-8",
+        )
+        (active_dir / "data").mkdir(parents=True)
         (self.tmpdir / "projects.json").write_text(
             json.dumps({"projects": {"active": {"name": "Active"}}, "active_id": "active"}),
             encoding="utf-8",
         )
         web_server._active_project_id = "active"
+        web_server._task_manager = None
+        registry = ProjectTaskRegistry()
+        web_context._task_registry = registry
+        manager = registry.get(active_dir)
+        manager._running_tasks["task-a"] = MagicMock()
 
-        with patch("web.routes.projects.ws_server._ensure_no_active_tasks") as guard:
-            guard.side_effect = HTTPException(409, "Tasks are running")
-            response = TestClient(web_app).post("/api/projects/import-demo")
+        response = TestClient(web_app).post("/api/projects/import-demo")
 
-        self.assertEqual(response.status_code, 409)
-        guard.assert_called_once_with("switch projects")
+        self.assertEqual(response.status_code, 200)
         data = web_server.project_manager._read_registry()
-        self.assertEqual(data.get("active_id"), "active")
-        self.assertEqual(list(data.get("projects", {}).keys()), ["active"])
+        self.assertNotEqual(data.get("active_id"), "active")
+        self.assertTrue(registry.has_active_tasks(active_dir))
 
     def test_import_demo_project_handles_empty_title_options(self):
         template_root = self.tmpdir / "templates-empty-title"

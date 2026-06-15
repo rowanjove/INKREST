@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 import web.context as ctx
 from web.e2e_seed import seed_maintenance_scenario
 from web.helpers import _ensure_dirs
-from web.tasks import TaskManager
+from web.project_task_registry import ProjectTaskRegistry
 
 router = APIRouter(tags=["e2e-fixtures"])
 
@@ -28,6 +28,7 @@ def post_seed_maintenance_scenario() -> Dict[str, Any]:
         pid = payload["project_id"]
         ctx.project_manager.switch_project(pid)
         ctx._active_project_id = pid
-        ctx._task_manager = TaskManager(ctx.get_root_dir())
+        ctx._task_manager = None
+        ProjectTaskRegistry.shared().get(ctx.get_root_dir())
         _ensure_dirs(ctx.get_root_dir())
     return payload

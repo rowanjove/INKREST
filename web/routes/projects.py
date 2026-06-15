@@ -220,8 +220,6 @@ def import_demo_project(demo_id: str = Query("demo-factory-novel")) -> Dict[str,
     existing = _find_existing_demo_project(demo_id)
     if existing:
         with ws_server._project_lock:
-            if ws_server._active_project_id and ws_server._active_project_id != existing:
-                ws_server._ensure_no_active_tasks("switch projects")
             ws_server.project_manager.switch_project(existing)
             ws_server.activate_project(existing)
         info = ws_server.project_manager._read_registry().get("projects", {}).get(existing, {})
@@ -252,8 +250,6 @@ def import_demo_project(demo_id: str = Query("demo-factory-novel")) -> Dict[str,
     now = datetime.now().isoformat()
 
     with ws_server._project_lock:
-        if ws_server._active_project_id:
-            ws_server._ensure_no_active_tasks("switch projects")
         shutil.copytree(source, project_dir)
         ws_server.project_manager.register_project(
             pid,
@@ -293,8 +289,6 @@ def delete_project(pid: str) -> Dict[str, str]:
 def switch_project(pid: str) -> Dict[str, Any]:
     ws_server._validate_id(pid, "project_id")
     with ws_server._project_lock:
-        if ws_server._active_project_id and ws_server._active_project_id != pid:
-            ws_server._ensure_no_active_tasks("switch projects")
         result = ws_server.project_manager.switch_project(pid)
         ws_server.activate_project(pid)
     return result

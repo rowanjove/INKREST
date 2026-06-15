@@ -25,6 +25,17 @@
 
 显式写 `embedding.backend: sqlite` 可保留 SQLite 向量表。`/api/novel/readiness` 返回 `embedding_backend`、`chromadb_available`。
 
+### 项目级任务队列
+
+每本书独立 `TaskManager`（`web/project_task_registry.py`），切换书库不会销毁另一本书的后台章节任务。
+
+`config/pipeline.yaml` → `runtime`：
+
+- `max_concurrent_chapters`（默认：短篇 2、长篇 1）：Web 层同时运行的章节任务数
+- `max_workers`：单章内并行场景数（生成阶段 ThreadPool）
+
+`GET /api/chapters/tasks/queue` 返回当前项目的队列快照与并发上限。
+
 ### YAML 只读导出
 
 `read_only` 或需要一次性对齐磁盘时，调用 `POST /api/database/export-yaml-mirror`，从 SQLite 导出 `events/objects/foreshadows/hooks` 到 `state/*.yaml`（不恢复实时双写）。

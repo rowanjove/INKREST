@@ -28,10 +28,14 @@ def _get_autopilot_helper():
 
 
 class TaskManager:
-    def __init__(self, root_dir: Path, max_concurrent: int = 2):
+    def __init__(self, root_dir: Path, max_concurrent: Optional[int] = None):
         self.root_dir = Path(root_dir)
         self.store = SQLiteStateStore(self.root_dir)
-        self._max_concurrent = max_concurrent
+        if max_concurrent is None:
+            from novel_agent.services.execution_policy import resolve_max_concurrent_chapters
+
+            max_concurrent = resolve_max_concurrent_chapters(self.root_dir)
+        self._max_concurrent = max(1, min(int(max_concurrent), 8))
         self._semaphores_by_loop: Dict[int, asyncio.Semaphore] = {}
         self._locks_by_loop: Dict[int, asyncio.Lock] = {}
         self._novel_batch_lock = threading.Lock()
@@ -357,6 +361,29 @@ class TaskManager:
 
     def has_active_tasks(self) -> bool:
         return len(self._running_tasks) > 0
+
+    def sync_concurrency_limit(self) -> int:
+        """Reload max concurrent chapters from pipeline; clears per-loop semaphores."""
+        from novel_agent.services.execution_policy import resolve_max_concurrent_chapters
+
+        new_limit = resolve_max_concurrent_chapters(self.root_dir)
+        if new_limit != self._max_concurrent:
+            self._max_concurrent = new_limit
+            self._semaphores_by_loop.clear()
+        return self._max_concurrent
+
+    def get_queue_snapshot(self) -> Dict[str, Any]:
+        from web.tasks_autopilot import active_novel_batch_task_id_helper
+
+        active_count = sum(
+            1 for task in self._running_tasks.values() if not task.done()
+        )
+        return {
+            "max_concurrent_chapters": self._max_concurrent,
+            "active_task_count": active_count,
+            "running_chapters": sorted(self._running_chapters.keys()),
+            "novel_batch_task_id": active_novel_batch_task_id_helper(self),
+        }
 
     async def submit_batch(
         self,

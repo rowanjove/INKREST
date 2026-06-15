@@ -7,7 +7,7 @@ from fastapi import FastAPI
 import web.context as context
 from web.project_manager import ProjectManager
 from web.helpers import _ensure_dirs, _init_prompt_defaults
-from web.tasks import TaskManager
+from web.project_task_registry import ProjectTaskRegistry
 
 logger = logging.getLogger("web.lifespan")
 
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
         root = context.get_root_dir()
         _ensure_dirs(root)
         _init_prompt_defaults(root)
-        context._task_manager = TaskManager(root)
+        ProjectTaskRegistry.shared().get(root)
         from novel_agent.pipeline import llm_config_error
 
         llm_err = llm_config_error(root)

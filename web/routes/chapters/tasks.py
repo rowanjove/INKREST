@@ -310,6 +310,19 @@ async def list_tasks(session: ProjectSession = RequireProjectDep) -> List[TaskSt
     return [TaskStatus(**t) for t in tasks]
 
 
+@router.get("/api/chapters/tasks/queue")
+async def get_task_queue(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    """Project-scoped chapter task queue snapshot and concurrency limits."""
+    session = coerce_project_session(session)
+    from novel_agent.services.execution_policy import build_execution_snapshot
+
+    manager = ws_server._get_task_manager()
+    return {
+        **build_execution_snapshot(session.root_dir),
+        **manager.get_queue_snapshot(),
+    }
+
+
 @router.get("/api/chapters/tasks/{task_id}")
 async def get_task(task_id: str, session: ProjectSession = RequireProjectDep) -> TaskStatus:
     session = coerce_project_session(session)
