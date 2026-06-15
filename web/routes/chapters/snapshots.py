@@ -27,6 +27,7 @@ from web.models import (
     SaveChapterRequest,
 )
 from novel_agent.scripts.count_chars import count_chinese_chars, wordcount_report
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
 
 router = APIRouter()
 
@@ -70,10 +71,14 @@ def create_chapter_snapshot(root_dir: Path, chapter_id: str, title: str, final_t
 
 
 @router.get("/api/chapters/{chapter_id}/snapshots")
-def get_chapter_snapshots(chapter_id: str) -> List[Dict[str, Any]]:
+def get_chapter_snapshots(
+    chapter_id: str,
+    session: ProjectSession = RequireProjectDep,
+) -> List[Dict[str, Any]]:
     import json
+    session = coerce_project_session(session)
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-    chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
     if not chapter_dir.exists():
         raise HTTPException(404, f"Chapter {safe_id} not found")
         
@@ -97,9 +102,14 @@ class CreateSnapshotRequest(BaseModel):
 
 
 @router.post("/api/chapters/{chapter_id}/snapshots")
-def create_manual_snapshot(chapter_id: str, req: CreateSnapshotRequest) -> Dict[str, Any]:
+def create_manual_snapshot(
+    chapter_id: str,
+    req: CreateSnapshotRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-    chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
     if not chapter_dir.exists():
         raise HTTPException(404, f"Chapter {safe_id} not found")
         
@@ -112,15 +122,20 @@ def create_manual_snapshot(chapter_id: str, req: CreateSnapshotRequest) -> Dict[
         plan = ws_server._read_json(plan_path)
     title = plan.get("chapter_title", req.title or f"第 {safe_id} 章")
     
-    snapshot = create_chapter_snapshot(ws_server.get_root_dir(), safe_id, title, final_text, is_manual=True)
+    snapshot = create_chapter_snapshot(session.root_dir, safe_id, title, final_text, is_manual=True)
     return {"status": "created", "snapshot": snapshot}
 
 
 @router.post("/api/chapters/{chapter_id}/snapshots/{timestamp}/rollback")
-def rollback_chapter_snapshot(chapter_id: str, timestamp: str) -> Dict[str, Any]:
+def rollback_chapter_snapshot(
+    chapter_id: str,
+    timestamp: str,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
     import json
+    session = coerce_project_session(session)
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-    chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
     if not chapter_dir.exists():
         raise HTTPException(404, f"Chapter {safe_id} not found")
         

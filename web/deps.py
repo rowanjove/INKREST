@@ -6,10 +6,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 
 import web.context as ctx
 from web.context import get_root_dir, require_project_root
+
+ACTOR_HEADER = "X-Novel-Agent-Actor"
 
 
 @dataclass(frozen=True)
@@ -18,26 +20,46 @@ class ProjectSession:
 
     project_id: Optional[str]
     root_dir: Path
+    actor_id: str = "local"
 
     @property
     def has_project(self) -> bool:
         return bool(self.project_id)
 
 
+def _resolve_actor_id(request: Request) -> str:
+    raw = str(request.headers.get(ACTOR_HEADER) or "").strip()
+    if not raw:
+        return "local"
+    return raw[:64]
+
+
 def coerce_project_session(session: Any = None) -> ProjectSession:
     """Resolve session for direct handler calls (unit tests) or FastAPI injection."""
     if isinstance(session, ProjectSession):
         return session
-    return get_project_session()
+    return ProjectSession(
+        project_id=ctx._active_project_id,
+        root_dir=get_root_dir(),
+        actor_id="local",
+    )
 
 
-def get_project_session() -> ProjectSession:
-    return ProjectSession(project_id=ctx._active_project_id, root_dir=get_root_dir())
+def get_project_session(request: Request) -> ProjectSession:
+    return ProjectSession(
+        project_id=ctx._active_project_id,
+        root_dir=get_root_dir(),
+        actor_id=_resolve_actor_id(request),
+    )
 
 
-def require_project_session() -> ProjectSession:
+def require_project_session(request: Request) -> ProjectSession:
     root = require_project_root()
-    return ProjectSession(project_id=ctx._active_project_id, root_dir=root)
+    return ProjectSession(
+        project_id=ctx._active_project_id,
+        root_dir=root,
+        actor_id=_resolve_actor_id(request),
+    )
 
 
 def touch_project_activity(session: ProjectSession) -> None:

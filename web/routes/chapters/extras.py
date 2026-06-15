@@ -28,11 +28,17 @@ from web.models import (
     SaveChapterRequest,
 )
 from novel_agent.scripts.count_chars import count_chinese_chars, wordcount_report
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
 
 router = APIRouter()
 
 @router.get("/api/scrapbook")
-def get_scrapbook(query: Optional[str] = "", chapter_id: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_scrapbook(
+    query: Optional[str] = "",
+    chapter_id: Optional[str] = None,
+    session: ProjectSession = RequireProjectDep,
+) -> List[Dict[str, Any]]:
+    session = coerce_project_session(session)
     store = ws_server._get_task_manager().store
     return store.search_scrapbook(query=query, chapter_id=chapter_id)
 
@@ -170,11 +176,12 @@ def golden_check(pid: str) -> Dict[str, Any]:
 
 
 @router.get("/api/pipeline-alerts")
-def list_pipeline_alerts() -> Dict[str, Any]:
+def list_pipeline_alerts(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     """Chapters whose checkpoint indicates a blocked or rejected pipeline gate."""
     from novel_agent.services.pipeline_pending import collect_pipeline_alerts_cached
 
-    root = ws_server.require_project_root()
+    session = coerce_project_session(session)
+    root = session.root_dir
     chapters_root = root / "workspace" / "chapters"
     if not chapters_root.exists():
         chapters_root.mkdir(parents=True, exist_ok=True)
@@ -182,7 +189,12 @@ def list_pipeline_alerts() -> Dict[str, Any]:
 
 
 @router.patch("/api/chapters/{chapter_id}/external-review")
-def patch_external_review(chapter_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+def patch_external_review(
+    chapter_id: str,
+    body: Dict[str, Any],
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     from web.models import ExternalReviewUpdate
 
     from novel_agent.services.external_review import set_external_review_status
@@ -190,7 +202,7 @@ def patch_external_review(chapter_id: str, body: Dict[str, Any]) -> Dict[str, An
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
     req = ExternalReviewUpdate(**body)
     row = set_external_review_status(
-        ws_server.get_root_dir(),
+        session.root_dir,
         safe_id,
         req.status,
         note=req.note or "",
@@ -199,12 +211,16 @@ def patch_external_review(chapter_id: str, body: Dict[str, Any]) -> Dict[str, An
 
 
 @router.post("/api/chapters/export-trial")
-def export_chapters_for_trial(body: Dict[str, Any]) -> Dict[str, Any]:
+def export_chapters_for_trial(
+    body: Dict[str, Any],
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     """Plain-text bundle for pasting to external platforms."""
     from web.models import TrialExportRequest
 
     req = TrialExportRequest(**body)
-    root = ws_server.get_root_dir()
+    root = session.root_dir
     chapters_root = root / "workspace" / "chapters"
     ids = req.chapter_ids
     if not ids:
@@ -238,18 +254,22 @@ def export_chapters_for_trial(body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.post("/api/pipeline-alerts/{chapter_id}/dismiss")
-def dismiss_pipeline_alert(chapter_id: str) -> Dict[str, Any]:
+def dismiss_pipeline_alert(
+    chapter_id: str,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     """Mark a pipeline alert as handled without deleting chapter artifacts."""
     from datetime import datetime
 
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-    chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
     checkpoint_path = chapter_dir / "checkpoint.json"
     if not checkpoint_path.exists():
         try:
             from novel_agent.services.batch_retry_queue import dismiss_batch_retry
 
-            if dismiss_batch_retry(ws_server.get_root_dir(), safe_id):
+            if dismiss_batch_retry(session.root_dir, safe_id):
                 return {
                     "status": "ok",
                     "chapter_id": safe_id,
@@ -272,13 +292,13 @@ def dismiss_pipeline_alert(chapter_id: str) -> Dict[str, Any]:
     try:
         from novel_agent.services.pipeline_pending import invalidate_pipeline_alerts_cache
 
-        invalidate_pipeline_alerts_cache(ws_server.get_root_dir())
+        invalidate_pipeline_alerts_cache(session.root_dir)
     except Exception:
         pass
     try:
         from novel_agent.services.batch_retry_queue import dismiss_batch_retry
 
-        dismiss_batch_retry(ws_server.get_root_dir(), safe_id)
+        dismiss_batch_retry(session.root_dir, safe_id)
     except Exception:
         pass
     return {"status": "ok", "chapter_id": safe_id, "resolved_at": checkpoint["resolved_at"]}

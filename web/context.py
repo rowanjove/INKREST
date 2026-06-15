@@ -44,11 +44,13 @@ def get_root_dir() -> Path:
 def require_project_root() -> Path:
     """Active or legacy project root; raises 400 when no book is open."""
     root = get_root_dir()
-    if _active_project_id:
-        if not root.is_dir():
-            raise HTTPException(404, "当前项目不存在，请从书库重新打开。")
+    if not _active_project_id:
         return root
-    if (root / "workspace").is_dir() or (root / "projects").is_dir():
+    if not root.is_dir():
+        raise HTTPException(404, "当前项目不存在，请从书库重新打开。")
+    if (root / "workspace").is_dir():
+        return root
+    if (root / "config" / "pipeline.yaml").is_file():
         return root
     raise HTTPException(400, "请先在书库选择并打开一本书。")
 

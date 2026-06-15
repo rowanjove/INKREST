@@ -36,6 +36,10 @@
 
 `GET /api/chapters/tasks/queue` 返回当前项目的队列快照与并发上限。
 
+### 请求级项目上下文
+
+高风险与书级 API 统一注入 `ProjectSession`（`web/deps.py`）：`project_id`、`root_dir`、可选 `actor_id`（请求头 `X-Novel-Agent-Actor`，默认 `local`）。写操作路由使用 `RequireProjectDep`（无打开的书则 400）。
+
 ### YAML 只读导出
 
 `read_only` 或需要一次性对齐磁盘时，调用 `POST /api/database/export-yaml-mirror`，从 SQLite 导出 `events/objects/foreshadows/hooks` 到 `state/*.yaml`（不恢复实时双写）。

@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 import web.context as ws_server
 import web.helpers as ws_helpers
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
 from web.security import ALLOW_RUNTIME_INSTALL_ENV, validate_outbound_model_base_url
 from web.model_library import ModelLibrary
 
@@ -87,13 +88,15 @@ def _save_project_scoped_sections(
 # ---- Config ----
 
 @router.get("/api/config")
-def get_config() -> Dict[str, Any]:
-    return ws_server._mask_config_secrets(ws_server._effective_pipeline_settings(ws_server.get_root_dir()))
+def get_config(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    return ws_server._mask_config_secrets(ws_server._effective_pipeline_settings(session.root_dir))
 
 
 @router.put("/api/config")
-def update_config(body: ConfigUpdate) -> Dict[str, str]:
-    root_dir = ws_server.get_root_dir()
+def update_config(body: ConfigUpdate, session: ProjectSession = RequireProjectDep) -> Dict[str, str]:
+    session = coerce_project_session(session)
+    root_dir = session.root_dir
     global_dir = resolve_global_config_dir(root_dir)
 
     if global_dir:
@@ -139,41 +142,49 @@ def update_global_defaults(body: ConfigUpdate) -> Dict[str, str]:
 # ---- Models Library ----
 
 @router.get("/api/models")
-def list_models() -> List[Dict[str, Any]]:
-    return ws_server.ModelLibrary(ws_server.get_root_dir()).list_models()
+def list_models(session: ProjectSession = RequireProjectDep) -> List[Dict[str, Any]]:
+    session = coerce_project_session(session)
+    return ws_server.ModelLibrary(session.root_dir).list_models()
 
 
 @router.get("/api/models/slots")
-def get_model_slots() -> Dict[str, Any]:
-    return ws_server.ModelLibrary(ws_server.get_root_dir()).get_slots()
+def get_model_slots(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    return ws_server.ModelLibrary(session.root_dir).get_slots()
 
 
 @router.patch("/api/models/{model_id}/slot")
-def set_model_slot(model_id: str, body: ModelSlotRequest) -> Dict[str, Any]:
+def set_model_slot(
+    model_id: str,
+    body: ModelSlotRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     ws_server._validate_id(model_id, "model_id")
-    return ws_server.ModelLibrary(ws_server.get_root_dir()).set_model_slot(
-        model_id, body.slot
-    )
+    return ws_server.ModelLibrary(session.root_dir).set_model_slot(model_id, body.slot)
 
 
 @router.post("/api/models")
-def save_model(req: ModelSaveRequest) -> Dict[str, Any]:
+def save_model(req: ModelSaveRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     data = req.model_dump()
     model_id = data.pop("id")
-    return ws_server.ModelLibrary(ws_server.get_root_dir()).save_model(model_id, data)
+    return ws_server.ModelLibrary(session.root_dir).save_model(model_id, data)
 
 
 @router.delete("/api/models/{model_id}")
-def delete_model(model_id: str) -> Dict[str, str]:
+def delete_model(model_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, str]:
+    session = coerce_project_session(session)
     ws_server._validate_id(model_id, "model_id")
-    ws_server.ModelLibrary(ws_server.get_root_dir()).delete_model(model_id)
+    ws_server.ModelLibrary(session.root_dir).delete_model(model_id)
     return {"status": "deleted"}
 
 
 @router.post("/api/models/test")
-def test_model(req: ModelTestRequest) -> Dict[str, Any]:
+def test_model(req: ModelTestRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     config = req.model_dump()
-    return ws_server.ModelLibrary(ws_server.get_root_dir()).test_model(config)
+    return ws_server.ModelLibrary(session.root_dir).test_model(config)
 
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -205,15 +216,23 @@ class EmbeddingTestRequest(BaseModel):
 
 
 @router.post("/api/models/test-context")
-def test_model_context(req: ModelContextTestRequest) -> Dict[str, Any]:
+def test_model_context(
+    req: ModelContextTestRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     config = req.model_dump()
     test_tokens = config.pop("test_context_tokens", 16000)
-    return ws_server.ModelLibrary(ws_server.get_root_dir()).test_model(config, test_context_tokens=test_tokens)
+    return ws_server.ModelLibrary(session.root_dir).test_model(config, test_context_tokens=test_tokens)
 
 
 @router.post("/api/config/embedding/test")
-def test_embedding_config(req: EmbeddingTestRequest) -> Dict[str, Any]:
-    root_dir = ws_server.get_root_dir()
+def test_embedding_config(
+    req: EmbeddingTestRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    root_dir = session.root_dir
     provider = req.provider
     
     if provider == "stub":
@@ -573,7 +592,8 @@ def _do_stream_download(url: str, temp_path: Path, p_start: float, p_end: float,
 
 
 @router.get("/api/config/embedding/status")
-def get_embedding_status():
+def get_embedding_status(session: ProjectSession = RequireProjectDep):
+    session = coerce_project_session(session)
     import importlib.util
     
     py_deps_dir = BASE_DIR / "data" / "py_deps"
@@ -597,7 +617,7 @@ def get_embedding_status():
     from novel_agent.control.scale_profile import is_vector_enabled_for_project
     from novel_agent.control.runtime_policy import is_semantic_search_effective, resolve_runtime_policy
 
-    root_dir = ws_server.get_root_dir()
+    root_dir = session.root_dir
     current = load_pipeline_settings(root_dir)
     provider = current.get("embedding", {}).get("provider", "stub")
     vector_enabled = is_vector_enabled_for_project(root_dir)
@@ -622,12 +642,13 @@ def get_embedding_status():
 
 
 @router.post("/api/config/embedding/rebuild-index")
-def rebuild_embedding_index():
+def rebuild_embedding_index(session: ProjectSession = RequireProjectDep):
+    session = coerce_project_session(session)
     """Rebuild HNSW indices from SQLite vector_embeddings (long-run maintenance)."""
     from novel_agent.pipeline import PipelineConfig
     from novel_agent.orchestrator import NovelOrchestrator
 
-    root_dir = ws_server.get_root_dir()
+    root_dir = session.root_dir
     config = PipelineConfig.from_config(root_dir)
     orchestrator = NovelOrchestrator(config)
     store = orchestrator.vector_store
@@ -638,7 +659,8 @@ def rebuild_embedding_index():
 
 
 @router.post("/api/config/embedding/setup-local")
-def post_setup_local():
+def post_setup_local(session: ProjectSession = RequireProjectDep):
+    session = coerce_project_session(session)
     global setup_state
     if os.environ.get(ALLOW_RUNTIME_INSTALL_ENV, "").lower() not in ("1", "true", "yes"):
         raise HTTPException(
@@ -654,7 +676,7 @@ def post_setup_local():
         setup_state["message"] = "正在启动本地模型部署..."
         setup_state["error"] = None
 
-    root_dir = ws_server.get_root_dir()
+    root_dir = session.root_dir
     thread = threading.Thread(target=bg_setup_local, args=(root_dir,), daemon=True)
     try:
         thread.start()

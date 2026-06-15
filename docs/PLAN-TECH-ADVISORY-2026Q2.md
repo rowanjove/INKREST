@@ -33,7 +33,7 @@
 | 2 数据 | YAML `read_only` + 导出 API；章节 index `gate_status`/`has_final` | ✅ | 迁 PostgreSQL |
 | 3 召回 | long/epic 默认 ChromaDB + readiness 暴露 backend | ✅ | 云向量服务 |
 | 4 执行 | 项目级 TaskManager 注册表 + `max_concurrent_chapters` | ✅ | 盲目上 Celery |
-| 5 平台 | 全路由 `ProjectSession`、可选多用户 | 部分 | 微服务拆分 |
+| 5 平台 | 全路由 `ProjectSession`（≥95%）+ `X-Novel-Agent-Actor` | ✅ | 微服务拆分 |
 
 ## 每周自检
 

@@ -27,6 +27,7 @@ from web.models import (
     SaveChapterRequest,
 )
 from novel_agent.scripts.count_chars import count_chinese_chars, wordcount_report
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
 
 router = APIRouter()
 
@@ -46,12 +47,13 @@ class CompareVersionsRequest(BaseModel):
     version_id_b: str
 
 @router.get("/api/chapters/{chapter_id}/versions")
-def get_versions(chapter_id: str) -> List[Dict[str, Any]]:
+def get_versions(chapter_id: str, session: ProjectSession = RequireProjectDep) -> List[Dict[str, Any]]:
+    session = coerce_project_session(session)
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
     store = ws_server._get_task_manager().store
     versions = store.list_chapter_versions(safe_id)
     
-    chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
     final_txt_path = chapter_dir / "chapter_final.txt"
     content = ws_server._read_text(final_txt_path)
     
@@ -103,7 +105,12 @@ def get_versions(chapter_id: str) -> List[Dict[str, Any]]:
     return versions
 
 @router.post("/api/chapters/{chapter_id}/versions")
-def create_version(chapter_id: str, req: CreateVersionRequest) -> Dict[str, Any]:
+def create_version(
+    chapter_id: str,
+    req: CreateVersionRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     import json
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
     store = ws_server._get_task_manager().store
@@ -118,7 +125,7 @@ def create_version(chapter_id: str, req: CreateVersionRequest) -> Dict[str, Any]
             content = active_v.get("content", "")
             plan_str = active_v.get("plan", "{}")
         else:
-            chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+            chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
             final_txt_path = chapter_dir / "chapter_final.txt"
             content = ws_server._read_text(final_txt_path)
             plan_path = chapter_dir / "plan.json"
@@ -139,7 +146,12 @@ def create_version(chapter_id: str, req: CreateVersionRequest) -> Dict[str, Any]
     return {"status": "created", "version_id": v_id}
 
 @router.put("/api/chapters/versions/{version_id}")
-def update_version(version_id: str, req: UpdateVersionRequest) -> Dict[str, Any]:
+def update_version(
+    version_id: str,
+    req: UpdateVersionRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     import json
     store = ws_server._get_task_manager().store
     version = store.get_chapter_version(version_id)
@@ -161,7 +173,7 @@ def update_version(version_id: str, req: UpdateVersionRequest) -> Dict[str, Any]
     )
     
     if version["is_active"] == 1 and req.content is not None:
-        chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{version['chapter_id']}"
+        chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{version['chapter_id']}"
         final_txt_path = chapter_dir / "chapter_final.txt"
         final_txt_path.write_text(content, encoding="utf-8")
         
@@ -178,7 +190,8 @@ def update_version(version_id: str, req: UpdateVersionRequest) -> Dict[str, Any]
     return {"status": "updated"}
 
 @router.delete("/api/chapters/versions/{version_id}")
-def delete_version(version_id: str) -> Dict[str, Any]:
+def delete_version(version_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     store = ws_server._get_task_manager().store
     version = store.get_chapter_version(version_id)
     if not version:
@@ -191,7 +204,12 @@ def delete_version(version_id: str) -> Dict[str, Any]:
         raise HTTPException(400, str(exc))
 
 @router.post("/api/chapters/{chapter_id}/versions/{version_id}/activate")
-def activate_version(chapter_id: str, version_id: str) -> Dict[str, Any]:
+def activate_version(
+    chapter_id: str,
+    version_id: str,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     import json
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
     store = ws_server._get_task_manager().store
@@ -203,19 +221,19 @@ def activate_version(chapter_id: str, version_id: str) -> Dict[str, Any]:
         raise HTTPException(400, "Chapter version does not belong to the requested chapter")
         
     try:
-        chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+        chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
         final_txt_path = chapter_dir / "chapter_final.txt"
         current_text = ws_server._read_text(final_txt_path)
         plan_path = chapter_dir / "plan.json"
         plan = ws_server._read_json(plan_path) if plan_path.exists() else {}
         title = plan.get("chapter_title", f"第 {safe_id} 章")
-        create_chapter_snapshot(ws_server.get_root_dir(), safe_id, f"系统自动备份（切换分支前：{title}）", current_text, is_manual=False)
+        create_chapter_snapshot(session.root_dir, safe_id, f"系统自动备份（切换分支前：{title}）", current_text, is_manual=False)
     except Exception as e:
         ws_server.logger.warning("Failed to create pre-activation backup snapshot: %s", e)
         
     store.set_active_chapter_version(safe_id, version_id)
     
-    chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
     final_txt_path = chapter_dir / "chapter_final.txt"
     final_txt_path.write_text(version["content"], encoding="utf-8")
     
@@ -241,7 +259,12 @@ def activate_version(chapter_id: str, version_id: str) -> Dict[str, Any]:
     return {"status": "activated", "title": plan.get("chapter_title", f"第 {safe_id} 章")}
 
 @router.post("/api/chapters/{chapter_id}/versions/compare")
-def compare_versions(chapter_id: str, req: CompareVersionsRequest) -> List[Dict[str, str]]:
+def compare_versions(
+    chapter_id: str,
+    req: CompareVersionsRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> List[Dict[str, str]]:
+    session = coerce_project_session(session)
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
     store = ws_server._get_task_manager().store
     v_a = store.get_chapter_version(req.version_id_a)

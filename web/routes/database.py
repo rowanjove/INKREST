@@ -48,13 +48,15 @@ class ClearDatabaseRequest(BaseModel):
 @router.post("/api/database/clear")
 def clear_database(
     body: ClearDatabaseRequest = Body(default_factory=ClearDatabaseRequest),
+    session: ProjectSession = RequireProjectDep,
 ) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     if not body.confirm:
         raise HTTPException(
             400,
             "Destructive operation: set confirm=true in request body.",
         )
-    store = SQLiteStateStore(ws_server.get_root_dir())
+    store = SQLiteStateStore(session.root_dir)
     cleared = store.clear_narrative_state(include_operational=body.include_operational)
     return {
         "status": "cleared",
@@ -125,7 +127,9 @@ def export_novel(
     chapter_ids: Optional[str] = Query(None, description="Comma-separated chapter IDs, or empty for all"),
     title: str = Query("未命名小说", description="Book title"),
     project_id: Optional[str] = Query(None, description="Project ID"),
+    session: ProjectSession = RequireProjectDep,
 ) -> FileResponse:
+    session = coerce_project_session(session)
     """Export chapters in the specified format."""
     from novel_agent.exporters import export_txt, export_epub, export_pdf
 
@@ -135,7 +139,7 @@ def export_novel(
         if not root_dir.exists():
             raise HTTPException(404, f"Project {project_id} not found")
     else:
-        root_dir = ws_server.get_root_dir()
+        root_dir = session.root_dir
 
     ids = [c.strip() for c in chapter_ids.split(",")] if chapter_ids else None
     
@@ -179,8 +183,9 @@ def export_novel(
 # ---- State & Narrative Debt ----
 
 @router.get("/api/state")
-def get_state(sync: bool = False) -> StateView:
-    root = ws_server.get_root_dir()
+def get_state(sync: bool = False, session: ProjectSession = RequireProjectDep) -> StateView:
+    session = coerce_project_session(session)
+    root = session.root_dir
     store = SQLiteStateStore(root)
     if sync:
         try:
@@ -207,8 +212,9 @@ def get_state(sync: bool = False) -> StateView:
 
 
 @router.get("/api/state/timeline")
-def get_timeline() -> TimelineView:
-    store = SQLiteStateStore(ws_server.get_root_dir())
+def get_timeline(session: ProjectSession = RequireProjectDep) -> TimelineView:
+    session = coerce_project_session(session)
+    store = SQLiteStateStore(session.root_dir)
     items = store.search_timeline("", limit=500)
 
     nodes = [i for i in items if i.get("kind") == "node"]
@@ -225,8 +231,13 @@ def get_timeline() -> TimelineView:
 
 
 @router.get("/api/events")
-def search_events(query: str = "", limit: int = 20) -> List[Dict[str, Any]]:
-    store = SQLiteStateStore(ws_server.get_root_dir())
+def search_events(
+    query: str = "",
+    limit: int = 20,
+    session: ProjectSession = RequireProjectDep,
+) -> List[Dict[str, Any]]:
+    session = coerce_project_session(session)
+    store = SQLiteStateStore(session.root_dir)
     return store.search_events(query, limit)
 
 
@@ -239,8 +250,12 @@ class CollectDebtRequest(BaseModel):
 
 
 @router.get("/api/control/narrative-debt")
-def get_narrative_debt(current_chapter: str = "") -> Dict[str, Any]:
-    store = SQLiteStateStore(ws_server.get_root_dir())
+def get_narrative_debt(
+    current_chapter: str = "",
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    store = SQLiteStateStore(session.root_dir)
     chapter = current_chapter or "000"
     return {
         "foreshadows": classify_debt(store.list_foreshadows(), chapter, default_period=10, weight=1.0),
@@ -250,8 +265,12 @@ def get_narrative_debt(current_chapter: str = "") -> Dict[str, Any]:
 
 
 @router.post("/api/control/narrative-debt/collect")
-def collect_debt(req: CollectDebtRequest) -> Dict[str, Any]:
-    store = SQLiteStateStore(ws_server.get_root_dir())
+def collect_debt(
+    req: CollectDebtRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    store = SQLiteStateStore(session.root_dir)
     table_map = {
         "foreshadows": "foreshadows",
         "foreshadow": "foreshadows",
@@ -271,9 +290,10 @@ def collect_debt(req: CollectDebtRequest) -> Dict[str, Any]:
 
 
 @router.get("/api/control/calibration")
-def get_calibration_report() -> Dict[str, Any]:
+def get_calibration_report(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     outline = ws_server.get_outline()
-    root = ws_server.get_root_dir()
+    root = session.root_dir
     store = SQLiteStateStore(root)
     if store.count_chapters_indexed() == 0:
         sync_chapters_from_disk(root, store)
@@ -287,14 +307,15 @@ def get_calibration_report() -> Dict[str, Any]:
         for row in rows
     ]
     current = chapters[-1]["chapter_id"] if chapters else "000"
-    debt = get_narrative_debt(current_chapter=current)
+    debt = get_narrative_debt(current_chapter=current, session=session)
     return ws_server.build_calibration_report(outline, chapters, debt)
 
 
 @router.get("/api/control/scale-profile")
-def get_scale_profile() -> Dict[str, Any]:
+def get_scale_profile(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     outline = ws_server.get_outline()
-    root = ws_server.get_root_dir()
+    root = session.root_dir
     store = SQLiteStateStore(root)
     if store.count_chapters_indexed() == 0:
         sync_chapters_from_disk(root, store)
@@ -328,7 +349,8 @@ async def clear_runtime_logs_api() -> Dict[str, str]:
 
 
 @router.get("/api/llm-logs")
-async def get_llm_logs() -> Dict[str, Any]:
+async def get_llm_logs(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    coerce_project_session(session)
     tasks = await ws_server._get_task_manager().list_tasks_async()
     all_logs = []
     for task in tasks:
@@ -352,8 +374,9 @@ async def get_llm_logs() -> Dict[str, Any]:
 
 
 @router.get("/api/dashboard")
-def get_dashboard() -> Dict[str, str]:
-    html = build_dashboard_html(ws_server.get_root_dir())
+def get_dashboard(session: ProjectSession = RequireProjectDep) -> Dict[str, str]:
+    session = coerce_project_session(session)
+    html = build_dashboard_html(session.root_dir)
     return {"html": html}
 
 
@@ -368,14 +391,19 @@ class SaveRelationRequest(BaseModel):
 
 
 @router.get("/api/control/character-relations")
-def get_character_relations() -> List[Dict[str, Any]]:
-    store = SQLiteStateStore(ws_server.get_root_dir())
+def get_character_relations(session: ProjectSession = RequireProjectDep) -> List[Dict[str, Any]]:
+    session = coerce_project_session(session)
+    store = SQLiteStateStore(session.root_dir)
     return store.list_character_relations()
 
 
 @router.post("/api/control/character-relations")
-def save_character_relation(req: SaveRelationRequest) -> Dict[str, Any]:
-    store = SQLiteStateStore(ws_server.get_root_dir())
+def save_character_relation(
+    req: SaveRelationRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    store = SQLiteStateStore(session.root_dir)
     store.save_character_relation(
         source_char=req.source_char,
         target_char=req.target_char,
@@ -389,7 +417,11 @@ def save_character_relation(req: SaveRelationRequest) -> Dict[str, Any]:
 
 
 @router.delete("/api/control/character-relations/{relation_id}")
-def delete_character_relation(relation_id: int) -> Dict[str, Any]:
-    store = SQLiteStateStore(ws_server.get_root_dir())
+def delete_character_relation(
+    relation_id: int,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    store = SQLiteStateStore(session.root_dir)
     store.delete_character_relation(relation_id)
     return {"status": "success"}
