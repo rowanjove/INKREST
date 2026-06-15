@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
-import { listTasks, abortTask as apiAbortTask, getRuntimeLogs, clearRuntimeLogs } from '../api'
+import { abortTask as apiAbortTask, clearRuntimeLogs } from '../api'
 import { errorCodeHint } from '../utils/errorCodes'
 
 function pulsePetPipelineRefresh() {
@@ -10,15 +10,7 @@ function pulsePetPipelineRefresh() {
     /* BroadcastChannel unavailable */
   }
 }
-import {
-  buildTasksWebSocketUrl,
-  RUNTIME_LOG_POLL_INTERVAL_MS,
-  TASK_POLL_INTERVAL_MS,
-  TASK_WS_BACKUP_POLL_MS,
-  TASK_WS_HEARTBEAT_MS,
-  TASK_WS_RECONNECT_MS,
-} from '../composables/useTaskTransport'
-import { shouldPoll } from '../utils/pollingGate'
+import { createRuntimeLogTransport, createTaskListTransport } from '../composables/useTaskProgress'
 import { PRODUCTION_BLOCKS } from '../constants/pipelineDisplay'
 import { chapterHasGateFailure } from '../utils/productionLineBlocks'
 import { usePipelineAlertsStore } from './pipelineAlerts'
@@ -305,8 +297,6 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const lastRuntimeLogId = ref(0)
-  let runtimeLogTimer: number | null = null
-  let runtimeLogPollConsumers = 0
 
   function ingestRuntimeLog(row: {
     id?: number
@@ -351,38 +341,6 @@ export const useTasksStore = defineStore('tasks', () => {
     })
   }
 
-  async function pollRuntimeLogs() {
-    if (!shouldPoll()) return
-    try {
-      const { data } = await getRuntimeLogs(lastRuntimeLogId.value, 200)
-      for (const row of data.logs || []) {
-        ingestRuntimeLog(row)
-      }
-      if (data.last_id) {
-        lastRuntimeLogId.value = Math.max(lastRuntimeLogId.value, data.last_id)
-      }
-    } catch {
-      /* optional when backend busy */
-    }
-  }
-
-  function startRuntimeLogPolling() {
-    runtimeLogPollConsumers += 1
-    if (runtimeLogTimer) return
-    pollRuntimeLogs()
-    runtimeLogTimer = window.setInterval(pollRuntimeLogs, RUNTIME_LOG_POLL_INTERVAL_MS)
-  }
-
-  function stopRuntimeLogPolling() {
-    if (runtimeLogPollConsumers <= 0) return
-    runtimeLogPollConsumers -= 1
-    if (runtimeLogPollConsumers > 0) return
-    if (runtimeLogTimer) {
-      window.clearInterval(runtimeLogTimer)
-      runtimeLogTimer = null
-    }
-  }
-
   async function clearLogs() {
     logs.value = []
     progress.value = []
@@ -393,18 +351,6 @@ export const useTasksStore = defineStore('tasks', () => {
     } catch {
       /* ignore */
     }
-  }
-
-  let pollingTimer: number | null = null
-  let wsBackupPollTimer: number | null = null
-  let wsSocket: WebSocket | null = null
-  let wsFallbackTimer: number | null = null
-  let wsHeartbeatTimer: number | null = null
-  let wsUsePollingFallback = false
-  let taskPollConsumers = 0
-  let wsAllowReconnect = true
-  function wsTasksUrl(): string {
-    return buildTasksWebSocketUrl()
   }
 
   function isNovelPipelineTask(task: TaskSummary): boolean {
@@ -483,144 +429,35 @@ export const useTasksStore = defineStore('tasks', () => {
       }
   }
 
-  async function pollTasks() {
-    if (!shouldPoll()) return
-    try {
-      const { data } = await listTasks()
-      processTasksList(data)
-    } catch (e) {
-      console.error('Error polling tasks:', e)
-    }
-  }
-
-  async function refreshTaskList() {
-    try {
-      const { data } = await listTasks()
-      processTasksList(data)
-    } catch (e) {
-      console.error('Error refreshing tasks:', e)
-    }
-  }
-
-  function startWsHeartbeat() {
-    if (wsHeartbeatTimer) return
-    wsHeartbeatTimer = window.setInterval(() => {
-      if (wsSocket?.readyState === WebSocket.OPEN) {
-        wsSocket.send('ping')
-      }
-    }, TASK_WS_HEARTBEAT_MS)
-  }
-
-  function stopWsHeartbeat() {
-    if (wsHeartbeatTimer) {
-      window.clearInterval(wsHeartbeatTimer)
-      wsHeartbeatTimer = null
-    }
-  }
-
-  function connectTaskWebSocket() {
-    if (wsSocket || wsUsePollingFallback) return
-    try {
-      const socket = new WebSocket(wsTasksUrl())
-      wsSocket = socket
-      socket.onopen = () => {
-        const token = window.localStorage.getItem('novel-agent-access-token')
-        if (token) socket.send(JSON.stringify({ type: 'auth', token }))
-        socket.send('ping')
-        startWsHeartbeat()
-        if (pollingTimer) {
-          window.clearInterval(pollingTimer)
-          pollingTimer = null
-        }
-        // WS 推送可能延迟或漏包，保留 HTTP 轮询兜底，避免生产线/山山一直待机
-        startWsBackupPoll()
-      }
-      socket.onmessage = (ev) => {
-        try {
-          const payload = JSON.parse(ev.data)
-          if (Array.isArray(payload)) processTasksList(payload)
-        } catch {
-          /* ignore malformed */
-        }
-      }
-      socket.onerror = () => {
-        wsUsePollingFallback = true
-        stopWsHeartbeat()
-        stopWsBackupPoll()
-        socket.close()
-        wsSocket = null
-        startPollingFallback()
-      }
-      socket.onclose = () => {
-        wsSocket = null
-        stopWsHeartbeat()
-        stopWsBackupPoll()
-        if (!wsUsePollingFallback && wsAllowReconnect && taskPollConsumers > 0) {
-          wsFallbackTimer = window.setTimeout(connectTaskWebSocket, TASK_WS_RECONNECT_MS)
-        }
-      }
-    } catch {
-      wsUsePollingFallback = true
-      startPollingFallback()
-    }
-  }
-
-  function startPollingFallback() {
-    if (pollingTimer) return
-    pollTasks()
-    pollingTimer = window.setInterval(pollTasks, TASK_POLL_INTERVAL_MS)
-  }
-
-  function startWsBackupPoll() {
-    if (wsBackupPollTimer) return
-    void pollTasks()
-    wsBackupPollTimer = window.setInterval(() => {
-      void pollTasks()
-    }, TASK_WS_BACKUP_POLL_MS)
-  }
-
-  function stopWsBackupPoll() {
-    if (wsBackupPollTimer) {
-      window.clearInterval(wsBackupPollTimer)
-      wsBackupPollTimer = null
-    }
-  }
-
-  function disconnectTaskWebSocket() {
-    if (wsFallbackTimer) {
-      window.clearTimeout(wsFallbackTimer)
-      wsFallbackTimer = null
-    }
-    stopWsHeartbeat()
-    stopWsBackupPoll()
-    if (wsSocket) {
-      wsSocket.close()
-      wsSocket = null
-    }
-  }
+  const taskListTransport = createTaskListTransport({
+    onTasksList: processTasksList,
+  })
+  const runtimeLogTransport = createRuntimeLogTransport({
+    onRuntimeLog: ingestRuntimeLog,
+    getLastLogId: () => lastRuntimeLogId.value,
+    setLastLogId: (id) => {
+      lastRuntimeLogId.value = id
+    },
+  })
 
   function startPolling() {
-    taskPollConsumers += 1
-    wsAllowReconnect = true
-    void pollTasks()
-    connectTaskWebSocket()
-    if (wsUsePollingFallback) {
-      startPollingFallback()
-    } else if (wsSocket?.readyState === WebSocket.OPEN) {
-      startWsBackupPoll()
-    }
+    taskListTransport.start()
   }
 
   function stopPolling() {
-    if (taskPollConsumers <= 0) return
-    taskPollConsumers -= 1
-    if (taskPollConsumers > 0) return
-    wsAllowReconnect = false
-    disconnectTaskWebSocket()
-    if (pollingTimer) {
-      window.clearInterval(pollingTimer)
-      pollingTimer = null
-    }
+    taskListTransport.stop()
+  }
+
+  async function refreshTaskList() {
+    await taskListTransport.refresh()
+  }
+
+  function startRuntimeLogPolling() {
+    runtimeLogTransport.start()
+  }
+
+  function stopRuntimeLogPolling() {
+    runtimeLogTransport.stop()
   }
 
   let electronEventsBound = false

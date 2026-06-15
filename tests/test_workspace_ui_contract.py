@@ -512,13 +512,17 @@ def test_tasks_store_uses_polling_reference_counts() -> None:
     tasks_source = (ROOT / "web" / "frontend" / "src" / "stores" / "tasks.ts").read_text(
         encoding="utf-8"
     )
+    transport_source = (
+        ROOT / "web" / "frontend" / "src" / "composables" / "useTaskProgress.ts"
+    ).read_text(encoding="utf-8")
     log_stream_source = (
         ROOT / "web" / "frontend" / "src" / "components" / "LogStream.vue"
     ).read_text(encoding="utf-8")
 
-    assert "taskPollConsumers" in tasks_source
-    assert "runtimeLogPollConsumers" in tasks_source
-    assert "wsAllowReconnect" in tasks_source
+    assert "createTaskListTransport" in tasks_source
+    assert "createRuntimeLogTransport" in tasks_source
+    assert "consumers" in transport_source
+    assert "wsAllowReconnect" in transport_source
     assert "startRuntimeLogPolling" not in log_stream_source
 
 
