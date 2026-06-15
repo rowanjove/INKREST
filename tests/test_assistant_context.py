@@ -255,6 +255,51 @@ class AssistantContextTests(unittest.TestCase):
             web_server.project_manager = original_project_manager
             assistant_module._get_assistant_llm = original_get_llm
 
+    def test_assistant_fix_test_model_does_not_import_from_chat_module(self):
+        original_base = web_server.BASE_DIR
+        original_active = web_server._active_project_id
+        original_manager = web_server._task_manager
+        original_project_manager = web_server.project_manager
+        import web.routes.assistant as assistant_module
+        original_get_llm = assistant_module._get_assistant_llm
+
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            web_server.project_manager = web_server.ProjectManager(self.tmpdir)
+            project = web_server.project_manager.create_project("测试项目")
+            web_server.project_manager.switch_project(project["id"])
+            web_server._active_project_id = project["id"]
+            web_server._task_manager = TaskManager(self.tmpdir / "projects" / project["id"])
+
+            from novel_agent.agents.base import OpenAILLM
+            from unittest.mock import MagicMock
+
+            stub_client = OpenAILLM(api_key="test", base_url="http://127.0.0.1:9")
+            stub_client.test = MagicMock(
+                return_value={
+                    "success": True,
+                    "latency_ms": 42,
+                    "response_preview": "pong",
+                }
+            )
+            assistant_module._get_assistant_llm = MagicMock(return_value=stub_client)
+
+            response = TestClient(web_app).post(
+                "/api/assistant/fix",
+                json={"fix_type": "test_model", "payload": {}},
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertTrue(data["success"])
+            self.assertEqual(data["details"]["latency_ms"], 42)
+            self.assertNotIn("cannot import name", str(data))
+        finally:
+            web_server.BASE_DIR = original_base
+            web_server._active_project_id = original_active
+            web_server._task_manager = original_manager
+            web_server.project_manager = original_project_manager
+            assistant_module._get_assistant_llm = original_get_llm
+
     def test_assistant_fix_retry_task(self):
         original_base = web_server.BASE_DIR
         original_active = web_server._active_project_id

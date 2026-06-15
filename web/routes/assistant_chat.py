@@ -35,11 +35,11 @@ HANDBOOK = """
 1. **新建与体量**
    - 书库 →「新建作品」：快速创建 / AI 引导 / 粘贴解析 三选一。
    - AI 引导默认完整步骤以锁定主题；可选「精简建档」跳过深度规划 7–10 步。
-   - 体量档位：微型～无限连载；超长篇/无限连载只定卷级骨架，细章由工作台按「本轮章数」滚动生成，续跑在**运行监控**。
+   - 体量档位：微型～无限连载；超长篇/无限连载只定卷级骨架，细章由工作台按「本轮章数」滚动生成，续跑在**章节维护**。
 
 2. **日常写作路径**
    - **大纲**：生成或确认卷纲、体量（macro_outline）。
-   - **工作台**：按本轮章数自动续跑；暂停后到**运行监控**续跑全书批量。
+   - **工作台**：按本轮章数自动续跑；暂停后到**章节维护**续跑全书批量。
    - **章节列表 / 章节详情**：阅读正文、看重试；**统一门禁报告**在章节详情页（unified_gate）。
    - **套路工坊**：组装套路后跳转新建页预填，不重复弹窗创建。
 
@@ -47,7 +47,7 @@ HANDBOOK = """
    - **429 / 限流**：降并发、换 Key、稍后重试。
    - **超时 / 504**：检查代理与 base_url。
    - **单章失败**：诊断或对话可「重试该章」（清 checkpoint）；若提示统一门禁未过，引导用户打开 `/chapters/{章号}` 看门禁明细后再改稿或重试。
-   - **全书批量暂停（熔断）**：只在**运行监控**续跑，勿在对话里擅自重启全书。
+   - **全书批量暂停（熔断）**：只在**章节维护**续跑，勿在对话里擅自重启全书。
 
 4. **模型配置**
    - **设置 → 模型**：日常档（daily_model_id）驱动大部分生成；可为 `llm.assistant` 单独配山山对话模型。
@@ -76,9 +76,10 @@ async def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
             ]
         )
         
-    # Local import to prevent circular import dependency at module level
-    from web.routes.assistant import get_assistant_context
-    context_data = await get_assistant_context()
+    from web.deps import coerce_project_session
+    from web.routes.assistant import build_assistant_context
+
+    context_data = await build_assistant_context(coerce_project_session(None))
     
     active_proj = context_data.get("active_project")
     proj_name = active_proj.get("name") if active_proj else "未选择项目"
@@ -139,7 +140,7 @@ async def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
         batch_str = (
             f"已暂停（原因: {batch.get('pause_reason') or 'circuit_breaker'}，"
             f"卷 {batch.get('last_arc_id') or '—'} / 章 {batch.get('last_chapter_id') or '—'}）"
-            " — 续跑请到运行监控操作，不要在此直接重启全书."
+            " — 续跑请到章节维护操作，不要在此直接重启全书."
         )
     else:
         batch_str = "未暂停"
@@ -178,12 +179,12 @@ async def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
 - 工厂建议动作:
 {factory_commands_str}
 - 全书批量: {batch_str}
-- 待处理章节（运行监控同源）:
+- 待处理章节（章节维护同源）:
 {pending_str}
 - 运行中的任务: {running_str}
 - 最近失败的任务:
 {failed_str}
-- 最近 Agent 实时日志（运行监控同源，节选）:
+- 最近 Agent 实时日志（日志中心同源，节选）:
 {runtime_str}
 - 底层服务日志文件（{log_path_str}，节选）:
 {sys_tail_str}
@@ -221,7 +222,7 @@ async def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
 可用的 ACTION 类型说明：
 - navigate: 路由跳转。参数 {{"route": "路径"}}。常用：
   '/' 书库，'/create' 新建，'/outline' 大纲，'/workspace' 工作台，
-  '/config' 设置，'/monitor?tab=tasks' 运行监控任务，'/monitor?tab=logs' 日志，
+  '/config' 设置，'/chapters/maintenance' 章节维护（续跑/待处理），'/logs' 日志中心，
   '/chapters/{{章号}}' 章节详情（统一门禁报告在此，章号如 001、012）
 - test_model: 测试当前模型连通性。不需要参数。
 - retry_task: 重新运行任务。参数包含 {{"chapter_id": "章节号", "goal": "章节目标"}}

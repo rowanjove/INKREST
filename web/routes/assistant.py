@@ -177,9 +177,8 @@ def _parse_chat_response(text: str) -> Dict[str, Any]:
 
 # ---- API Endpoints ----
 
-@router.get("/api/assistant/context")
-async def get_assistant_context(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
-    """Return a compact software-state summary for the pet bubble."""
+async def build_assistant_context(session: ProjectSession) -> Dict[str, Any]:
+    """Build compact software-state summary for the pet bubble (HTTP or internal callers)."""
     session = coerce_project_session(session)
     tasks: List[Dict[str, Any]] = []
     try:
@@ -261,7 +260,7 @@ async def get_assistant_context(session: ProjectSession = Depends(get_project_se
         base_logs = ws_server.BASE_DIR / "logs" / "novel_agent.log"
         system_log_paths = {
             "workspace": str(base_logs),
-            "hint": "接口调用明细见运行监控 → 接口调用日志；任务错误见 recent_logs / agent_runtime_logs",
+            "hint": "接口调用明细见日志中心；任务错误见 recent_logs / agent_runtime_logs",
         }
         if root:
             proj_log = root / "logs" / "novel_agent.log"
@@ -294,19 +293,20 @@ async def get_assistant_context(session: ProjectSession = Depends(get_project_se
         "last_chapter_id": "",
         "fail_streak": 0,
     }
-    try:
-        from novel_agent.services.arc_queue import load_arc_progress
+    if session.has_project and root:
+        try:
+            from novel_agent.services.arc_queue import load_arc_progress
 
-        progress = load_arc_progress(session.root_dir)
-        novel_batch = {
-            "paused": progress.get("status") == "paused",
-            "pause_reason": str(progress.get("pause_reason") or ""),
-            "last_arc_id": str(progress.get("last_arc_id") or ""),
-            "last_chapter_id": str(progress.get("last_chapter_id") or ""),
-            "fail_streak": int(progress.get("fail_streak") or 0),
-        }
-    except Exception:
-        pass
+            progress = load_arc_progress(root)
+            novel_batch = {
+                "paused": progress.get("status") == "paused",
+                "pause_reason": str(progress.get("pause_reason") or ""),
+                "last_arc_id": str(progress.get("last_arc_id") or ""),
+                "last_chapter_id": str(progress.get("last_chapter_id") or ""),
+                "fail_streak": int(progress.get("fail_streak") or 0),
+            }
+        except Exception:
+            pass
 
     pipeline_pending: Dict[str, Any] = {
         "pending_total": 0,
@@ -344,13 +344,14 @@ async def get_assistant_context(session: ProjectSession = Depends(get_project_se
         pass
 
     factory: Dict[str, Any] = {}
-    try:
-        if root:
-            from web.routes.factory import get_factory_dashboard
+    if root:
+        try:
+            from web.factory_summaries import build_factory_dashboard
+            from web.routes.factory import _running_task_count
 
-            factory = get_factory_dashboard()
-    except Exception:
-        factory = {}
+            factory = build_factory_dashboard(root, session.project_id, _running_task_count())
+        except Exception:
+            factory = {}
 
     return {
         "backend_health": "ok",
@@ -367,6 +368,12 @@ async def get_assistant_context(session: ProjectSession = Depends(get_project_se
         "novel_batch": novel_batch,
         "pipeline_pending": pipeline_pending,
     }
+
+
+@router.get("/api/assistant/context")
+async def get_assistant_context(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    """Return a compact software-state summary for the pet bubble."""
+    return await build_assistant_context(session)
 
 
 @router.get("/api/assistant/diagnose")
@@ -415,9 +422,9 @@ async def get_assistant_diagnose(
                     ),
                 })
                 suggestions.append({
-                    "label": "去运行监控续跑",
+                    "label": "去章节维护续跑",
                     "type": "navigate",
-                    "payload": {"route": "/monitor?tab=tasks"},
+                    "payload": {"route": "/chapters/maintenance"},
                 })
         except Exception:
             pass
@@ -536,7 +543,7 @@ async def get_assistant_diagnose(
                     suggestions.append({
                         "label": "查看详细日志",
                         "type": "navigate",
-                        "payload": {"route": "/monitor?tab=logs"},
+                        "payload": {"route": "/logs"},
                     })
         except Exception:
             pass
@@ -563,58 +570,24 @@ async def execute_assistant_fix(req: FixRequest, session: ProjectSession = Requi
     
     if fix_type == "test_model":
         try:
-            from novel_agent.pipeline import load_pipeline_settings
-            root = session.root_dir
-            current = load_pipeline_settings(root)
-            
-            from web.routes.assistant_chat import _get_assistant_llm
-            llm_config = current.get("llm", {}).get("assistant")
-            if not llm_config:
-                llm_settings = current.get("llm", {})
-                daily_model_id = llm_settings.get("daily_model_id") or llm_settings.get("default_model_id")
-                if daily_model_id:
-                    llm_config = {"model_ref": daily_model_id}
-            if not llm_config:
-                llm_config = current.get("llm", {}).get("default")
-            if not llm_config:
-                llm_config = current.get("llm", {})
-                
-            if not llm_config or llm_config.get("provider", "static") == "static":
-                from web.model_library import ModelLibrary
-                lib = ModelLibrary(root)
-                raw_models = lib._load().get("models", {})
-                text_models = [{"id": mid, **m} for mid, m in raw_models.items() if m.get("type", "text") == "text"]
-                if text_models:
-                    llm_config = text_models[0]
-                else:
-                    return {
-                        "success": False,
-                        "error": "当前未配置任何大模型（处于 static 占位状态），无法测试。"
-                    }
-                
-            if "model_ref" in llm_config:
-                from web.model_library import ModelLibrary
-                try:
-                    stored = ModelLibrary(root).get_model(llm_config["model_ref"])
-                    stored_cfg = {k: v for k, v in stored.items() if k != "id"}
-                    llm_config = {**stored_cfg, **llm_config}
-                except Exception:
-                    pass
-                
-            from novel_agent.agents.base import create_llm, OpenAILLM
-            client = create_llm(llm_config)
-            
+            from novel_agent.agents.base import OpenAILLM
+
+            client = _get_assistant_llm()
+            if not client:
+                return {
+                    "success": False,
+                    "error": "当前未配置任何大模型（处于 static 占位状态），无法测试。",
+                }
             if isinstance(client, OpenAILLM):
                 test_res = client.test()
                 return {
                     "success": test_res.get("success", False),
-                    "details": test_res
+                    "details": test_res,
                 }
-            else:
-                return {
-                    "success": False,
-                    "error": f"当前模型类型 {type(client).__name__} 不支持标准连通性测试。"
-                }
+            return {
+                "success": False,
+                "error": f"当前模型类型 {type(client).__name__} 不支持标准连通性测试。",
+            }
         except Exception as e:
             return {"success": False, "error": f"测试过程中发生异常：{str(e)}"}
             
