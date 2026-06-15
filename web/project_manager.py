@@ -295,10 +295,11 @@ class ProjectManager:
         self._mutate_registry(mutate)
 
     def delete_project(self, pid: str) -> None:
+        project_dir = self.base_dir / "projects" / pid
+
         def mutate(data: Dict[str, Any]) -> Dict[str, Any]:
             if pid not in data.get("projects", {}):
                 raise HTTPException(404, f"Project {pid} not found")
-            project_dir = self.base_dir / "projects" / pid
             if project_dir.exists():
                 shutil.rmtree(project_dir)
             del data["projects"][pid]
@@ -307,6 +308,12 @@ class ProjectManager:
             return data
 
         self._mutate_registry(mutate)
+        try:
+            from web.project_task_registry import ProjectTaskRegistry
+
+            ProjectTaskRegistry.shared().drop(project_dir)
+        except Exception:
+            pass
 
     def switch_project(self, pid: str) -> Dict[str, Any]:
         def mutate(data: Dict[str, Any]) -> Dict[str, Any]:

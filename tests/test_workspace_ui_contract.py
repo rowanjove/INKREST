@@ -682,10 +682,18 @@ def test_vector_readiness_and_task_queue_wired_in_workbench_and_batch_run() -> N
         ROOT / "web" / "frontend" / "src" / "composables" / "useNovelBatchRun.ts"
     ).read_text(encoding="utf-8")
     task_log = TASK_LOG.read_text(encoding="utf-8")
+    readiness = (ROOT / "web" / "frontend" / "src" / "utils" / "projectReadiness.ts").read_text(
+        encoding="utf-8"
+    )
+    assert "readinessCanContinue" in readiness
+    assert "mergeServerReadinessPending" in readiness
     assert "resolveVectorContextFromApis" in workbench
     assert "getNovelReadiness" in workbench
+    assert "serverReadiness" in workbench
     assert "vectorReadiness" in workbench
     assert "resolveVectorContextFromApis" in batch_run
+    assert "readinessCanContinue" in batch_run
+    assert "serverReadiness" in batch_run
     assert "vectorReadiness" in batch_run
     assert "getTaskQueue" in task_log
     assert "queueSummary" in task_log

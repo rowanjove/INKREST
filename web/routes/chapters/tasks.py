@@ -32,8 +32,6 @@ from novel_agent.scripts.count_chars import count_chinese_chars, wordcount_repor
 
 router = APIRouter()
 
-router = APIRouter()
-
 
 @router.post("/api/chapters/run")
 async def run_chapter(req: ChapterRequest, session: ProjectSession = RequireProjectDep) -> TaskStatus:

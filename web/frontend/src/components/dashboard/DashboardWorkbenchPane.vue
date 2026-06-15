@@ -3,7 +3,7 @@ import DashboardStats from '../DashboardStats.vue'
 import ProjectReadinessCard from '../workbench/ProjectReadinessCard.vue'
 import AgentProductionLine from '../workbench/AgentProductionLine.vue'
 import ScaleArchitecturePanel from '../workbench/ScaleArchitecturePanel.vue'
-import type { VectorReadinessContext } from '../../utils/projectReadiness'
+import type { ServerReadinessSnapshot, VectorReadinessContext } from '../../utils/projectReadiness'
 
 defineProps<{
   engineStatus: { ready: boolean; label: string; route: string }
@@ -11,6 +11,7 @@ defineProps<{
   assets: any[]
   maxAvailableChapters: number
   vectorReadiness: VectorReadinessContext
+  serverReadiness: ServerReadinessSnapshot
   workScale: string
   scaleProfile: Record<string, any>
   chapterCountTotal: number
@@ -31,6 +32,7 @@ const emit = defineEmits<{
       :assets="assets"
       :max-available-chapters="maxAvailableChapters"
       :vector-readiness="vectorReadiness"
+      :server-readiness="serverReadiness"
       :work-scale="workScale"
     />
 
@@ -40,6 +42,7 @@ const emit = defineEmits<{
       :assets="assets"
       :max-available-chapters="maxAvailableChapters"
       :vector-readiness="vectorReadiness"
+      :server-readiness="serverReadiness"
       :work-scale="workScale"
       show-controls
     />

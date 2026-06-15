@@ -27,8 +27,10 @@ import {
 } from '../utils/batchRunForm'
 import {
   buildReadinessItems,
-  readinessAllOk,
+  mergeServerReadinessPending,
+  readinessCanContinue,
   resolveVectorContextFromApis,
+  type ServerReadinessSnapshot,
   type VectorReadinessContext,
 } from '../utils/projectReadiness'
 import { isExternalPending } from '../utils/pipelineAlertFilters'
@@ -47,6 +49,7 @@ export type NovelBatchRunContext = {
   chapterCountTotal: number
   engineReady: boolean
   vectorReadiness: VectorReadinessContext
+  serverReadiness: ServerReadinessSnapshot
   arcProgress: Record<string, any> | null
   batchPaused: boolean
   pauseReason: string
@@ -108,6 +111,7 @@ const ctx = ref<NovelBatchRunContext>({
   chapterCountTotal: 0,
   engineReady: false,
   vectorReadiness: resolveVectorContextFromApis({}, {}),
+  serverReadiness: {},
   arcProgress: null,
   batchPaused: false,
   pauseReason: '',
@@ -134,6 +138,10 @@ export function useNovelBatchRun() {
   const { currentProject } = storeToRefs(projectStore)
 
   const maxAvailableChapters = computed(() => {
+    const fromServer = ctx.value.serverReadiness.remaining_chapters
+    if (typeof fromServer === 'number' && Number.isFinite(fromServer)) {
+      return Math.max(0, fromServer)
+    }
     const outline = ctx.value.outline
     const profile = outline?.scale_profile || {}
     const scale = profile.scale || ''
@@ -149,18 +157,26 @@ export function useNovelBatchRun() {
 
   const workScale = computed(() => String(ctx.value.outline?.scale_profile?.scale || ''))
 
-  const readinessItems = computed(() =>
-    buildReadinessItems({
+  const readinessItems = computed(() => {
+    const server = ctx.value.serverReadiness
+    const base = buildReadinessItems({
       engineReady: ctx.value.engineReady,
       outline: ctx.value.outline,
       assets: ctx.value.assets,
       maxAvailableChapters: maxAvailableChapters.value,
       ...ctx.value.vectorReadiness,
       workScale: workScale.value,
+      arcQueueStale: Boolean(server.arc_queue_stale?.stale),
+    })
+    return mergeServerReadinessPending(base, server.pending)
+  })
+
+  const canRun = computed(() =>
+    readinessCanContinue({
+      items: readinessItems.value,
+      serverOk: ctx.value.serverReadiness.ok,
     }),
   )
-
-  const canRun = computed(() => readinessAllOk(readinessItems.value))
 
   const isCircuitPaused = computed(
     () => ctx.value.batchPaused && needsRepairBeforeResume(ctx.value.pauseReason),
@@ -212,6 +228,7 @@ export function useNovelBatchRun() {
         chapterCountTotal: countRes.data?.total ?? 0,
         engineReady: resolveEngine(configRes.data, modelsRes.data || []).ready,
         vectorReadiness: resolveVectorContextFromApis(readyRes.data, embRes.data),
+        serverReadiness: (readyRes.data || {}) as ServerReadinessSnapshot,
         arcProgress: progress,
         batchPaused: progress?.status === 'paused',
         pauseReason: String(progress?.pause_reason || ''),

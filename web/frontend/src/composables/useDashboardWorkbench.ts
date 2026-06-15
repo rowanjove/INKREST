@@ -17,6 +17,7 @@ import {
 import { inferNextChapterId, resolveEngine } from '../utils/dashboardEngine'
 import {
   resolveVectorContextFromApis,
+  type ServerReadinessSnapshot,
   type VectorReadinessContext,
 } from '../utils/projectReadiness'
 import { useChapterStore } from '../stores/chapter'
@@ -35,6 +36,7 @@ export function useDashboardWorkbench() {
     route: 'default',
   })
   const vectorReadiness = ref<VectorReadinessContext>(resolveVectorContextFromApis({}, {}))
+  const serverReadiness = ref<ServerReadinessSnapshot>({})
   const semanticSearchEffective = computed(() => vectorReadiness.value.semanticSearchEffective)
   const vectorEnabledForProject = computed(() => vectorReadiness.value.vectorEnabled)
   const form = ref({
@@ -73,6 +75,10 @@ export function useDashboardWorkbench() {
   ])
   const workScale = computed(() => String(outline.value?.scale_profile?.scale || ''))
   const maxAvailableChapters = computed(() => {
+    const fromServer = serverReadiness.value.remaining_chapters
+    if (typeof fromServer === 'number' && Number.isFinite(fromServer)) {
+      return Math.max(0, fromServer)
+    }
     const profile = outline.value?.scale_profile || {}
     const scale = profile.scale || ''
     const hardMax = Number(profile.max_chapters) || 0
@@ -141,6 +147,7 @@ export function useDashboardWorkbench() {
       outline.value = outlineData && Object.keys(outlineData).length > 0 ? outlineData : null
       engineStatus.value = resolveEngine(config, models)
       vectorReadiness.value = resolveVectorContextFromApis(readyRes.data, embRes.data)
+      serverReadiness.value = (readyRes.data || {}) as ServerReadinessSnapshot
     } catch {
       assets.value = []
       chaptersList.value = []
@@ -166,6 +173,7 @@ export function useDashboardWorkbench() {
     outline,
     engineStatus,
     vectorReadiness,
+    serverReadiness,
     semanticSearchEffective,
     vectorEnabledForProject,
     form,

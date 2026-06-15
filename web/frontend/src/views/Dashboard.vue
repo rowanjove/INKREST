@@ -46,6 +46,7 @@ const {
   outline,
   engineStatus,
   vectorReadiness,
+  serverReadiness,
   form,
   chapterCountTotal,
   calibration,
@@ -327,6 +328,7 @@ onUnmounted(() => {
           :assets="assets"
           :max-available-chapters="maxAvailableChapters"
           :vector-readiness="vectorReadiness"
+          :server-readiness="serverReadiness"
           :work-scale="workScale"
           :scale-profile="scaleProfile"
           :chapter-count-total="chapterCountTotal"

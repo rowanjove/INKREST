@@ -20,10 +20,30 @@ export interface ReadinessItem {
 export type VectorReadinessContext = {
   semanticSearchEffective: boolean
   vectorEnabled: boolean
+  vectorBlocksContinue?: boolean
   embeddingBackend?: string
   chromadbAvailable?: boolean
   embeddingBackendHint?: string
   vectorReadinessLevel?: string
+}
+
+export type ServerReadinessSnapshot = {
+  ok?: boolean
+  pending?: Array<{ id: string; label: string }>
+  arc_queue_stale?: { stale?: boolean; message?: string }
+  remaining_chapters?: number
+  factory_mode?: string
+}
+
+const SERVER_PENDING_ROUTES: Record<string, string> = {
+  engine: '/config',
+  outline: '/outline',
+  outline_corrupt: '/outline',
+  title: '/outline',
+  assets: '/outline',
+  quota: '/outline',
+  vector: '/config',
+  embedding: '/config',
 }
 
 /** Merge `/novel/readiness` with embedding status for UI gates and banners. */
@@ -35,6 +55,7 @@ export function resolveVectorContextFromApis(
   const semanticFromEmb = Boolean(embData?.semantic_search_effective)
   return {
     semanticSearchEffective: vectorBlocksContinue ? false : semanticFromEmb,
+    vectorBlocksContinue,
     vectorEnabled: embData?.vector_enabled !== false,
     embeddingBackend: String(readyData?.embedding_backend || ''),
     chromadbAvailable: Boolean(readyData?.chromadb_available),
@@ -83,6 +104,8 @@ export function buildReadinessItems(opts: {
   chromadbAvailable?: boolean
   embeddingBackendHint?: string
   vectorReadinessLevel?: string
+  vectorBlocksContinue?: boolean
+  arcQueueStale?: boolean
 }): ReadinessItem[] {
   const outline = opts.outline
   const macro = (outline?.macro_outline as unknown[]) || []
@@ -96,7 +119,10 @@ export function buildReadinessItems(opts: {
     embeddingBackend: opts.embeddingBackend,
     chromadbAvailable: opts.chromadbAvailable,
   })
-  const vectorWarn = vectorOn && (!semanticOk || chromaMissing)
+  const vectorBlocked =
+    Boolean(opts.vectorBlocksContinue) ||
+    (opts.vectorReadinessLevel === 'block' && vectorOn && !semanticOk)
+  const vectorWarn = vectorOn && !vectorBlocked && (!semanticOk || chromaMissing)
   const embeddingHint = (() => {
     if (!vectorOn) return '短篇/微型档默认关闭向量，无需配置'
     if (chromaMissing) {
@@ -112,7 +138,7 @@ export function buildReadinessItems(opts: {
     }
     return '设置 → Embedding：stub 时跨章去重/伏笔召回不可用'
   })()
-  return [
+  const items: ReadinessItem[] = [
     {
       id: 'engine',
       label: '日常模型可用（非 Static 占位）',
@@ -123,8 +149,9 @@ export function buildReadinessItems(opts: {
     {
       id: 'outline',
       label: '已生成并保存大纲（含卷纲）',
-      ok: macro.length > 0,
+      ok: macro.length > 0 && !opts.arcQueueStale,
       route: '/outline',
+      hint: opts.arcQueueStale ? '卷队列与大纲不一致，请到大纲页同步卷队列' : undefined,
     },
     {
       id: 'title',
@@ -154,16 +181,55 @@ export function buildReadinessItems(opts: {
           ? '语义向量（ChromaDB）'
           : '语义向量可用（非 stub）'
         : '语义向量（当前体量已关闭）',
-      ok: true,
+      ok: !vectorBlocked,
       warn: vectorWarn,
       route: '/config',
       hint: embeddingHint,
     },
   ]
+  return items
+}
+
+/** Map backend pending ids (e.g. vector) onto local checklist rows. */
+export function mergeServerReadinessPending(
+  items: ReadinessItem[],
+  pending: Array<{ id: string; label: string }> | undefined,
+): ReadinessItem[] {
+  if (!pending?.length) return items
+  const pendingByLocalId = new Map<string, { id: string; label: string }>()
+  for (const row of pending) {
+    const localId = row.id === 'vector' ? 'embedding' : row.id
+    pendingByLocalId.set(localId, row)
+  }
+  const merged = items.map((item) => {
+    const serverRow = pendingByLocalId.get(item.id)
+    if (!serverRow) return item
+    pendingByLocalId.delete(item.id)
+    return { ...item, ok: false, hint: serverRow.label }
+  })
+  for (const [localId, row] of pendingByLocalId) {
+    merged.push({
+      id: localId,
+      label: row.label,
+      ok: false,
+      route: SERVER_PENDING_ROUTES[localId] || '/workspace',
+      hint: row.label,
+    })
+  }
+  return merged
 }
 
 export function readinessAllOk(items: ReadinessItem[]): boolean {
   return items.length > 0 && items.every((i) => i.ok)
+}
+
+/** Gate连写：本地清单全绿且服务端 readiness 未否决（卷队列陈旧等）。 */
+export function readinessCanContinue(opts: {
+  items: ReadinessItem[]
+  serverOk?: boolean
+}): boolean {
+  if (opts.serverOk === false) return false
+  return readinessAllOk(opts.items)
 }
 
 /** 存在未通过项（红灯），warn 黄标不阻断连写 */

@@ -22,8 +22,10 @@ import { useNovelBatchRun } from '../../composables/useNovelBatchRun'
 import { useTasksStore, type ProgressEntry } from '../../stores/tasks'
 import {
   buildReadinessItems,
-  readinessAllOk,
+  mergeServerReadinessPending,
+  readinessCanContinue,
   resolveVectorContextFromApis,
+  type ServerReadinessSnapshot,
   type VectorReadinessContext,
 } from '../../utils/projectReadiness'
 
@@ -34,6 +36,7 @@ const props = withDefaults(
     assets?: Array<{ name: string; size?: number }>
     maxAvailableChapters?: number
     vectorReadiness?: VectorReadinessContext
+    serverReadiness?: ServerReadinessSnapshot
     workScale?: string
     /** 是否显示连写启动等控制区（工作台 true，监控页 false） */
     showControls?: boolean
@@ -64,18 +67,22 @@ const {
 const pausedBlockId = ref<string | null>(null)
 const userPaused = ref(false)
 
-const readinessOk = computed(() =>
-  readinessAllOk(
-    buildReadinessItems({
-      engineReady: props.engineReady,
-      outline: props.outline,
-      assets: props.assets,
-      maxAvailableChapters: props.maxAvailableChapters,
-      ...props.vectorReadiness,
-      workScale: props.workScale,
-    }),
-  ),
-)
+const readinessOk = computed(() => {
+  const server = props.serverReadiness || {}
+  const base = buildReadinessItems({
+    engineReady: props.engineReady,
+    outline: props.outline,
+    assets: props.assets,
+    maxAvailableChapters: props.maxAvailableChapters,
+    ...props.vectorReadiness,
+    workScale: props.workScale,
+    arcQueueStale: Boolean(server.arc_queue_stale?.stale),
+  })
+  return readinessCanContinue({
+    items: mergeServerReadinessPending(base, server.pending),
+    serverOk: server.ok,
+  })
+})
 
 const activeChapterId = computed(() => {
   if (currentChapterId.value) return currentChapterId.value

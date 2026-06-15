@@ -18,13 +18,13 @@
 
 ## 近期改进（按 ROI 排序）
 
-1. **WIP 收敛发布** — 全量 pytest + vitest + bundle check
-2. **Factory 引擎闭环** — 见 `docs/FACTORY-MODE-RUNTIME.md`
-3. **文档/契约同步** — UI 契约测试镜像关键前端约定
-4. **YAML 止血** — `yaml_mirror_mode`（`read_only`/`off`）+ 导出 API + 启动漂移日志
-5. **向量长篇** — `vector_readiness` + `/api/novel/readiness` 与连写弹窗对齐
-6. **请求级上下文** — `ProjectSession` 覆盖 factory/chapters/outlines 等高风险路由（>80%）
-7. **前端域拆分** — `api/client|factory|chapters`、`useTaskProgress`
+1. **WIP 收敛发布** — 全量 pytest + vitest + bundle check ✅
+2. **Factory 引擎闭环** — `FACTORY-MODE-RUNTIME.md` + Dashboard 工厂面板 + `test_factory_mode_policy` / `test_factory_dashboard` ✅
+3. **文档/契约同步** — UI 契约测试镜像关键前端约定 ✅
+4. **YAML 止血** — `yaml_mirror_mode`（`read_only`/`off`）+ 导出 API + 启动漂移日志 ✅
+5. **向量长篇** — `vector_readiness` + `/api/novel/readiness` 与连写弹窗对齐 ✅
+6. **请求级上下文** — `ProjectSession` + 大纲/连写写路由 `RequireProjectDep` ✅
+7. **前端域拆分** — `api/client|factory|chapters`、`useTaskProgress` ✅
 
 ## 中长期（刻意分阶段）
 

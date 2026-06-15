@@ -6,9 +6,11 @@ import {
   buildReadinessItems,
   longFormVectorWarn,
   LONG_FORM_VECTOR_WARN_TEXT,
-  readinessAllOk,
+  mergeServerReadinessPending,
+  readinessCanContinue,
   readinessTrafficLight,
   type ReadinessItem,
+  type ServerReadinessSnapshot,
   type VectorReadinessContext,
 } from '../../utils/projectReadiness'
 
@@ -18,24 +20,30 @@ const props = defineProps<{
   assets: Array<{ name: string; size?: number }>
   maxAvailableChapters: number
   vectorReadiness: VectorReadinessContext
+  serverReadiness?: ServerReadinessSnapshot
   workScale?: string
 }>()
 
 const router = useRouter()
 const expanded = ref(false)
 
-const items = computed<ReadinessItem[]>(() =>
-  buildReadinessItems({
+const items = computed<ReadinessItem[]>(() => {
+  const server = props.serverReadiness || {}
+  const base = buildReadinessItems({
     engineReady: props.engineReady,
     outline: props.outline,
     assets: props.assets,
     maxAvailableChapters: props.maxAvailableChapters,
     ...props.vectorReadiness,
     workScale: props.workScale,
-  }),
-)
+    arcQueueStale: Boolean(server.arc_queue_stale?.stale),
+  })
+  return mergeServerReadinessPending(base, server.pending)
+})
 
-const allOk = computed(() => readinessAllOk(items.value))
+const allOk = computed(() =>
+  readinessCanContinue({ items: items.value, serverOk: props.serverReadiness?.ok }),
+)
 const trafficLight = computed(() => readinessTrafficLight(items.value))
 
 const pendingCount = computed(() => items.value.filter((i) => !i.ok).length)

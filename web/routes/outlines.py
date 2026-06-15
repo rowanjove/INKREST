@@ -4,7 +4,13 @@ from pathlib import Path
 from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from web.deps import ProjectSession, coerce_project_session, get_project_session, touch_project_activity
+from web.deps import (
+    ProjectSession,
+    RequireProjectDep,
+    coerce_project_session,
+    get_project_session,
+    touch_project_activity,
+)
 
 import web.context as ws_server
 import web.helpers as ws_helpers
@@ -70,7 +76,7 @@ def get_outline(session: ProjectSession = Depends(get_project_session)) -> Dict[
 
 
 @router.put("/api/outline")
-def update_outline(body: Dict[str, Any], session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+def update_outline(body: Dict[str, Any], session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
     if not isinstance(body, dict):
         raise HTTPException(400, "Outline must be a JSON object")
@@ -182,7 +188,7 @@ def get_arc_queue_stale(session: ProjectSession = Depends(get_project_session)) 
 
 
 @router.post("/api/outline/arc-queue-synced")
-def mark_arc_queue_synced(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+def mark_arc_queue_synced(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
     from novel_agent.services.outline_sync import mark_arcs_synced_with_outline
 
@@ -190,7 +196,7 @@ def mark_arc_queue_synced(session: ProjectSession = Depends(get_project_session)
 
 
 @router.post("/api/novel/plan")
-def plan_novel(req: NovelPlanRequest, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+def plan_novel(req: NovelPlanRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
     """Generate a macro-level novel outline without running chapters."""
     from novel_agent.pipeline import PipelineConfig
@@ -308,7 +314,7 @@ def plan_novel(req: NovelPlanRequest, session: ProjectSession = Depends(get_proj
 
 
 @router.post("/api/novel/chapter-plan")
-def generate_chapter_plan(req: ChapterPlanRequest, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+def generate_chapter_plan(req: ChapterPlanRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
     from novel_agent.services.rolling_planner import _macro_arc_for_chapter, split_window_briefs
     from novel_agent.services.writing_context import (
@@ -484,7 +490,7 @@ def get_arc_progress(session: ProjectSession = Depends(get_project_session)) -> 
 
 
 @router.post("/api/novel/ensure-queue")
-async def ensure_novel_queue(request: Request, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+async def ensure_novel_queue(request: Request, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
     """Build or replenish arc chapter queue without rewriting the macro outline."""
     import logging
@@ -546,7 +552,7 @@ async def ensure_novel_queue(request: Request, session: ProjectSession = Depends
 
 
 @router.post("/api/novel/run-arc")
-async def run_novel_arc(req: NovelArcRunRequest, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+async def run_novel_arc(req: NovelArcRunRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
     """Run chapter generation for one or more arcs (workspace/arc_*.json)."""
     if not _debug_novel_run_enabled():
@@ -596,7 +602,7 @@ async def novel_readiness(session: ProjectSession = Depends(get_project_session)
 
 
 @router.post("/api/novel/continue")
-async def continue_novel(req: NovelContinueRequest, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+async def continue_novel(req: NovelContinueRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
     """Resume arc batch from saved progress (long/epic runs)."""
     from novel_agent.services.novel_run_guard import validate_novel_continue
@@ -633,7 +639,7 @@ async def continue_novel(req: NovelContinueRequest, session: ProjectSession = De
 
 
 @router.post("/api/novel/run")
-async def run_novel(req: NovelRunRequest, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+async def run_novel(req: NovelRunRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
     """Run the full multi-chapter novel generation as a background task."""
     if not _debug_novel_run_enabled():
