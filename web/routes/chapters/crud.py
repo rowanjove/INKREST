@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 import logging
 
 from fastapi import APIRouter, HTTPException
+
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, touch_project_activity
 from pydantic import BaseModel, Field
 
 import web.context as ws_server
@@ -37,9 +39,10 @@ from web.routes.chapters.snapshots import create_chapter_snapshot
 
 
 @router.get("/api/chapters/count")
-def count_chapters(sync: bool = False) -> Dict[str, int]:
+def count_chapters(sync: bool = False, session: ProjectSession = RequireProjectDep) -> Dict[str, int]:
     """Lightweight chapter count for long-form dashboards."""
-    root = ws_server.get_root_dir()
+    session = coerce_project_session(session)
+    root = session.root_dir
     store = SQLiteStateStore(root)
     if sync or store.count_chapters_indexed() == 0:
         sync_chapters_from_disk(root, store)
@@ -52,9 +55,11 @@ def list_chapters(
     limit: int = 100,
     sync: bool = False,
     include_gaps: bool = False,
+    session: ProjectSession = RequireProjectDep,
 ) -> ChapterListResponse:
     """List chapters from SQLite index (paginated). Avoids full-disk glob at scale."""
-    root = ws_server.require_project_root()
+    session = coerce_project_session(session)
+    root = session.root_dir
     store = SQLiteStateStore(root)
     if sync or store.count_chapters_indexed() == 0:
         sync_chapters_from_disk(root, store)
@@ -108,9 +113,10 @@ def list_chapters(
 
 
 @router.get("/api/chapters/{chapter_id}")
-def get_chapter(chapter_id: str) -> ChapterDetail:
+def get_chapter(chapter_id: str, session: ProjectSession = RequireProjectDep) -> ChapterDetail:
+    session = coerce_project_session(session)
     ws_server._validate_id(chapter_id, "chapter_id")
-    chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{chapter_id}"
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{chapter_id}"
     if not chapter_dir.exists():
         raise HTTPException(404, f"Chapter {chapter_id} not found")
 
@@ -165,7 +171,7 @@ def get_chapter(chapter_id: str) -> ChapterDetail:
         unified_gate=unified_gate,
         checkpoint=checkpoint,
         artifact_status=artifact_status,
-        external_review_status=get_external_review_status(ws_server.get_root_dir(), chapter_id),
+        external_review_status=get_external_review_status(session.root_dir, chapter_id),
     )
 
 
@@ -175,10 +181,11 @@ class CreateChapterRequest(BaseModel):
 
 
 @router.post("/api/chapters")
-def create_new_chapter(req: CreateChapterRequest) -> Dict[str, Any]:
+def create_new_chapter(req: CreateChapterRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     import json
     safe_id = ws_server._validate_id(req.chapter_id, "chapter_id")
-    chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
     if chapter_dir.exists():
         raise HTTPException(400, f"章节 {safe_id} 已存在")
     
@@ -230,15 +237,15 @@ def create_new_chapter(req: CreateChapterRequest) -> Dict[str, Any]:
     except Exception as e:
         ws_server.logger.warning("Failed to initialize chapter_versions or feedback: %s", e)
         
-    if ws_server._active_project_id:
-        ws_server.project_manager.touch_activity(ws_server._active_project_id)
+    touch_project_activity(session)
 
     return {"status": "created", "chapter_id": safe_id}
 
 
 @router.delete("/api/chapters/{chapter_id}")
-def delete_chapter(chapter_id: str) -> Dict[str, str]:
-    root_dir = ws_server.get_root_dir()
+def delete_chapter(chapter_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, str]:
+    session = coerce_project_session(session)
+    root_dir = session.root_dir
     deleted = ws_server._delete_chapter_dir(root_dir, chapter_id)
     try:
         from novel_agent.services.chapter_highwater import sync_highwater_from_store
@@ -249,11 +256,12 @@ def delete_chapter(chapter_id: str) -> Dict[str, str]:
 
 
 @router.put("/api/chapters/{chapter_id}")
-def save_chapter(chapter_id: str, req: SaveChapterRequest) -> Dict[str, Any]:
+def save_chapter(chapter_id: str, req: SaveChapterRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     import json
 
     ws_server._validate_id(chapter_id, "chapter_id")
-    chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{chapter_id}"
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{chapter_id}"
     if not chapter_dir.exists():
         raise HTTPException(404, f"Chapter {chapter_id} not found")
 
@@ -283,7 +291,7 @@ def save_chapter(chapter_id: str, req: SaveChapterRequest) -> Dict[str, Any]:
     try:
         title = plan.get("chapter_title", f"第 {chapter_id} 章")
         create_chapter_snapshot(
-            ws_server.get_root_dir(), chapter_id, title, req.final_text, is_manual=False
+            session.root_dir, chapter_id, title, req.final_text, is_manual=False
         )
     except Exception as e:
         ws_server.logger.warning("Failed to create automatic snapshot: %s", e)
@@ -322,8 +330,7 @@ def save_chapter(chapter_id: str, req: SaveChapterRequest) -> Dict[str, Any]:
     except Exception as e:
         ws_server.logger.warning("Failed to sync save to chapter_versions or feedback: %s", e)
 
-    if ws_server._active_project_id:
-        ws_server.project_manager.touch_activity(ws_server._active_project_id)
+    touch_project_activity(session)
 
     return {"status": "saved", "chapter_id": chapter_id}
 

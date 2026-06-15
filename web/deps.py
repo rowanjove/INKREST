@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import Depends, HTTPException
 
@@ -24,6 +24,13 @@ class ProjectSession:
         return bool(self.project_id)
 
 
+def coerce_project_session(session: Any = None) -> ProjectSession:
+    """Resolve session for direct handler calls (unit tests) or FastAPI injection."""
+    if isinstance(session, ProjectSession):
+        return session
+    return get_project_session()
+
+
 def get_project_session() -> ProjectSession:
     return ProjectSession(project_id=ctx._active_project_id, root_dir=get_root_dir())
 
@@ -31,6 +38,24 @@ def get_project_session() -> ProjectSession:
 def require_project_session() -> ProjectSession:
     root = require_project_root()
     return ProjectSession(project_id=ctx._active_project_id, root_dir=root)
+
+
+def touch_project_activity(session: ProjectSession) -> None:
+    """Record last activity for the active project when present."""
+    if session.project_id:
+        ctx.project_manager.touch_activity(session.project_id)
+
+
+def current_project_info(session: ProjectSession) -> Dict[str, Any]:
+    """Resolve {id, name} for the active project (or nulls when none)."""
+    if not session.project_id:
+        return {"id": None, "name": None}
+    data = ctx.project_manager._read_registry()
+    info = data.get("projects", {}).get(session.project_id, {})
+    if not info:
+        return {"id": None, "name": None}
+    name = info.get("name", session.project_id)
+    return {"id": session.project_id, "name": name}
 
 
 # Typed aliases for route signatures

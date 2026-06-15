@@ -42,6 +42,14 @@ async def lifespan(app: FastAPI):
         llm_err = llm_config_error(root)
         if llm_err:
             logger.warning("LLM not ready for active project: %s", llm_err)
+        try:
+            from novel_agent.state.yaml_mirror import check_yaml_mirror_drift
+
+            drift = check_yaml_mirror_drift(root)
+            for warning in drift:
+                logger.warning("YAML mirror drift: %s", warning)
+        except Exception as exc:
+            logger.debug("YAML mirror startup check skipped: %s", exc)
 
     _init_prompt_defaults(context.BASE_DIR)
 

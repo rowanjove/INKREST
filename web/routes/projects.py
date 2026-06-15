@@ -7,12 +7,13 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 import httpx
 import web.context as ws_server
 import web.helpers as ws_helpers
+from web.deps import ProjectSession, current_project_info, get_project_session
 from web.llm_errors import model_provider_http_error
 import logging
 
@@ -69,14 +70,8 @@ def pin_project(pid: str, req: ProjectPinRequest) -> Dict[str, Any]:
 
 
 @router.get("/api/projects/current")
-def get_current_project() -> Dict[str, Any]:
-    if not ws_server._active_project_id:
-        return {"id": None, "name": None}
-    data = ws_server.project_manager._read_registry()
-    info = data.get("projects", {}).get(ws_server._active_project_id, {})
-    if not info:
-        return {"id": None, "name": None}
-    return {"id": ws_server._active_project_id, "name": info.get("name", ws_server._active_project_id)}
+def get_current_project(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    return current_project_info(session)
 
 
 _SENSITIVE_LOG_KEYS = frozenset({

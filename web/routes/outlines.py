@@ -2,7 +2,9 @@ import json
 import copy
 from pathlib import Path
 from typing import Any, Dict, List
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from web.deps import ProjectSession, coerce_project_session, get_project_session, touch_project_activity
 
 import web.context as ws_server
 import web.helpers as ws_helpers
@@ -33,6 +35,16 @@ def _debug_novel_run_enabled() -> bool:
     )
 
 
+def _load_outline_from_root(root: Path) -> Dict[str, Any]:
+    outline_path = root / "workspace" / "outline.json"
+    if not outline_path.exists():
+        return {}
+    try:
+        return json.loads(outline_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
 def _sync_and_ensure_assets(root: Path, outline: Dict[str, Any]):
     """大纲生成或更新时，一并确保并同步五大核心项目资产文件。"""
     # 1. 联动同步世界观
@@ -52,22 +64,18 @@ def _sync_and_ensure_assets(root: Path, outline: Dict[str, Any]):
 
 
 @router.get("/api/outline")
-def get_outline() -> Dict[str, Any]:
-    outline_path = ws_server.get_root_dir() / "workspace" / "outline.json"
-    if not outline_path.exists():
-        return {}
-    try:
-        return json.loads(outline_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
+def get_outline(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    return _load_outline_from_root(session.root_dir)
 
 
 @router.put("/api/outline")
-def update_outline(body: Dict[str, Any]) -> Dict[str, Any]:
+def update_outline(body: Dict[str, Any], session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     if not isinstance(body, dict):
         raise HTTPException(400, "Outline must be a JSON object")
     incoming = dict(body)
-    existing = get_outline()
+    existing = _load_outline_from_root(session.root_dir)
     macro_touched = "macro_outline" in incoming
     if existing:
         merged = {**existing, **incoming}
@@ -86,7 +94,7 @@ def update_outline(body: Dict[str, Any]) -> Dict[str, Any]:
             target_chapters=target,
             scale=scale,
         )
-    root = ws_server.get_root_dir()
+    root = session.root_dir
     
     # Sync scale_profile and target_chapters to project_meta.json
     scale_profile = body.get("scale_profile")
@@ -135,7 +143,7 @@ def update_outline(body: Dict[str, Any]) -> Dict[str, Any]:
     chosen_title = body.get("chosen_title")
     if chosen_title:
         try:
-            pid = ws_server._active_project_id
+            pid = session.project_id
             if pid:
                 registry = ws_server.project_manager._read_registry()
                 if pid in registry.get("projects", {}):
@@ -156,8 +164,7 @@ def update_outline(body: Dict[str, Any]) -> Dict[str, Any]:
     from novel_agent.services.outline_sync import check_arc_queue_stale, record_outline_saved
 
     record_outline_saved(root, body)
-    if ws_server._active_project_id:
-        ws_server.project_manager.touch_activity(ws_server._active_project_id)
+    touch_project_activity(session)
     stale = check_arc_queue_stale(root)
     return {
         **body,
@@ -167,32 +174,35 @@ def update_outline(body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.get("/api/outline/arc-queue-stale")
-def get_arc_queue_stale() -> Dict[str, Any]:
+def get_arc_queue_stale(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     from novel_agent.services.outline_sync import check_arc_queue_stale
 
-    return check_arc_queue_stale(ws_server.require_project_root())
+    return check_arc_queue_stale(session.root_dir)
 
 
 @router.post("/api/outline/arc-queue-synced")
-def mark_arc_queue_synced() -> Dict[str, Any]:
+def mark_arc_queue_synced(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     from novel_agent.services.outline_sync import mark_arcs_synced_with_outline
 
-    return mark_arcs_synced_with_outline(ws_server.require_project_root())
+    return mark_arcs_synced_with_outline(session.root_dir)
 
 
 @router.post("/api/novel/plan")
-def plan_novel(req: NovelPlanRequest) -> Dict[str, Any]:
+def plan_novel(req: NovelPlanRequest, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     """Generate a macro-level novel outline without running chapters."""
     from novel_agent.pipeline import PipelineConfig
     from novel_agent.agents.chief_editor import ChiefEditorAgent
     from novel_agent.prompts import PromptRepository
 
-    root = ws_server.get_root_dir()
+    root = session.root_dir
     config = PipelineConfig.from_config(root)
     prompts = PromptRepository(root)
     
     # 提取已有大纲设定作为 LLM 约束，防止更新大纲时主角名等变动
-    existing_outline = get_outline()
+    existing_outline = _load_outline_from_root(root)
     special_requirements = req.special_requirements or ""
     if existing_outline and not req.overwrite:
         constraints = []
@@ -275,7 +285,7 @@ def plan_novel(req: NovelPlanRequest) -> Dict[str, Any]:
     chosen_title = outline.get("chosen_title")
     if chosen_title:
         try:
-            pid = ws_server._active_project_id
+            pid = session.project_id
             if pid:
                 registry = ws_server.project_manager._read_registry()
                 if pid in registry.get("projects", {}):
@@ -298,15 +308,16 @@ def plan_novel(req: NovelPlanRequest) -> Dict[str, Any]:
 
 
 @router.post("/api/novel/chapter-plan")
-def generate_chapter_plan(req: ChapterPlanRequest) -> Dict[str, Any]:
+def generate_chapter_plan(req: ChapterPlanRequest, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     from novel_agent.services.rolling_planner import _macro_arc_for_chapter, split_window_briefs
     from novel_agent.services.writing_context import (
         format_context_for_managing_editor,
         gather_recent_writing_context,
     )
 
-    root = ws_server.get_root_dir()
-    outline = get_outline()
+    root = session.root_dir
+    outline = _load_outline_from_root(root)
     if not outline:
         raise HTTPException(400, "No outline found. Generate or save an outline first.")
 
@@ -360,10 +371,11 @@ def generate_chapter_plan(req: ChapterPlanRequest) -> Dict[str, Any]:
 
 
 @router.get("/api/outline/queue-status")
-def get_outline_queue_status() -> Dict[str, Any]:
+def get_outline_queue_status(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     from novel_agent.services.outline_queue_status import build_outline_queue_status
 
-    root = ws_server.get_root_dir()
+    root = session.root_dir
 
     def _complete(chapter_id: str) -> bool:
         d = root / "workspace" / "chapters" / f"chapter_{chapter_id}"
@@ -377,12 +389,13 @@ def get_outline_queue_status() -> Dict[str, Any]:
 
 
 @router.get("/api/novel/batch-status")
-def get_novel_batch_status() -> Dict[str, Any]:
+def get_novel_batch_status(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     from novel_agent.services.arc_queue import load_arc_progress, load_workspace_arcs
 
     from novel_agent.services.progress_summary import build_progress_summary
 
-    root = ws_server.get_root_dir()
+    root = session.root_dir
     progress = load_arc_progress(root)
     arcs = load_workspace_arcs(root)
     summary = build_progress_summary(root)
@@ -405,9 +418,10 @@ def get_novel_batch_status() -> Dict[str, Any]:
 
 
 @router.get("/api/novel/autopilot-rounds")
-def list_autopilot_rounds(limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+def list_autopilot_rounds(limit: int = 50, offset: int = 0, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     """Read workspace/autopilot_rounds.jsonl for ops / monitor UI."""
-    root = ws_server.get_root_dir()
+    root = session.root_dir
     path = root / "workspace" / "autopilot_rounds.jsonl"
     rows: List[Dict[str, Any]] = []
     if path.is_file():
@@ -433,25 +447,28 @@ def list_autopilot_rounds(limit: int = 50, offset: int = 0) -> Dict[str, Any]:
 
 
 @router.get("/api/novel/cost-summary")
-def novel_cost_summary() -> Dict[str, Any]:
+def novel_cost_summary(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     """SQLite llm_cost_log totals plus recent autopilot round token usage."""
     from novel_agent.services.cost_summary import build_cost_summary
 
-    return build_cost_summary(ws_server.get_root_dir())
+    return build_cost_summary(session.root_dir)
 
 
 @router.get("/api/novel/progress-summary")
-def novel_progress_summary() -> Dict[str, Any]:
+def novel_progress_summary(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     from novel_agent.services.progress_summary import build_progress_summary
 
-    return build_progress_summary(ws_server.get_root_dir())
+    return build_progress_summary(session.root_dir)
 
 
 @router.get("/api/novel/arc-progress")
-def get_arc_progress() -> Dict[str, Any]:
+def get_arc_progress(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     from novel_agent.services.arc_queue import load_arc_progress, load_workspace_arcs
 
-    root = ws_server.get_root_dir()
+    root = session.root_dir
     arcs = load_workspace_arcs(root)
     return {
         "progress": load_arc_progress(root),
@@ -467,7 +484,8 @@ def get_arc_progress() -> Dict[str, Any]:
 
 
 @router.post("/api/novel/ensure-queue")
-async def ensure_novel_queue(request: Request) -> Dict[str, Any]:
+async def ensure_novel_queue(request: Request, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     """Build or replenish arc chapter queue without rewriting the macro outline."""
     import logging
 
@@ -475,7 +493,7 @@ async def ensure_novel_queue(request: Request) -> Dict[str, Any]:
     from novel_agent.orchestrator import NovelOrchestrator
     from novel_agent.services.rolling_planner import prepare_queue_for_run
 
-    root = ws_server.require_project_root()
+    root = session.root_dir
     outline_path = root / "workspace" / "outline.json"
     if not outline_path.exists():
         raise HTTPException(400, "未找到作品大纲，请先生成大纲。")
@@ -528,14 +546,15 @@ async def ensure_novel_queue(request: Request) -> Dict[str, Any]:
 
 
 @router.post("/api/novel/run-arc")
-async def run_novel_arc(req: NovelArcRunRequest) -> Dict[str, Any]:
+async def run_novel_arc(req: NovelArcRunRequest, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     """Run chapter generation for one or more arcs (workspace/arc_*.json)."""
     if not _debug_novel_run_enabled():
         raise HTTPException(
             403,
             "调试接口已关闭。请设置环境变量 NOVEL_AGENT_DEBUG_RUN=1 或使用 ensure-queue + continue。",
         )
-    outline_path = ws_server.get_root_dir() / "workspace" / "outline.json"
+    outline_path = session.root_dir / "workspace" / "outline.json"
     if not outline_path.exists():
         raise HTTPException(400, "未找到作品大纲，请先生成大纲。")
     if not req.arc_id and not req.arc_ids and not req.start_arc_id:
@@ -552,11 +571,12 @@ async def run_novel_arc(req: NovelArcRunRequest) -> Dict[str, Any]:
 
 
 @router.get("/api/novel/readiness")
-async def novel_readiness() -> Dict[str, Any]:
+async def novel_readiness(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     """开书清单 / continue 前置条件（与前端 projectReadiness 对齐）。"""
     from novel_agent.services.novel_run_guard import build_readiness_report
 
-    root = ws_server.get_root_dir()
+    root = session.root_dir
     report = build_readiness_report(root)
     batch = {"paused": False}
     try:
@@ -576,11 +596,12 @@ async def novel_readiness() -> Dict[str, Any]:
 
 
 @router.post("/api/novel/continue")
-async def continue_novel(req: NovelContinueRequest) -> Dict[str, Any]:
+async def continue_novel(req: NovelContinueRequest, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     """Resume arc batch from saved progress (long/epic runs)."""
     from novel_agent.services.novel_run_guard import validate_novel_continue
 
-    root = ws_server.get_root_dir()
+    root = session.root_dir
     ok, detail = validate_novel_continue(root, force_resume=req.force_resume)
     if not ok:
         raise HTTPException(400, detail)
@@ -612,14 +633,15 @@ async def continue_novel(req: NovelContinueRequest) -> Dict[str, Any]:
 
 
 @router.post("/api/novel/run")
-async def run_novel(req: NovelRunRequest) -> Dict[str, Any]:
+async def run_novel(req: NovelRunRequest, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     """Run the full multi-chapter novel generation as a background task."""
     if not _debug_novel_run_enabled():
         raise HTTPException(
             403,
             "调试接口已关闭。请设置环境变量 NOVEL_AGENT_DEBUG_RUN=1 或使用工作台连写路径。",
         )
-    outline_path = ws_server.get_root_dir() / "workspace" / "outline.json"
+    outline_path = session.root_dir / "workspace" / "outline.json"
     if outline_path.exists():
         try:
             outline_data = json.loads(outline_path.read_text(encoding="utf-8"))

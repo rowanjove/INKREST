@@ -6,12 +6,13 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 import logging
 
 import web.context as ws_server
+from web.deps import ProjectSession, RequireProjectDep, get_project_session
 from web.factory_summaries import (
     build_factory_dashboard,
     summarize_project_book,
@@ -63,15 +64,14 @@ def _running_task_count() -> int:
 
 
 @router.get("/api/factory/dashboard")
-def get_factory_dashboard() -> Dict[str, Any]:
-    root = ws_server.get_root_dir()
-    return build_factory_dashboard(root, ws_server._active_project_id, _running_task_count())
+def get_factory_dashboard(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    return build_factory_dashboard(session.root_dir, session.project_id, _running_task_count())
 
 
 @router.get("/api/factory/studio")
-def get_factory_studio() -> Dict[str, Any]:
+def get_factory_studio(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
     registry = ws_server.project_manager._read_registry()
-    active_id = ws_server._active_project_id
+    active_id = session.project_id
     active_running = _running_task_count()
     books: List[Dict[str, Any]] = []
     for pid, info in registry.get("projects", {}).items():
@@ -128,8 +128,11 @@ def get_factory_studio() -> Dict[str, Any]:
 
 
 @router.put("/api/factory/mode")
-def update_factory_mode(req: FactoryModeRequest) -> Dict[str, str]:
-    root = ws_server.get_root_dir()
+def update_factory_mode(
+    req: FactoryModeRequest,
+    session: ProjectSession = Depends(get_project_session),
+) -> Dict[str, str]:
+    root = session.root_dir
     meta = _load_project_meta(root)
     meta["factory_mode"] = req.mode
     _write_project_meta(root, meta)

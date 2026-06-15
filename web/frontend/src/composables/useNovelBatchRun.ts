@@ -10,6 +10,7 @@ import {
   getConfig,
   getEmbeddingStatus,
   getNovelBatchStatus,
+  getNovelReadiness,
   getPipelineAlerts,
   getOutline,
   listAssets,
@@ -183,7 +184,7 @@ export function useNovelBatchRun() {
   })
 
   async function refreshContext() {
-    const [assetRes, countRes, outlineRes, modelsRes, configRes, embRes, arcRes, batchRes, alertsRes] =
+    const [assetRes, countRes, outlineRes, modelsRes, configRes, embRes, arcRes, batchRes, alertsRes, readyRes] =
       await Promise.all([
         listAssets().catch(() => ({ data: [] })),
         getChapterCount(true).catch(() => ({ data: { total: 0 } })),
@@ -194,10 +195,12 @@ export function useNovelBatchRun() {
         getArcProgress().catch(() => ({ data: { progress: null } })),
         getNovelBatchStatus().catch(() => ({ data: {} })),
         getPipelineAlerts().catch(() => ({ data: { alerts: [] } })),
+        getNovelReadiness().catch(() => ({ data: {} })),
       ])
     try {
       const outlineData = outlineRes.data
       const progress = arcRes.data?.progress || batchRes.data || null
+      const vectorBlocksContinue = Boolean(readyRes.data?.vector_blocks_continue)
       const pricing = resolveDailyModelPricePer1k(configRes.data, modelsRes.data || [])
       modelPricePer1k.value = pricing.pricePer1k
       modelPriceLabel.value = pricing.modelLabel
@@ -207,7 +210,9 @@ export function useNovelBatchRun() {
         // 与工作台 loadWorkbench 一致，避免 authoritative_completed 偏大导致弹窗被静默拦截
         chapterCountTotal: countRes.data?.total ?? 0,
         engineReady: resolveEngine(configRes.data, modelsRes.data || []).ready,
-        semanticSearchEffective: Boolean(embRes.data?.semantic_search_effective),
+        semanticSearchEffective: vectorBlocksContinue
+          ? false
+          : Boolean(embRes.data?.semantic_search_effective),
         vectorEnabled: embRes.data?.vector_enabled !== false,
         arcProgress: progress,
         batchPaused: progress?.status === 'paused',

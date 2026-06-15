@@ -139,6 +139,7 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
     queue_ok = bool(load_workspace_arcs(root)) or not macro
 
     warnings: List[str] = []
+    vector_readiness_level = "auto"
     if stale.get("stale"):
         warnings.append(str(stale.get("message") or "卷队列与大纲不一致"))
 
@@ -152,6 +153,7 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
         scale = str((outline.get("scale_profile") or {}).get("scale") or "")
         vector_stub = provider in ("", "stub", "none") or not is_semantic_search_effective(root)
         level = resolve_vector_readiness_level(root, scale, vector_stub=vector_stub)
+        vector_readiness_level = level
         if level == "block":
             pending.append({"id": "vector", "label": "长篇模式需配置有效 Embedding（非 stub）"})
         elif level == "warn":
@@ -193,6 +195,8 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
         "has_arcs": bool(load_workspace_arcs(root)),
         "factory_mode": factory_mode,
         "yaml_mirror_warnings": yaml_mirror_warnings,
+        "vector_readiness_level": vector_readiness_level,
+        "vector_blocks_continue": any(item.get("id") == "vector" for item in pending),
     }
 
 

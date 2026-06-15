@@ -410,7 +410,8 @@ class ApiChaptersTests(ApiTestBase):
         try:
             web_server.BASE_DIR = self.tmpdir
             web_server._active_project_id = None
-            
+            (self.tmpdir / "workspace").mkdir(parents=True, exist_ok=True)
+
             client = TestClient(web_app)
             response = client.post(
                 "/api/chapters",

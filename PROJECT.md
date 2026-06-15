@@ -1,19 +1,19 @@
 # 小说生成 Agent 项目文档
 
-> 本文档供 AI 快速理解项目结构、架构和工作流程。
+> 本文档供 AI 快速理解项目结构、架构和工作流程。  
+> **规模（2026-06）**：`novel_agent/` 约 100+ Python 模块 · `web/` 约 25 路由模块 · 前端 `src/` 约 129 个 Vue + 112 个 TS 源文件 · 后端/契约测试 700+ 用例。
 
 ## 项目概述
 
-这是一个**多 Agent 协作的小说生成流水线**，通过多个专业化的 AI Agent 协作，自动完成从大纲规划到章节生成的完整流程。
+这是一个**多 Agent 协作的小说生成流水线**，通过多个专业化的 AI Agent 协作，自动完成从大纲规划到章节生成的完整流程。产品层提供 **Factory 工厂模式**（5 种运行策略）、书库多项目、Onboarding、Studio 看板与 Electron 桌面壳。
 
 ### 核心特性
-- 13 个专业 Agent 协作生成小说
+- 13+ 个专业 Agent 协作生成小说（流水线 phases + checkpoint）
+- **Factory 模式**：`project_meta.factory_mode` 经 `runtime_policy` 影响门禁/审校/向量/续跑（见 [FACTORY-MODE-RUNTIME.md](./docs/FACTORY-MODE-RUNTIME.md)）
 - 支持多模型路由（不同 Agent 使用不同 LLM）
-- 并行场景生成
-- 自动审核与重写机制
-- 状态持久化与连续性检查
-- Web UI 管理界面
-- 支持打包为桌面应用
+- SQLite 主状态 + 可关闭的 YAML 镜像（`runtime.yaml_mirror_enabled`）
+- 自动审核与重写机制、开书清单 / continue 服务端 readiness
+- Vue 3 + FastAPI Web UI，可打包为 Electron 桌面应用
 
 ---
 

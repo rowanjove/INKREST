@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 import logging
 
 from fastapi import APIRouter, HTTPException
+
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
 from pydantic import BaseModel, Field
 
 import web.context as ws_server
@@ -34,14 +36,15 @@ router = APIRouter()
 
 
 @router.post("/api/chapters/run")
-async def run_chapter(req: ChapterRequest) -> TaskStatus:
+async def run_chapter(req: ChapterRequest, session: ProjectSession = RequireProjectDep) -> TaskStatus:
+    session = coerce_project_session(session)
     outline = ws_server.get_outline()
     if not outline or not outline.get("chosen_title"):
         raise HTTPException(400, "生成章节要求在大纲中确定小说最终名称。")
     try:
         # 清理已有的 checkpoint.json，确保是重新运行而非恢复
         safe_id = ws_server._validate_id(req.chapter_id, "chapter_id")
-        chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+        chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
         checkpoint_path = chapter_dir / "checkpoint.json"
         if checkpoint_path.exists():
             try:
@@ -63,10 +66,11 @@ async def run_chapter(req: ChapterRequest) -> TaskStatus:
 
 
 @router.post("/api/chapters/{chapter_id}/resume-audit")
-async def resume_chapter_audit(chapter_id: str) -> TaskStatus:
+async def resume_chapter_audit(chapter_id: str, session: ProjectSession = RequireProjectDep) -> TaskStatus:
+    session = coerce_project_session(session)
     """Resume from audit checkpoint without wiping generation (e.g. quality_blocked)."""
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-    chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
     if not chapter_dir.exists():
         raise HTTPException(404, f"Chapter {safe_id} not found")
 
@@ -99,10 +103,11 @@ async def resume_chapter_audit(chapter_id: str) -> TaskStatus:
 
 
 @router.post("/api/chapters/{chapter_id}/rerun-gate")
-async def rerun_chapter_gate(chapter_id: str) -> TaskStatus:
+async def rerun_chapter_gate(chapter_id: str, session: ProjectSession = RequireProjectDep) -> TaskStatus:
+    session = coerce_project_session(session)
     """Re-run unified_gate only (requires existing final_text + audit.json)."""
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-    chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
     if not chapter_dir.exists():
         raise HTTPException(404, f"Chapter {safe_id} not found")
     final_path = chapter_dir / "chapter_final.txt"
@@ -122,9 +127,10 @@ async def rerun_chapter_gate(chapter_id: str) -> TaskStatus:
 
 
 @router.post("/api/chapters/{chapter_id}/rewrite")
-async def rewrite_chapter(chapter_id: str) -> TaskStatus:
+async def rewrite_chapter(chapter_id: str, session: ProjectSession = RequireProjectDep) -> TaskStatus:
+    session = coerce_project_session(session)
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-    chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
     if not chapter_dir.exists():
         raise HTTPException(404, f"Chapter {safe_id} not found")
         
@@ -158,9 +164,10 @@ async def rewrite_chapter(chapter_id: str) -> TaskStatus:
 
 
 @router.get("/api/chapters/{chapter_id}/suggest-goal")
-def suggest_chapter_goal(chapter_id: str) -> Dict[str, Any]:
+def suggest_chapter_goal(chapter_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-    root = ws_server.get_root_dir()
+    root = session.root_dir
     outline = ws_server.get_outline()
     
     # 1. 尝试从 outline.json 里面查是否有该章节的预设大纲目标
@@ -244,7 +251,8 @@ class RewriteBatchRequest(BaseModel):
 
 
 @router.post("/api/chapters/run-batch")
-async def run_batch(req: BatchChapterRequest) -> Dict[str, Any]:
+async def run_batch(req: BatchChapterRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     outline = ws_server.get_outline()
     if not outline or not outline.get("chosen_title"):
         raise HTTPException(400, "生成章节要求在大纲中确定小说最终名称。")
@@ -254,7 +262,8 @@ async def run_batch(req: BatchChapterRequest) -> Dict[str, Any]:
 
 
 @router.post("/api/chapters/rewrite-batch")
-async def run_rewrite_batch(req: RewriteBatchRequest) -> Dict[str, Any]:
+async def run_rewrite_batch(req: RewriteBatchRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     outline = ws_server.get_outline()
     if not outline or not outline.get("chosen_title"):
         raise HTTPException(400, "生成章节要求在大纲中确定小说最终名称。")
@@ -262,7 +271,7 @@ async def run_rewrite_batch(req: RewriteBatchRequest) -> Dict[str, Any]:
     chapters_to_run = []
     for chapter_id in req.chapter_ids:
         safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-        chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+        chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
         if not chapter_dir.exists():
             continue
             
@@ -295,13 +304,15 @@ async def run_rewrite_batch(req: RewriteBatchRequest) -> Dict[str, Any]:
 
 
 @router.get("/api/chapters/tasks")
-async def list_tasks() -> List[TaskStatus]:
+async def list_tasks(session: ProjectSession = RequireProjectDep) -> List[TaskStatus]:
+    session = coerce_project_session(session)
     tasks = await ws_server._get_task_manager().list_tasks_async()
     return [TaskStatus(**t) for t in tasks]
 
 
 @router.get("/api/chapters/tasks/{task_id}")
-async def get_task(task_id: str) -> TaskStatus:
+async def get_task(task_id: str, session: ProjectSession = RequireProjectDep) -> TaskStatus:
+    session = coerce_project_session(session)
     task = await ws_server._get_task_manager().get_task_async(task_id)
     if not task:
         raise HTTPException(404, f"Task {task_id} not found")
@@ -309,7 +320,8 @@ async def get_task(task_id: str) -> TaskStatus:
 
 
 @router.post("/api/chapters/tasks/{task_id}/abort")
-async def abort_task(task_id: str) -> Dict[str, Any]:
+async def abort_task(task_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
     task_manager = ws_server._get_task_manager()
     success = await task_manager.abort_task(task_id)
     if not success:

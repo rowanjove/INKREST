@@ -7,10 +7,11 @@ import os
 import sys
 from typing import Any, Dict, Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 import web.context as ws_server
+from web.deps import ProjectSession, get_project_session
 from novel_agent.integrations.agent_bridge import (
     build_agent_snapshot,
     list_projects,
@@ -58,14 +59,11 @@ def _build_mcp_config_snippet(base_dir: str, api_url: str) -> Dict[str, Any]:
     }
 
 
-def _integration_info(api_url: str) -> Dict[str, Any]:
+def _integration_info(api_url: str, session: ProjectSession) -> Dict[str, Any]:
     base = ws_server.BASE_DIR
-    active = ws_server._active_project_id or ""
+    active = session.project_id or ""
     root_dir = str(base)
-    try:
-        project_root = str(ws_server.get_root_dir())
-    except Exception:
-        project_root = root_dir
+    project_root = str(session.root_dir)
     cli_py = str((base / "cli.py").resolve())
     return {
         "workspace_root": root_dir,
@@ -109,7 +107,7 @@ def _integration_info(api_url: str) -> Dict[str, Any]:
 
 
 @router.get("/api/agent/settings")
-def get_agent_settings() -> Dict[str, Any]:
+def get_agent_settings(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
     """Workspace agent-bridge settings + copy-paste integration kit."""
     settings = load_agent_bridge_settings(ws_server.BASE_DIR)
     override = (settings.get("api_url_override") or "").strip()
@@ -117,12 +115,15 @@ def get_agent_settings() -> Dict[str, Any]:
     return {
         "settings": settings,
         "defaults": DEFAULT_AGENT_BRIDGE,
-        "integration": _integration_info(api_url),
+        "integration": _integration_info(api_url, session),
     }
 
 
 @router.put("/api/agent/settings")
-def put_agent_settings(body: AgentBridgeSettingsUpdate) -> Dict[str, Any]:
+def put_agent_settings(
+    body: AgentBridgeSettingsUpdate,
+    session: ProjectSession = Depends(get_project_session),
+) -> Dict[str, Any]:
     patch = body.model_dump(exclude_none=True)
     if not patch:
         raise HTTPException(400, "No fields to update")
@@ -132,7 +133,7 @@ def put_agent_settings(body: AgentBridgeSettingsUpdate) -> Dict[str, Any]:
     return {
         "status": "updated",
         "settings": saved,
-        "integration": _integration_info(api_url),
+        "integration": _integration_info(api_url, session),
     }
 
 
@@ -142,7 +143,10 @@ def agent_list_projects() -> Dict[str, Any]:
 
 
 @router.get("/api/agent/snapshot")
-def agent_snapshot(project_id: Optional[str] = Query(None)) -> Dict[str, Any]:
+def agent_snapshot(
+    project_id: Optional[str] = Query(None),
+    session: ProjectSession = Depends(get_project_session),
+) -> Dict[str, Any]:
     """Combined status for external AI agents."""
     try:
         if project_id:
@@ -151,8 +155,8 @@ def agent_snapshot(project_id: Optional[str] = Query(None)) -> Dict[str, Any]:
             if not root.is_dir():
                 raise HTTPException(404, f"Project {project_id} not found")
         else:
-            root = ws_server.get_root_dir()
-            project_id = ws_server._active_project_id or ""
+            root = session.root_dir
+            project_id = session.project_id or ""
     except HTTPException:
         raise
     except Exception as exc:

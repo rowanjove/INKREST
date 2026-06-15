@@ -2,10 +2,11 @@
 
 import json
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 import web.context as ws_server
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, current_project_info, get_project_session
 
 router = APIRouter()
 
@@ -177,8 +178,9 @@ def _parse_chat_response(text: str) -> Dict[str, Any]:
 # ---- API Endpoints ----
 
 @router.get("/api/assistant/context")
-async def get_assistant_context() -> Dict[str, Any]:
+async def get_assistant_context(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
     """Return a compact software-state summary for the pet bubble."""
+    session = coerce_project_session(session)
     tasks: List[Dict[str, Any]] = []
     try:
         tasks = await ws_server._get_task_manager().list_tasks_async()
@@ -247,12 +249,7 @@ async def get_assistant_context() -> Dict[str, Any]:
                 "source": "task",
             })
 
-    root: Optional[Any] = None
-    try:
-        if _active_project_summary():
-            root = ws_server.get_root_dir()
-    except Exception:
-        root = None
+    root: Optional[Any] = session.root_dir if session.has_project else None
 
     agent_runtime_logs: List[Dict[str, Any]] = []
     system_log_tail: List[str] = []
@@ -300,7 +297,7 @@ async def get_assistant_context() -> Dict[str, Any]:
     try:
         from novel_agent.services.arc_queue import load_arc_progress
 
-        progress = load_arc_progress(ws_server.get_root_dir())
+        progress = load_arc_progress(session.root_dir)
         novel_batch = {
             "paused": progress.get("status") == "paused",
             "pause_reason": str(progress.get("pause_reason") or ""),
@@ -357,7 +354,7 @@ async def get_assistant_context() -> Dict[str, Any]:
 
     return {
         "backend_health": "ok",
-        "active_project": _active_project_summary(),
+        "active_project": current_project_info(session) if session.has_project else None,
         "pipeline_active": pipeline_active,
         "work": work,
         "factory": factory,
@@ -373,9 +370,15 @@ async def get_assistant_context() -> Dict[str, Any]:
 
 
 @router.get("/api/assistant/diagnose")
-async def get_assistant_diagnose(ignored_task_ids: Optional[str] = None) -> Dict[str, Any]:
+async def get_assistant_diagnose(
+    ignored_task_ids: Optional[str] = None,
+    session: ProjectSession = Depends(get_project_session),
+) -> Dict[str, Any]:
     """Perform quick diagnostic check of the system state."""
-    active_project = _active_project_summary()
+    session = coerce_project_session(session)
+    active_project = current_project_info(session)
+    if active_project.get("id") is None:
+        active_project = None
     issues = []
     suggestions = []
     
@@ -393,7 +396,7 @@ async def get_assistant_diagnose(ignored_task_ids: Optional[str] = None) -> Dict
             "payload": {"route": "/"}
         })
     else:
-        root = ws_server.get_root_dir()
+        root = session.root_dir
         try:
             from novel_agent.services.arc_queue import load_arc_progress
 
@@ -552,15 +555,16 @@ async def get_assistant_diagnose(ignored_task_ids: Optional[str] = None) -> Dict
 
 
 @router.post("/api/assistant/fix")
-async def execute_assistant_fix(req: FixRequest) -> Dict[str, Any]:
+async def execute_assistant_fix(req: FixRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     """Execute low-risk automatic fix action."""
+    session = coerce_project_session(session)
     fix_type = req.fix_type
     payload = req.payload
     
     if fix_type == "test_model":
         try:
             from novel_agent.pipeline import load_pipeline_settings
-            root = ws_server.get_root_dir()
+            root = session.root_dir
             current = load_pipeline_settings(root)
             
             from web.routes.assistant_chat import _get_assistant_llm
@@ -624,7 +628,7 @@ async def execute_assistant_fix(req: FixRequest) -> Dict[str, Any]:
             
         try:
             safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-            chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+            chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
             
             checkpoint_path = chapter_dir / "checkpoint.json"
             if checkpoint_path.exists():
