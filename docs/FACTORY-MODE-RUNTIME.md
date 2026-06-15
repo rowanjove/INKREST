@@ -19,6 +19,12 @@
 - `yaml_mirror_enabled`（遗留布尔）：`true`→`write`，`false`→`off`；未设置 `yaml_mirror_mode` 时生效
 - `vector_readiness`：`auto` | `block` | `warn` | `ignore` — 覆盖长篇向量 stub 时的阻断/警告策略
 
+### 长篇向量存储（ChromaDB）
+
+`long` / `epic` / `infinite`（或 `target_chapters >= 100`）且未在 `embedding.backend` 中显式指定时，运行时自动将向量存储后端设为 `chromadb`（需安装 `chromadb` 包；`provider: stub` 仍可用本地哈希向量写入 Chroma）。
+
+显式写 `embedding.backend: sqlite` 可保留 SQLite 向量表。`/api/novel/readiness` 返回 `embedding_backend`、`chromadb_available`。
+
 ### YAML 只读导出
 
 `read_only` 或需要一次性对齐磁盘时，调用 `POST /api/database/export-yaml-mirror`，从 SQLite 导出 `events/objects/foreshadows/hooks` 到 `state/*.yaml`（不恢复实时双写）。

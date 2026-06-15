@@ -44,7 +44,11 @@ class ContextBuilderAgent:
         max_context_chars: int = DEFAULT_MAX_CONTEXT_CHARS,
     ):
         self.root_dir = Path(root_dir)
-        self.vector_store = vector_store or create_vector_store({"provider": "stub"}, self.root_dir)
+        if vector_store is None:
+            from novel_agent.services.embedding_policy import create_vector_store_for_project
+
+            vector_store = create_vector_store_for_project(self.root_dir)
+        self.vector_store = vector_store
         self.store = SQLiteStateStore(self.root_dir)
         self.max_context_chars = max_context_chars
         self._prev_summary_cache: Dict[str, str] = {}

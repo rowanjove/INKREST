@@ -324,11 +324,9 @@ def _purge_chapter_vectors_best_effort(root_dir: Path, chapter_id: str) -> None:
 
     logger = logging.getLogger("web.server")
     try:
-        from novel_agent.pipeline import load_pipeline_settings
-        from novel_agent.state.vector_store import create_vector_store
+        from novel_agent.services.embedding_policy import create_vector_store_for_project
 
-        cfg = load_pipeline_settings(root_dir)
-        vector_store = create_vector_store(cfg.get("embedding", {}), root_dir)
+        vector_store = create_vector_store_for_project(root_dir)
         collection = getattr(vector_store, "chroma_collection", None)
         if collection is None:
             return

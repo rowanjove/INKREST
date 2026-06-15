@@ -31,7 +31,7 @@
 | 阶段 | 目标 | 状态 | 不做 |
 |------|------|------|------|
 | 2 数据 | YAML `read_only` + 导出 API；章节 index `gate_status`/`has_final` | ✅ | 迁 PostgreSQL |
-| 3 召回 | long/epic 默认 ChromaDB | 待办 | 云向量服务 |
+| 3 召回 | long/epic 默认 ChromaDB + readiness 暴露 backend | ✅ | 云向量服务 |
 | 4 执行 | 项目级队列、可配置并发 | 待办 | 盲目上 Celery |
 | 5 平台 | 全路由 `ProjectSession`、可选多用户 | 部分 | 微服务拆分 |
 

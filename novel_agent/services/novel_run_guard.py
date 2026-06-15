@@ -176,6 +176,9 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
 
     factory_mode = ""
     yaml_mirror_warnings: List[str] = []
+    embedding_backend = "sqlite"
+    chromadb_available = False
+    embedding_backend_hint = ""
     try:
         from novel_agent.control.factory_policy import load_project_factory_mode
         from novel_agent.state.yaml_mirror import check_yaml_mirror_drift
@@ -183,6 +186,20 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
         factory_mode = load_project_factory_mode(root)
         yaml_mirror_warnings = check_yaml_mirror_drift(root)
         warnings.extend(yaml_mirror_warnings)
+    except Exception:
+        pass
+
+    try:
+        from novel_agent.pipeline import load_pipeline_settings
+        from novel_agent.services.embedding_policy import resolve_embedding_config
+        from novel_agent.state.vector_store import CHROMA_AVAILABLE
+
+        resolved_emb = resolve_embedding_config(load_pipeline_settings(root), root)
+        embedding_backend = str(resolved_emb.get("backend") or "sqlite")
+        chromadb_available = bool(CHROMA_AVAILABLE)
+        embedding_backend_hint = str(resolved_emb.get("_backend_hint") or "")
+        if embedding_backend_hint:
+            warnings.append(embedding_backend_hint)
     except Exception:
         pass
 
@@ -197,6 +214,9 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
         "yaml_mirror_warnings": yaml_mirror_warnings,
         "vector_readiness_level": vector_readiness_level,
         "vector_blocks_continue": any(item.get("id") == "vector" for item in pending),
+        "embedding_backend": embedding_backend,
+        "chromadb_available": chromadb_available,
+        "embedding_backend_hint": embedding_backend_hint,
     }
 
 
