@@ -76,6 +76,8 @@ def list_chapters(
             risk_level=row.get("risk_level") or "",
             final_path=row.get("final_path") or "",
             is_missing=False,
+            has_final=bool(row.get("has_final")),
+            gate_status=str(row.get("gate_status") or ""),
         )
         for row in rows
     ]

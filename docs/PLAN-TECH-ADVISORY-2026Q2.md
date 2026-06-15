@@ -21,19 +21,19 @@
 1. **WIP 收敛发布** — 全量 pytest + vitest + bundle check
 2. **Factory 引擎闭环** — 见 `docs/FACTORY-MODE-RUNTIME.md`
 3. **文档/契约同步** — UI 契约测试镜像关键前端约定
-4. **YAML 止血** — `yaml_mirror_enabled` + 启动漂移日志
+4. **YAML 止血** — `yaml_mirror_mode`（`read_only`/`off`）+ 导出 API + 启动漂移日志
 5. **向量长篇** — `vector_readiness` + `/api/novel/readiness` 与连写弹窗对齐
 6. **请求级上下文** — `ProjectSession` 覆盖 factory/chapters/outlines 等高风险路由（>80%）
 7. **前端域拆分** — `api/client|factory|chapters`、`useTaskProgress`
 
 ## 中长期（刻意分阶段）
 
-| 阶段 | 目标 | 不做 |
-|------|------|------|
-| 2 数据 | YAML 只读；章节 index 扩展 | 迁 PostgreSQL |
-| 3 召回 | long/epic 默认 ChromaDB | 云向量服务 |
-| 4 执行 | 项目级队列、可配置并发 | 盲目上 Celery |
-| 5 平台 | 全路由 `ProjectSession`、可选多用户 | 微服务拆分 |
+| 阶段 | 目标 | 状态 | 不做 |
+|------|------|------|------|
+| 2 数据 | YAML `read_only` + 导出 API；章节 index `gate_status`/`has_final` | ✅ | 迁 PostgreSQL |
+| 3 召回 | long/epic 默认 ChromaDB | 待办 | 云向量服务 |
+| 4 执行 | 项目级队列、可配置并发 | 待办 | 盲目上 Celery |
+| 5 平台 | 全路由 `ProjectSession`、可选多用户 | 部分 | 微服务拆分 |
 
 ## 每周自检
 

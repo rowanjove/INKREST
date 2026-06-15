@@ -335,6 +335,18 @@ class SchemaMixin:
             )
             self._ensure_marker_columns(conn)
             self._ensure_task_columns(conn)
+            self._ensure_chapter_index_columns(conn)
+
+    def _ensure_chapter_index_columns(self, conn) -> None:
+        columns = {
+            row[1] for row in conn.execute("pragma table_info(chapters)").fetchall()
+        }
+        if "has_final" not in columns:
+            conn.execute("alter table chapters add column has_final integer default 0")
+        if "gate_status" not in columns:
+            conn.execute("alter table chapters add column gate_status text default ''")
+        if "indexed_at" not in columns:
+            conn.execute("alter table chapters add column indexed_at real default 0")
 
     def _ensure_task_columns(self, conn) -> None:
         columns = {

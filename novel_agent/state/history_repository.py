@@ -56,20 +56,39 @@ class HistoryRepositoryMixin:
         final_path: Path,
         word_count: int,
         risk_level: str,
+        *,
+        has_final: int = 0,
+        gate_status: str = "",
+        indexed_at: float = 0.0,
     ) -> None:
         with safe_connection(self.db_path) as conn:
             with conn:
                 conn.execute(
                     """
-                    insert into chapters (id, title, final_path, word_count, risk_level)
-                    values (?, ?, ?, ?, ?)
+                    insert into chapters (
+                      id, title, final_path, word_count, risk_level,
+                      has_final, gate_status, indexed_at
+                    )
+                    values (?, ?, ?, ?, ?, ?, ?, ?)
                     on conflict(id) do update set
                       title=excluded.title,
                       final_path=excluded.final_path,
                       word_count=excluded.word_count,
-                      risk_level=excluded.risk_level
+                      risk_level=excluded.risk_level,
+                      has_final=excluded.has_final,
+                      gate_status=excluded.gate_status,
+                      indexed_at=excluded.indexed_at
                     """,
-                    (chapter_id, title, str(final_path), word_count, risk_level),
+                    (
+                        chapter_id,
+                        title,
+                        str(final_path),
+                        word_count,
+                        risk_level,
+                        int(has_final),
+                        gate_status,
+                        float(indexed_at),
+                    ),
                 )
 
     @db_write_lock
@@ -246,7 +265,11 @@ class HistoryRepositoryMixin:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
-                select id, title, final_path, word_count, risk_level from chapters
+                select id, title, final_path, word_count, risk_level,
+                       coalesce(has_final, 0) as has_final,
+                       coalesce(gate_status, '') as gate_status,
+                       coalesce(indexed_at, 0) as indexed_at
+                from chapters
                 order by cast(id as integer), id
                 limit ? offset ?
                 """,
@@ -259,6 +282,9 @@ class HistoryRepositoryMixin:
                 "final_path": r["final_path"],
                 "word_count": r["word_count"],
                 "risk_level": r["risk_level"],
+                "has_final": bool(r["has_final"]),
+                "gate_status": r["gate_status"],
+                "indexed_at": float(r["indexed_at"] or 0),
             }
             for r in rows
         ]

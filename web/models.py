@@ -136,6 +136,8 @@ class ChapterSummary(BaseModel):
     risk_level: str
     final_path: str
     is_missing: bool = False
+    has_final: bool = True
+    gate_status: str = ""
 
 
 class ChapterListResponse(BaseModel):

@@ -55,6 +55,33 @@ def _save_sync_manifest(root_dir: Path, signatures: Dict[str, float]) -> None:
         logger.debug("Failed to write chapter index sync manifest: %s", exc)
 
 
+def derive_gate_status(chapter_dir: Path, final_text: str) -> str:
+    """Map on-disk chapter artifacts to a compact gate status for the SQLite index."""
+    if not final_text.strip():
+        return "empty"
+    checkpoint_path = chapter_dir / "checkpoint.json"
+    if checkpoint_path.is_file():
+        try:
+            checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+            last_stage = str(checkpoint.get("last_stage") or checkpoint.get("stage") or "")
+            if last_stage in ("quality_blocked", "approval_rejected"):
+                return "blocked"
+        except (json.JSONDecodeError, OSError):
+            pass
+    audit_path = chapter_dir / "reports" / "audit.json"
+    if audit_path.is_file():
+        try:
+            audit = json.loads(audit_path.read_text(encoding="utf-8"))
+            issues = audit.get("issues") or []
+            risk = str(audit.get("risk_level") or "")
+            if issues or risk in ("极高", "高"):
+                return "warning"
+            return "ok"
+        except (json.JSONDecodeError, OSError):
+            pass
+    return "unknown"
+
+
 def chapter_dir_signature(chapter_dir: Path) -> float:
     """Max mtime of indexed chapter artifacts; 0 when folder is empty."""
     mtimes: list[float] = []
@@ -106,6 +133,9 @@ def _index_one_chapter(
             risk_level = str(audit.get("risk_level") or "")
         except (json.JSONDecodeError, OSError) as exc:
             logger.debug("Failed to read audit.json for chapter_%s: %s", chapter_id, exc)
+    gate_status = derive_gate_status(chapter_dir, final_text)
+    has_final = 1 if final_text.strip() else 0
+    indexed_at = chapter_dir_signature(chapter_dir)
     try:
         store.index_chapter(
             chapter_id,
@@ -113,6 +143,9 @@ def _index_one_chapter(
             final_path,
             word_count,
             risk_level,
+            has_final=has_final,
+            gate_status=gate_status,
+            indexed_at=indexed_at,
         )
         return True
     except Exception as exc:
