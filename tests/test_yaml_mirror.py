@@ -8,7 +8,9 @@ import yaml
 from novel_agent.state.manager import StateManager
 from novel_agent.state.yaml_mirror import (
     check_yaml_mirror_drift,
+    export_yaml_mirror,
     is_yaml_mirror_enabled,
+    resolve_yaml_mirror_mode,
 )
 
 
@@ -35,6 +37,26 @@ class YamlMirrorTests(unittest.TestCase):
         self._write_runtime_flag(False)
         self.assertFalse(is_yaml_mirror_enabled(self.tmpdir))
 
+    def test_yaml_mirror_read_only_mode(self):
+        path = self.tmpdir / "config" / "pipeline.yaml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data["runtime"] = {"yaml_mirror_mode": "read_only"}
+        path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        self.assertEqual(resolve_yaml_mirror_mode(self.tmpdir), "read_only")
+        self.assertFalse(is_yaml_mirror_enabled(self.tmpdir))
+
+    def test_export_yaml_mirror_writes_state_files(self):
+        from novel_agent.state.sqlite_store import SQLiteStateStore
+
+        store = SQLiteStateStore(self.tmpdir)
+        store.sync_state_update(
+            "001",
+            {"events": [{"id": "e1", "summary": "exported", "confidence": 1.0}]},
+        )
+        counts = export_yaml_mirror(self.tmpdir)
+        self.assertEqual(counts.get("events"), 1)
+        self.assertTrue((self.tmpdir / "state" / "events.yaml").is_file())
+
     def test_state_manager_skips_yaml_when_mirror_disabled(self):
         self._write_runtime_flag(False)
         state_dir = self.tmpdir / "state"
@@ -47,31 +69,19 @@ class YamlMirrorTests(unittest.TestCase):
         self.assertFalse((state_dir / "events.yaml").exists())
 
     def test_drift_check_reports_count_mismatch(self):
+        from novel_agent.state.sqlite_store import SQLiteStateStore
+
         state_dir = self.tmpdir / "state"
         state_dir.mkdir(parents=True)
         (state_dir / "events.yaml").write_text(
             yaml.safe_dump({"events": [{"id": "e1"}, {"id": "e2"}]}, allow_unicode=True),
             encoding="utf-8",
         )
-        data_dir = self.tmpdir / "data"
-        data_dir.mkdir(parents=True)
-        import sqlite3
-
-        db = data_dir / "novel.sqlite"
-        with sqlite3.connect(db) as conn:
-            conn.executescript(
-                """
-                CREATE TABLE events (
-                    id TEXT PRIMARY KEY,
-                    chapter_id TEXT,
-                    summary TEXT,
-                    payload TEXT
-                );
-                INSERT INTO events (id, chapter_id, summary, payload)
-                VALUES ('e1', '001', 'one', '{}');
-                """
-            )
-            conn.commit()
+        store = SQLiteStateStore(self.tmpdir)
+        store.sync_state_update(
+            "001",
+            {"events": [{"id": "e1", "summary": "one"}]},
+        )
         warnings = check_yaml_mirror_drift(self.tmpdir)
         self.assertTrue(any("events.yaml" in item for item in warnings))
 

@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 
 import web.context as ws_server
 import web.helpers as ws_helpers
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
 from novel_agent.control.calibration import build_calibration_report
 
 ws_server.get_outline = ws_helpers.get_outline
@@ -61,6 +62,22 @@ def clear_database(
         "include_operational": body.include_operational,
         "access_token_required": bool(os.environ.get(ACCESS_TOKEN_ENV, "")),
         "access_token_header": ACCESS_TOKEN_HEADER,
+    }
+
+
+@router.post("/api/database/export-yaml-mirror")
+def export_yaml_mirror_snapshot(
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    """Export SQLite narrative state to state/*.yaml without enabling live dual-write."""
+    session = coerce_project_session(session)
+    from novel_agent.state.yaml_mirror import export_yaml_mirror, resolve_yaml_mirror_mode
+
+    counts = export_yaml_mirror(session.root_dir)
+    return {
+        "status": "exported",
+        "mode": resolve_yaml_mirror_mode(session.root_dir),
+        "counts": counts,
     }
 
 

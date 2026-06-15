@@ -15,8 +15,13 @@
 
 `config/pipeline.yaml` → `runtime`：
 
-- `yaml_mirror_enabled`（默认 `true`）：关闭后 SQLite 为唯一真相源，不再写 `state/*.yaml`
+- `yaml_mirror_mode`：`write`（默认）| `read_only` | `off` — 控制 `state/*.yaml` 双写；`read_only` 时 SQLite 为唯一写入源，仍可读旧 YAML 并做漂移检查
+- `yaml_mirror_enabled`（遗留布尔）：`true`→`write`，`false`→`off`；未设置 `yaml_mirror_mode` 时生效
 - `vector_readiness`：`auto` | `block` | `warn` | `ignore` — 覆盖长篇向量 stub 时的阻断/警告策略
+
+### YAML 只读导出
+
+`read_only` 或需要一次性对齐磁盘时，调用 `POST /api/database/export-yaml-mirror`，从 SQLite 导出 `events/objects/foreshadows/hooks` 到 `state/*.yaml`（不恢复实时双写）。
 
 ## 验证
 
