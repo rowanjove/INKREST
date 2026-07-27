@@ -9,6 +9,7 @@
 ```powershell
 cd web/frontend
 npm run test:unit
+npm run audit:dead-code
 npm run build
 cd ../..
 python -m pytest tests/test_workspace_ui_contract.py -q
@@ -34,6 +35,8 @@ python -m pytest tests/ --ignore=tests/smoke -q
 ```powershell
 cd web/frontend
 npm run test:unit
+npm run audit:dead-code
+npm run test:electron
 npm run build
 npm run check:bundle
 cd ../..
@@ -72,7 +75,8 @@ python scripts/perf_api_baseline.py --check
 6. 桌面端：`cd web/frontend && npm run electron:pack`（或全量 `npm run electron:build`）
 7. 交付路径：`web/frontend/dist-desktop/win-unpacked/栖墨.exe`（勿混用未 sync 的旧 portable）
 8. 可选：`python scripts/verify_bundle_manifest.py <产物目录>`
-9. 打包后冒烟：开书 → 连写弹窗可开 → 任务日志有进度 → 山山状态同步
+9. 打包后冒烟：`npm run smoke:electron:packaged`，验证发布页、SQLite 正文、
+   五格式入口、真实导出与测试项目自清理
 
 ## 长跑与混沌测试（可选）
 
