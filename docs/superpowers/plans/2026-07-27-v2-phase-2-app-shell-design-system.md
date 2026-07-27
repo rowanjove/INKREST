@@ -20,10 +20,10 @@
 - Create: `web/frontend/src/stores/projectSnapshot.test.ts`
 - Modify: `web/frontend/src/api.ts`
 
-- [ ] 定义无 `any` 的快照、任务、阻断、下一步动作 DTO。
-- [ ] 接入 `GET /api/projects/current/snapshot`。
-- [ ] store 支持 hydration、刷新去重、错误保留与项目切换失效。
-- [ ] 单元测试覆盖并发刷新、切书和失败后保留最后有效快照。
+- [x] 定义无 `any` 的快照、任务、阻断、下一步动作 DTO。
+- [x] 接入 `GET /api/projects/current/snapshot`。
+- [x] store 支持 hydration、刷新去重、错误保留与项目切换失效。
+- [x] 单元测试覆盖并发刷新、切书和失败后保留最后有效快照。
 
 ## Task 2：修复路由 hydration、范围元数据与滚动
 
@@ -116,4 +116,3 @@
 - [ ] 使用 Browser 在 1440×900 与 1100×720 检查亮/暗主题、滚动、抽屉和键盘操作。
 - [ ] 后端 UI contract 回归通过。
 - [ ] 记录 bundle 和实际验证结果并提交。
-

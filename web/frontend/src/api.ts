@@ -3,6 +3,7 @@ export { default } from './api/client'
 export { default as api } from './api/client'
 export * from './api/factory'
 export * from './api/chapters'
+export * from './api/projectSnapshot'
 
 import api from './api/client'
 
