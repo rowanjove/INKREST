@@ -219,7 +219,7 @@ def _next_actions(
                 "id": "repair_config",
                 "label": "修复配置",
                 "kind": "navigate",
-                "target": "/settings",
+                "target": "/config",
                 "enabled": True,
             }
         )
@@ -239,7 +239,7 @@ def _next_actions(
                 "id": "monitor_tasks",
                 "label": "查看运行任务",
                 "kind": "navigate",
-                "target": "/tasks",
+                "target": "/production?tab=runs",
                 "enabled": True,
             }
         )
@@ -249,7 +249,7 @@ def _next_actions(
                 "id": "resolve_blocking_issues",
                 "label": "处理阻断项",
                 "kind": "navigate",
-                "target": "/pipeline",
+                "target": "/production?tab=reviews",
                 "enabled": True,
             }
         )

@@ -213,3 +213,82 @@ def test_task_json_fields_round_trip_as_objects(tmp_path):
             "select payload_json from tasks where id = 'task-1'"
         ).fetchone()[0]
     assert json.loads(raw) == task.payload_json
+
+
+def test_task_events_and_logs_are_project_scoped_and_ordered(tmp_path):
+    repository = _new_store(tmp_path).task_repository
+    repository.create_task(
+        task_id="book-1-task",
+        project_id="book-1",
+        task_type=TaskType.CHAPTER,
+        payload={"chapter_id": "001"},
+        max_attempts=2,
+    )
+    repository.create_task(
+        task_id="book-2-task",
+        project_id="book-2",
+        task_type=TaskType.CHAPTER,
+        payload={"chapter_id": "099"},
+    )
+
+    claimed = repository.claim_task("book-1-task")
+    assert claimed and claimed.claim_token
+    repository.start_task("book-1-task", claimed.claim_token)
+    repository.append_task_log(
+        "book-1-task",
+        level="info",
+        step="writer",
+        message="开始写作",
+        timestamp=10.0,
+    )
+    repository.append_task_log(
+        "book-1-task",
+        level="warning",
+        step="quality_guard",
+        message="需要人工复核",
+        timestamp=20.0,
+    )
+    repository.append_task_log(
+        "book-2-task",
+        level="error",
+        step="writer",
+        message="不应串到另一本书",
+        timestamp=30.0,
+    )
+
+    events = repository.list_task_status_events(project_id="book-1")
+    logs = repository.list_task_logs(project_id="book-1")
+
+    assert [event["to_status"] for event in events] == ["running", "claimed"]
+    assert [row["message"] for row in logs] == ["需要人工复核", "开始写作"]
+    assert {row["task_id"] for row in logs} == {"book-1-task"}
+    assert all("claim_token" not in event for event in events)
+
+
+def test_task_log_rejects_unknown_task_and_bounds_user_text(tmp_path):
+    repository = _new_store(tmp_path).task_repository
+    repository.create_task(
+        task_id="task-1",
+        project_id="book-1",
+        task_type=TaskType.CHAPTER,
+        payload={},
+    )
+
+    with pytest.raises(KeyError):
+        repository.append_task_log(
+            "missing",
+            level="error",
+            step="writer",
+            message="unknown",
+        )
+
+    repository.append_task_log(
+        "task-1",
+        level="not-a-level",
+        step="x" * 400,
+        message="m" * 6000,
+    )
+    row = repository.list_task_logs(project_id="book-1")[0]
+    assert row["level"] == "info"
+    assert len(row["step"]) == 128
+    assert len(row["message"]) == 4000

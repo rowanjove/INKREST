@@ -43,6 +43,7 @@ def handle_progress_message(
     root_exists: Callable[[], bool],
     update_task_progress: Callable[[str, Dict[str, Any]], None],
     update_task_chapter_id: Callable[[str, str], None],
+    append_task_log: Callable[[str, Dict[str, Any]], None],
 ) -> None:
     if not root_exists():
         return
@@ -62,6 +63,7 @@ def handle_progress_message(
         return
 
     wrote = False
+    should_persist_log = msg_type in {"log", "error"}
     try:
         loop = asyncio.get_running_loop()
         if msg_type == "progress":
@@ -71,6 +73,8 @@ def handle_progress_message(
         elif msg_type == "complete" and chapter_id:
             loop.run_in_executor(None, update_task_chapter_id, task_id, chapter_id)
             wrote = True
+        if wrote or should_persist_log:
+            loop.run_in_executor(None, append_task_log, task_id, msg)
     except RuntimeError:
         if msg_type == "progress":
             if _should_write_progress(task_id, msg):
@@ -79,6 +83,8 @@ def handle_progress_message(
         elif msg_type == "complete" and chapter_id:
             update_task_chapter_id(task_id, chapter_id)
             wrote = True
+        if wrote or should_persist_log:
+            append_task_log(task_id, msg)
 
     try:
         from web.task_ws_hub import broadcast_progress

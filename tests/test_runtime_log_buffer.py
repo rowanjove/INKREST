@@ -24,3 +24,16 @@ def test_tail_limit():
         append_runtime_log({"type": "log", "message": f"m{i}"})
     tail = tail_runtime_logs(2)
     assert len(tail) == 2
+
+
+def test_runtime_logs_can_be_scoped_to_one_project():
+    clear_runtime_logs()
+    append_runtime_log({"type": "log", "message": "book one", "project_id": "book-1"})
+    append_runtime_log({"type": "log", "message": "book two", "project_id": "book-2"})
+
+    assert [row["message"] for row in list_runtime_logs(project_id="book-1")] == [
+        "book one"
+    ]
+    assert [row["message"] for row in tail_runtime_logs(20, project_id="book-2")] == [
+        "book two"
+    ]

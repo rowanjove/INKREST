@@ -63,6 +63,8 @@ def append_runtime_log(entry: Dict[str, Any]) -> int:
             "chapter_id": chapter_id,
             "source": str(entry.get("source") or "agent"),
             "type": msg_type,
+            "project_id": str(entry.get("project_id") or ""),
+            "task_id": str(entry.get("task_id") or ""),
         }
         if msg_type == "progress" and status:
             item["status"] = status
@@ -70,17 +72,35 @@ def append_runtime_log(entry: Dict[str, Any]) -> int:
         return _seq
 
 
-def list_runtime_logs(since_id: int = 0, limit: int = 200) -> List[Dict[str, Any]]:
+def list_runtime_logs(
+    since_id: int = 0,
+    limit: int = 200,
+    *,
+    project_id: str | None = None,
+) -> List[Dict[str, Any]]:
     with _lock:
-        rows = [dict(x) for x in _buffer if int(x.get("id") or 0) > since_id]
+        rows = [
+            dict(x)
+            for x in _buffer
+            if int(x.get("id") or 0) > since_id
+            and (project_id is None or str(x.get("project_id") or "") == project_id)
+        ]
     if limit > 0 and len(rows) > limit:
         rows = rows[-limit:]
     return rows
 
 
-def tail_runtime_logs(limit: int = 80) -> List[Dict[str, Any]]:
+def tail_runtime_logs(
+    limit: int = 80,
+    *,
+    project_id: str | None = None,
+) -> List[Dict[str, Any]]:
     with _lock:
-        rows = [dict(x) for x in _buffer]
+        rows = [
+            dict(x)
+            for x in _buffer
+            if project_id is None or str(x.get("project_id") or "") == project_id
+        ]
     if limit > 0 and len(rows) > limit:
         rows = rows[-limit:]
     return rows

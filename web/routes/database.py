@@ -331,11 +331,19 @@ def get_scale_profile(session: ProjectSession = RequireProjectDep) -> Dict[str, 
 
 
 @router.get("/api/runtime-logs")
-async def get_runtime_logs(since_id: int = 0, limit: int = 200) -> Dict[str, Any]:
+async def get_runtime_logs(
+    since_id: int = 0,
+    limit: int = 200,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
     """Agent 流水线实时日志（内存环形缓冲），供运行监控与轮询同步。"""
     from web.runtime_log_buffer import list_runtime_logs
 
-    logs = list_runtime_logs(since_id=since_id, limit=min(max(limit, 1), 500))
+    logs = list_runtime_logs(
+        since_id=since_id,
+        limit=min(max(limit, 1), 500),
+        project_id=session.project_id,
+    )
     last_id = logs[-1]["id"] if logs else since_id
     return {"logs": logs, "last_id": last_id}
 

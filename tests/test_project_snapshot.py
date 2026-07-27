@@ -99,6 +99,7 @@ def test_project_snapshot_aggregates_every_v2_source(tmp_path: Path) -> None:
     assert payload["quality_summary"]["total_reports"] == 1
     assert payload["cost_summary"]["persisted"]["call_count"] == 0
     assert payload["next_actions"]
+    assert payload["next_actions"][0]["target"] == "/production?tab=runs"
     assert datetime.fromisoformat(payload["updated_at"])
 
 

@@ -355,6 +355,35 @@ class TaskManager:
         self.task_repository.heartbeat(task_id, token, checkpoint=checkpoint)
         self._notify_tasks_changed()
 
+    def _append_task_log(self, task_id: str, msg: Dict[str, Any]) -> None:
+        msg_type = str(msg.get("type") or "log")
+        status = str(msg.get("status") or "")
+        step = str(msg.get("step") or "")
+        message = str(msg.get("message") or msg.get("error") or "").strip()
+        if not message:
+            if msg_type == "complete":
+                chapter_id = str(msg.get("chapter_id") or "")
+                message = f"章节 {chapter_id} 完成" if chapter_id else "任务完成"
+            elif step:
+                message = f"{step} · {status or 'running'}"
+            else:
+                return
+        level = str(msg.get("level") or "info")
+        if msg_type == "error" or status in {"error", "blocked"}:
+            level = "error"
+        elif status in {"warning", "skipped"}:
+            level = "warning"
+        try:
+            self.task_repository.append_task_log(
+                task_id,
+                level=level,
+                message=message,
+                step=step,
+                timestamp=msg.get("timestamp"),
+            )
+        except Exception as exc:
+            logger.warning("Failed to persist task log for %s: %s", task_id, exc)
+
     async def _ensure_llm_ready(self, dry_run: bool) -> None:
         if dry_run:
             return
@@ -387,6 +416,7 @@ class TaskManager:
             root_exists=self.root_dir.exists,
             update_task_progress=self._update_task_progress,
             update_task_chapter_id=self._update_task_chapter_id,
+            append_task_log=self._append_task_log,
         )
 
     async def submit_chapter(

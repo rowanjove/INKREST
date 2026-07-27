@@ -116,6 +116,110 @@ class TaskRepository:
             ).fetchall()
         return [self._row_to_record(row) for row in rows]
 
+    def list_task_status_events(
+        self,
+        *,
+        project_id: str,
+        task_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Return append-only task transitions scoped to one project."""
+        self._require_v2()
+        clauses = ["t.project_id = ?"]
+        params: list[Any] = [project_id]
+        if task_id:
+            clauses.append("e.task_id = ?")
+            params.append(task_id)
+        params.append(max(1, min(int(limit), 500)))
+        with safe_connection(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""
+                select e.id, e.task_id, e.from_status, e.to_status, e.reason,
+                       e.resumable_from, e.created_at
+                from task_status_events e
+                join tasks t on t.id = e.task_id
+                where {' and '.join(clauses)}
+                order by e.id desc
+                limit ?
+                """,
+                params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def append_task_log(
+        self,
+        task_id: str,
+        *,
+        level: str = "info",
+        message: str,
+        step: str = "",
+        timestamp: float | None = None,
+    ) -> int:
+        """Persist one bounded task log row after verifying the task exists."""
+        self._require_v2()
+        normalized_level = str(level or "info").strip().lower()
+        if normalized_level == "warn":
+            normalized_level = "warning"
+        if normalized_level not in {"debug", "info", "warning", "error"}:
+            normalized_level = "info"
+        normalized_message = str(message or "").strip()[:4000]
+        normalized_step = str(step or "").strip()[:128]
+        if not normalized_message:
+            return 0
+        with safe_connection(self.db_path) as conn:
+            exists = conn.execute(
+                "select 1 from tasks where id = ?",
+                (task_id,),
+            ).fetchone()
+            if not exists:
+                raise KeyError(f"Task {task_id!r} not found")
+            cursor = conn.execute(
+                """
+                insert into task_logs (task_id, level, message, step, timestamp)
+                values (?, ?, ?, ?, ?)
+                """,
+                (
+                    task_id,
+                    normalized_level,
+                    normalized_message,
+                    normalized_step,
+                    float(timestamp) if timestamp is not None else _utcnow().timestamp(),
+                ),
+            )
+        return int(cursor.lastrowid or 0)
+
+    def list_task_logs(
+        self,
+        *,
+        project_id: str,
+        task_id: str | None = None,
+        limit: int = 300,
+    ) -> list[dict[str, Any]]:
+        """Return persisted task logs scoped to one project."""
+        self._require_v2()
+        clauses = ["t.project_id = ?"]
+        params: list[Any] = [project_id]
+        if task_id:
+            clauses.append("l.task_id = ?")
+            params.append(task_id)
+        params.append(max(1, min(int(limit), 500)))
+        with safe_connection(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""
+                select l.id, l.task_id, l.level, l.message, l.step,
+                       l.timestamp, l.created_at
+                from task_logs l
+                join tasks t on t.id = l.task_id
+                where {' and '.join(clauses)}
+                order by l.id desc
+                limit ?
+                """,
+                params,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def create_task(
         self,
         *,
@@ -378,6 +482,10 @@ class TaskRepository:
                 current.status,
                 target,
                 reason=reason,
+                resumable_from=str(
+                    (current.checkpoint or {}).get("resumable_from") or ""
+                )
+                or None,
             )
         return self._required_task(task_id)
 
@@ -524,12 +632,13 @@ class TaskRepository:
         target: TaskStatus,
         *,
         reason: str | None,
+        resumable_from: str | None = None,
     ) -> None:
         conn.execute(
             """
             insert into task_status_events
-              (task_id, from_status, to_status, reason)
-            values (?, ?, ?, ?)
+              (task_id, from_status, to_status, reason, resumable_from)
+            values (?, ?, ?, ?, ?)
             """,
-            (task_id, source.value, target.value, reason),
+            (task_id, source.value, target.value, reason, resumable_from),
         )
