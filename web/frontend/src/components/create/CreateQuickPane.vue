@@ -37,7 +37,7 @@ const emit = defineEmits<{
     />
     <div class="quick-footer">
       <el-button @click="emit('goBack')">取消</el-button>
-      <el-button type="primary" :loading="creating" @click="emit('triggerSubmit')">创建并进入</el-button>
+      <el-button type="primary" :loading="creating" @click="emit('triggerSubmit')">继续确认建档</el-button>
     </div>
   </div>
 </template>

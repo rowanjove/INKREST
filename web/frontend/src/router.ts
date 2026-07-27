@@ -7,7 +7,7 @@ const router = createRouter({
   scrollBehavior: appScrollBehavior,
   routes: [
     { path: '/', name: 'library', component: () => import('./views/LibraryView.vue'), meta: { scope: 'global', title: '书库', navId: 'library' } },
-    { path: '/onboarding', name: 'onboarding', component: () => import('./views/OnboardingView.vue'), meta: { scope: 'global', title: '欢迎使用栖墨' } },
+    { path: '/onboarding', redirect: '/create?welcome=1', meta: { scope: 'global', title: '新建作品', navId: 'create' } },
     { path: '/create', name: 'create', component: () => import('./views/CreateWizard.vue'), meta: { scope: 'global', title: '新建作品', navId: 'create' } },
     { path: '/reader', name: 'reader', component: () => import('./views/ReaderView.vue'), meta: { scope: 'project', title: '发布', navId: 'publishing', fullBleed: true } },
     { path: '/workspace', name: 'dashboard', component: () => import('./views/Dashboard.vue'), meta: { scope: 'project', title: '概览', navId: 'overview' } },
@@ -46,7 +46,7 @@ const router = createRouter({
     { path: '/plugins', name: 'plugins', component: () => import('./views/PluginManager.vue'), meta: { scope: 'global', title: '扩展', navId: 'extensions' } },
     { path: '/pet', name: 'pet', component: () => import('./views/PetView.vue'), meta: { scope: 'pet', title: '杉杉', fullBleed: true } },
     { path: '/pet-bubble', name: 'pet-bubble', component: () => import('./views/PetBubbleView.vue'), meta: { scope: 'pet', title: '杉杉助手', fullBleed: true } },
-    { path: '/trope-workshop', name: 'trope-workshop', component: () => import('./views/TropeWorkshop.vue'), meta: { scope: 'project', title: '题材模板', navId: 'planning' } },
+    { path: '/trope-workshop', redirect: '/create?source=template', meta: { scope: 'global', title: '新建作品', navId: 'create' } },
   ],
 })
 

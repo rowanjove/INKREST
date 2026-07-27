@@ -59,7 +59,7 @@ const emit = defineEmits<{
         :disabled="!parseText.trim()"
         @click="emit('handleAnalyzeSubmit')"
       >
-        开始分析并创建小说
+        分析并进入确认
       </el-button>
     </div>
   </div>

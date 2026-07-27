@@ -196,28 +196,10 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('config_schema.properties')
   })
 
-  it('TropeWorkshop shell wires component library and blueprint panel', () => {
-    const source = read('views/TropeWorkshop.vue')
-    expect(source).toContain('TropeComponentLibrary')
-    expect(source).toContain('TropeBlueprintPanel')
-    expect(source).toContain('useTropeWorkshop')
-    expect(source).toContain('网文套路设计工坊')
-  })
-
-  it('TropeComponentLibrary keeps draggable component cards', () => {
-    const source = read('components/trope/TropeComponentLibrary.vue')
-    expect(source).toContain("defineModel<TropeTab>('activeTab'")
-    expect(source).toContain('draggable="true"')
-    expect(source).toContain('card-add-btn')
-    expect(source).toContain('onAddToBlueprint')
-  })
-
-  it('TropeBlueprintPanel keeps blueprint slots and guide preview', () => {
-    const source = read('components/trope/TropeBlueprintPanel.vue')
-    expect(source).toContain('blueprint-slots')
-    expect(source).toContain('markdown-preview')
-    expect(source).toContain('用此模板开书')
-    expect(source).toContain('应用到当前作品')
+  it('redirects legacy onboarding and trope routes into the unified create flow', () => {
+    const source = read('router.ts')
+    expect(source).toContain("redirect: '/create?welcome=1'")
+    expect(source).toContain("redirect: '/create?source=template'")
   })
 
   it('ReaderView shell wires toolbar, catalog, and content pane', () => {
@@ -251,21 +233,21 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('编辑本章')
   })
 
-  it('CreateWizard shell wires mode tabs and three creation panes', () => {
+  it('CreateWizard wires the four-step flow and three data-entry panes', () => {
     const source = read('views/CreateWizard.vue')
-    expect(source).toContain('CreateModeTabs')
+    expect(source).toContain('CREATE_STEPS')
+    expect(source).toContain('确认建档并进入策划')
     expect(source).toContain('CreateQuickPane')
     expect(source).toContain('CreateParsePane')
     expect(source).toContain('CreateAiPane')
     expect(source).toContain('useCreateWizard')
   })
 
-  it('CreateModeTabs keeps default quick-create recommendation tag', () => {
-    const source = read('components/create/CreateModeTabs.vue')
-    expect(source).toContain('快速创建')
-    expect(source).toContain('内容分析导入')
-    expect(source).toContain('AI 创作引导')
-    expect(source).toContain('rec-tag')
+  it('CreateWizard scopes model blockers to the selected source', () => {
+    const source = read('views/CreateWizard.vue')
+    expect(source).toContain('modelBlocked')
+    expect(source).toContain('快速输入和套路模板不受影响')
+    expect(source).toContain('不会自动触发章节生成')
   })
 
   it('ConfigView shell wires navigation and sections stack', () => {
