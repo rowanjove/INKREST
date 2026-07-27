@@ -6,6 +6,37 @@ from tests.api._base import *  # noqa: F403
 
 class ApiProjectsTests(ApiTestBase):
 
+    def test_delete_project_removes_only_target_directory_and_clears_active_context(self):
+        import web.context as web_context
+
+        original_active = web_server._active_project_id
+        original_base = web_server.BASE_DIR
+        original_manager = web_server.project_manager
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            target = web_server.ProjectManager(self.tmpdir).create_project("Delete me")
+            target_dir = self.tmpdir / "projects" / target["id"]
+            unrelated_dir = self.tmpdir / "projects" / "unregistered-neighbour"
+            unrelated_dir.mkdir(parents=True)
+            (unrelated_dir / "keep.txt").write_text("keep", encoding="utf-8")
+            web_server.project_manager = web_server.ProjectManager(self.tmpdir)
+            web_server.activate_project(target["id"])
+
+            response = TestClient(web_app).delete(f"/api/projects/{target['id']}")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(target_dir.exists())
+            self.assertTrue((unrelated_dir / "keep.txt").is_file())
+            self.assertIsNone(web_context._active_project_id)
+            registry = json.loads(
+                (self.tmpdir / "projects.json").read_text(encoding="utf-8")
+            )
+            self.assertNotIn(target["id"], registry["projects"])
+        finally:
+            web_server._active_project_id = original_active
+            web_server.BASE_DIR = original_base
+            web_server.project_manager = original_manager
+
     def test_v2_maintenance_requires_exact_project_scoped_confirmation(self):
         original_base = web_server.BASE_DIR
         original_manager = web_server.project_manager

@@ -123,12 +123,14 @@ try {
             }
           }
         }
-        await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+        const deleteResponse = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
           method: 'DELETE',
           headers,
         })
+        if (!deleteResponse.ok) {
+          throw new Error(`Project cleanup failed: ${deleteResponse.status}`)
+        }
       }, seededProjectId)
-      .catch(() => {})
   }
   await browser.close()
 }

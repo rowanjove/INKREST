@@ -49,4 +49,6 @@ class ProjectTaskRegistry:
     def drop(self, root_dir: Path) -> None:
         key = self._key(root_dir)
         with self._lock:
-            self._managers.pop(key, None)
+            manager = self._managers.pop(key, None)
+        if manager is not None:
+            manager.shutdown()

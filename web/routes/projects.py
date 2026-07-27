@@ -425,6 +425,7 @@ def delete_project(pid: str) -> Dict[str, str]:
                 409,
                 "Cannot delete project while generation tasks are running",
             )
+        ws_server.release_project(pid)
         ws_server.project_manager.delete_project(pid)
     return {"status": "deleted"}
 

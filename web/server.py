@@ -54,6 +54,7 @@ _project_lock = _ctx._project_lock
 get_root_dir = _ctx.get_root_dir
 require_project_root = _ctx.require_project_root
 activate_project = _ctx.activate_project
+release_project = _ctx.release_project
 reset_plugin_manager = _ctx.reset_plugin_manager
 _get_task_manager = _ctx._get_task_manager
 get_project_store = _ctx.get_project_store

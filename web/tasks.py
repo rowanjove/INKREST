@@ -73,6 +73,25 @@ class TaskManager:
         except RuntimeError:
             self._queue_loop_task = None
 
+    def shutdown(self) -> None:
+        """Stop background polling before a project root is removed."""
+        tasks = [self._queue_loop_task, *self._running_tasks.values()]
+        for task in tasks:
+            if task is None or task.done():
+                continue
+            try:
+                loop = task.get_loop()
+                if loop.is_running():
+                    loop.call_soon_threadsafe(task.cancel)
+                else:
+                    task.cancel()
+            except (RuntimeError, AttributeError):
+                task.cancel()
+        self._running_tasks.clear()
+        self._running_chapters.clear()
+        self._claim_tokens.clear()
+        self._queue_loop_task = None
+
     async def _run_with_progress_context(
         self,
         task_id: str,

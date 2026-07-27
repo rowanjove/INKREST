@@ -112,6 +112,19 @@ def activate_project(project_id: str) -> None:
         reset_plugin_manager()
 
 
+def release_project(project_id: str) -> None:
+    """Release project-scoped resources before deleting its directory."""
+    global _active_project_id, _task_manager
+
+    root = BASE_DIR / "projects" / project_id
+    with _project_lock:
+        _task_registry.drop(root)
+        if _active_project_id == project_id:
+            reset_plugin_manager()
+            _active_project_id = None
+            _task_manager = None
+
+
 _plugin_manager: Optional[Any] = None
 
 

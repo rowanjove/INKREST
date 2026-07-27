@@ -295,25 +295,30 @@ class ProjectManager:
         self._mutate_registry(mutate)
 
     def delete_project(self, pid: str) -> None:
+        projects_root = (self.base_dir / "projects").resolve()
         project_dir = self.base_dir / "projects" / pid
+        data = self._read_registry()
+        if pid not in data.get("projects", {}):
+            raise HTTPException(404, f"Project {pid} not found")
+        if project_dir.is_symlink():
+            raise HTTPException(400, "Refusing to delete a symlinked project directory")
+        resolved_dir = project_dir.resolve()
+        if resolved_dir.parent != projects_root:
+            raise HTTPException(400, "Invalid project path")
+        if project_dir.exists():
+            if not project_dir.is_dir():
+                raise HTTPException(400, "Project path is not a directory")
+            shutil.rmtree(project_dir)
 
         def mutate(data: Dict[str, Any]) -> Dict[str, Any]:
             if pid not in data.get("projects", {}):
                 raise HTTPException(404, f"Project {pid} not found")
-            if project_dir.exists():
-                shutil.rmtree(project_dir)
             del data["projects"][pid]
             if data.get("active_id") == pid:
                 data["active_id"] = None
             return data
 
         self._mutate_registry(mutate)
-        try:
-            from web.project_task_registry import ProjectTaskRegistry
-
-            ProjectTaskRegistry.shared().drop(project_dir)
-        except Exception:
-            pass
 
     def switch_project(self, pid: str) -> Dict[str, Any]:
         def mutate(data: Dict[str, Any]) -> Dict[str, Any]:
