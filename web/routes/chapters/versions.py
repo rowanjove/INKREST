@@ -28,6 +28,7 @@ from web.models import (
 )
 from novel_agent.scripts.count_chars import count_chinese_chars, wordcount_report
 from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
+from web.routes.chapters.snapshots import create_chapter_snapshot
 
 router = APIRouter()
 
@@ -228,8 +229,10 @@ def activate_version(
         plan = ws_server._read_json(plan_path) if plan_path.exists() else {}
         title = plan.get("chapter_title", f"第 {safe_id} 章")
         create_chapter_snapshot(session.root_dir, safe_id, f"系统自动备份（切换分支前：{title}）", current_text, is_manual=False)
-    except Exception as e:
-        ws_server.logger.warning("Failed to create pre-activation backup snapshot: %s", e)
+    except OSError as exc:
+        ws_server.logger.warning(
+            "Failed to create pre-activation backup snapshot: %s", exc
+        )
         
     store.set_active_chapter_version(safe_id, version_id)
     

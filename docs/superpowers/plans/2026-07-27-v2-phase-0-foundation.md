@@ -269,7 +269,7 @@ git commit -m "refactor: remove legacy electron source copies"
 - Modify: `tests/api/test_api_chapters.py`
 - Modify: `web/routes/chapters/versions.py`
 
-- [ ] **Step 1: 写失败的 API 回归测试**
+- [x] **Step 1: 写失败的 API 回归测试**
 
 在 `ApiChaptersTests` 中加入：
 
@@ -314,7 +314,7 @@ def test_activate_version_snapshots_current_text_before_replacing_it(self):
         web_server.BASE_DIR = original_base
 ```
 
-- [ ] **Step 2: 验证测试因缺少导入而失败**
+- [x] **Step 2: 验证测试因缺少导入而失败**
 
 Run:
 
@@ -324,7 +324,7 @@ py -3.12 -m pytest tests/api/test_api_chapters.py::ApiChaptersTests::test_activa
 
 Expected: FAIL，`.snapshots` 不存在或快照数量为 0。
 
-- [ ] **Step 3: 添加显式导入**
+- [x] **Step 3: 添加显式导入**
 
 在 `web/routes/chapters/versions.py` 中加入：
 
@@ -341,7 +341,7 @@ except OSError as exc:
     )
 ```
 
-- [ ] **Step 4: 验证**
+- [x] **Step 4: 验证**
 
 Run:
 
@@ -351,7 +351,7 @@ py -3.12 -m pytest tests/api/test_api_chapters.py tests/test_versions.py -q --tb
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```powershell
 git add tests/api/test_api_chapters.py web/routes/chapters/versions.py

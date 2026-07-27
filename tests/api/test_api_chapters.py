@@ -2,6 +2,45 @@ from tests.api._base import *  # noqa: F403
 
 class ApiChaptersTests(ApiTestBase):
 
+    def test_activate_version_snapshots_current_text_before_replacing_it(self):
+        original_active = web_server._active_project_id
+        original_base = web_server.BASE_DIR
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            web_server._active_project_id = None
+            chapter_dir = self.tmpdir / "workspace" / "chapters" / "chapter_001"
+            chapter_dir.mkdir(parents=True)
+            (chapter_dir / "chapter_final.txt").write_text("旧正文", encoding="utf-8")
+            (chapter_dir / "plan.json").write_text(
+                json.dumps({"chapter_title": "第一章"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            store = SQLiteStateStore(self.tmpdir)
+            version_id = store.save_chapter_version(
+                chapter_id="001",
+                version_name="新分支",
+                content="新正文",
+                plan="{}",
+                is_active=False,
+            )
+
+            response = TestClient(web_app).post(
+                f"/api/chapters/001/versions/{version_id}/activate"
+            )
+
+            self.assertEqual(response.status_code, 200)
+            snapshots = list((chapter_dir / ".snapshots").glob("snapshot_*.json"))
+            self.assertEqual(len(snapshots), 1)
+            payload = json.loads(snapshots[0].read_text(encoding="utf-8"))
+            self.assertEqual(payload["final_text"], "旧正文")
+            self.assertEqual(
+                (chapter_dir / "chapter_final.txt").read_text(encoding="utf-8"),
+                "新正文",
+            )
+        finally:
+            web_server._active_project_id = original_active
+            web_server.BASE_DIR = original_base
+
     def test_delete_chapter_dir_removes_only_requested_chapter(self):
         chapters_dir = self.tmpdir / "workspace" / "chapters"
         target = chapters_dir / "chapter_002"
