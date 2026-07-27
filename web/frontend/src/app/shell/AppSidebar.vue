@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, type Component } from 'vue'
+import { computed, defineAsyncComponent, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Collection,
@@ -21,8 +21,9 @@ import {
   type NavigationIcon,
 } from '../router/navigation'
 import { useProjectStore } from '../../stores/project'
-import RuntimeStatusButton from './RuntimeStatusButton.vue'
 import type { BackendStatus } from '../bootstrap/useDesktopLifecycle'
+
+const RuntimeStatusButton = defineAsyncComponent(() => import('./RuntimeStatusButton.vue'))
 
 defineProps<{
   backendStatus: BackendStatus
@@ -231,7 +232,7 @@ const go = (path: string) => void router.push(path)
 .nav-item:hover,
 .nav-item.active {
   background: rgba(255, 255, 255, 0.065);
-  color: var(--color-bg-surface);
+  color: var(--color-text-sidebar);
 }
 
 .nav-item.active {

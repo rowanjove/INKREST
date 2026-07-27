@@ -27,6 +27,11 @@ DASHBOARD_SERIALIZATION_PANE = (
     ROOT / "web" / "frontend" / "src" / "components" / "dashboard" / "DashboardSerializationPane.vue"
 )
 APP = ROOT / "web" / "frontend" / "src" / "App.vue"
+APP_SHELL = ROOT / "web" / "frontend" / "src" / "app" / "shell" / "AppShell.vue"
+APP_SIDEBAR = ROOT / "web" / "frontend" / "src" / "app" / "shell" / "AppSidebar.vue"
+DESKTOP_LIFECYCLE = (
+    ROOT / "web" / "frontend" / "src" / "app" / "bootstrap" / "useDesktopLifecycle.ts"
+)
 FRONTEND_MAIN = ROOT / "web" / "frontend" / "src" / "main.ts"
 PET_BUBBLE = ROOT / "web" / "frontend" / "src" / "views" / "PetBubbleView.vue"
 PET_BUBBLE_STATUS = (
@@ -350,10 +355,11 @@ def test_pending_panel_has_filter_tabs() -> None:
 
 
 def test_app_shows_backend_offline_alert() -> None:
-    source = APP.read_text(encoding="utf-8")
-    assert "backend-offline-alert" in source
-    assert "栖墨后台未响应" in source
-    assert "HEALTH_FAIL_THRESHOLD" in source
+    shell_source = APP_SHELL.read_text(encoding="utf-8")
+    lifecycle_source = DESKTOP_LIFECYCLE.read_text(encoding="utf-8")
+    assert "backend-offline-alert" in shell_source
+    assert "栖墨后台未响应" in shell_source
+    assert "HEALTH_FAIL_THRESHOLD" in lifecycle_source
 
 
 def test_batch_dialog_blocks_submit_when_external_review_active() -> None:
@@ -452,11 +458,11 @@ def test_task_log_uses_tasks_store_with_manual_refresh() -> None:
 
 
 def test_sidebar_brand_uses_single_line_inkrest_lockup() -> None:
-    source = APP.read_text(encoding="utf-8")
-    assert 'class="brand-lockup"' in source
-    assert 'class="brand-cn">栖墨</strong>' in source
-    assert 'class="brand-en">INKREST</span>' in source
-    assert "<small>智能长篇写作空间</small>" in source
+    source = APP_SIDEBAR.read_text(encoding="utf-8")
+    compact = "".join(source.split())
+    assert 'class="brand__copy"' in source
+    assert "<span><strong>栖墨</strong><em>INKREST</em></span>" in compact
+    assert "<small>本地长篇创作空间</small>" in source
 
 
 def test_llm_config_exposes_daily_and_reasoning_tier_selectors() -> None:

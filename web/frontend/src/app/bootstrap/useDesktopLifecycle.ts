@@ -4,6 +4,7 @@ import type { Router } from 'vue-router'
 import { useTasksStore } from '../../stores/tasks'
 
 export type BackendStatus = 'online' | 'offline' | 'restarting'
+const HEALTH_FAIL_THRESHOLD = 2
 
 export function useDesktopLifecycle(router: Router, isPetRoute: Ref<boolean>) {
   const backendStatus = ref<BackendStatus>('online')
@@ -34,7 +35,7 @@ export function useDesktopLifecycle(router: Router, isPetRoute: Ref<boolean>) {
       if (backendStatus.value === 'offline') backendStatus.value = 'online'
     } catch {
       healthFailStreak += 1
-      if (healthFailStreak >= 2) {
+      if (healthFailStreak >= HEALTH_FAIL_THRESHOLD) {
         backendUnreachable.value = true
         if (!window.electronAPI) backendStatus.value = 'offline'
       }

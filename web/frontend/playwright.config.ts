@@ -1,5 +1,8 @@
 import { defineConfig } from '@playwright/test'
 
+const e2ePython =
+  process.env.E2E_PYTHON || (process.platform === 'win32' ? 'py -3.12' : 'python3')
+
 export default defineConfig({
   testDir: './e2e',
   workers: 1,
@@ -11,7 +14,7 @@ export default defineConfig({
   webServer: process.env.E2E_SKIP_SERVER
     ? undefined
     : {
-        command: 'python ../../main.py serve --no-browser',
+        command: `${e2ePython} ../../main.py serve --no-browser`,
         url: 'http://127.0.0.1:8000',
         reuseExistingServer: process.env.E2E_REUSE_SERVER === '1',
         timeout: 120_000,

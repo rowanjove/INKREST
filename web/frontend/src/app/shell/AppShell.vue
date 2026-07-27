@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useProjectStore } from '../../stores/project'
 import { useProjectSnapshotStore } from '../../stores/projectSnapshot'
 import type { BackendStatus } from '../bootstrap/useDesktopLifecycle'
-import CommandPalette from '../commands/CommandPalette.vue'
 import { useCommandPalette } from '../commands/useCommandPalette'
-import DiagnosticsDrawer from '../diagnostics/DiagnosticsDrawer.vue'
 import AppSidebar from './AppSidebar.vue'
 import AppTopbar from './AppTopbar.vue'
+
+const CommandPalette = defineAsyncComponent(() => import('../commands/CommandPalette.vue'))
+const DiagnosticsDrawer = defineAsyncComponent(
+  () => import('../diagnostics/DiagnosticsDrawer.vue'),
+)
 
 const props = defineProps<{
   backendStatus: BackendStatus
@@ -74,8 +77,9 @@ onBeforeUnmount(() => {
         <router-view />
       </main>
     </section>
-    <CommandPalette v-model="commandOpen" />
+    <CommandPalette v-if="commandOpen" v-model="commandOpen" />
     <DiagnosticsDrawer
+      v-if="diagnosticsRequested"
       v-model="diagnosticsRequested"
       :backend-status="backendStatus"
       :backend-unreachable="backendUnreachable"

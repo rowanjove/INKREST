@@ -30,6 +30,7 @@ describe('V2 application shell', () => {
 
     expect(source).toContain('GLOBAL_NAV_ITEMS')
     expect(source).toContain('PROJECT_NAV_ITEMS')
+    expect(source).toContain('color: var(--color-text-sidebar)')
     expect(source).not.toContain('灵感工坊')
     expect(source).not.toContain('日志中心')
   })

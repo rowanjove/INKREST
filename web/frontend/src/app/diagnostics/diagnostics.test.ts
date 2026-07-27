@@ -80,6 +80,7 @@ describe('diagnostics summary', () => {
     expect(qualityStatusLabel('missing')).toBe('暂无报告')
     expect(qualityStatusLabel('low')).toBe('质量偏低')
     expect(qualityStatusLabel('stable')).toBe('质量稳定')
+    expect(qualityStatusLabel('blocked')).toBe('质量受阻')
     expect(taskTypeLabel('chapter_batch')).toBe('批量章节')
   })
 

@@ -111,8 +111,19 @@
 - Create: `web/frontend/e2e/app-shell.spec.ts`
 - Modify: `docs/superpowers/plans/2026-07-27-v2-phase-2-app-shell-design-system.md`
 
-- [ ] Vitest、TypeScript 与生产构建通过。
-- [ ] Playwright 验证深链、五项项目导航、四项全局导航、命令面板和最小宽度。
-- [ ] 使用 Browser 在 1440×900 与 1100×720 检查亮/暗主题、滚动、抽屉和键盘操作。
-- [ ] 后端 UI contract 回归通过。
-- [ ] 记录 bundle 和实际验证结果并提交。
+- [x] Vitest、TypeScript 与生产构建通过。
+- [x] Playwright 验证深链、五项项目导航、四项全局导航、命令面板和最小宽度。
+- [x] 使用 Browser 在 1440×900 与 1100×720 检查亮/暗主题、滚动、抽屉和键盘操作。
+- [x] 后端 UI contract 回归通过。
+- [x] 记录 bundle 和实际验证结果并提交。
+
+## Phase 2 验证记录
+
+- Vue 单元测试：31 个文件、168 项通过。
+- Electron 安全测试：6 项通过；renderer 与 Electron TypeScript 构建通过。
+- Playwright：26 项通过，覆盖深链水合、全局/项目导航、命令面板、诊断抽屉、阻断安全和 1100px 最小宽度。
+- Browser 视觉 QA：1440×900 与 1100×720 的亮/暗主题均检查；工作区在 1100×720 下无水平溢出，独立滚动从 `0` 到 `587`；Esc 可关闭命令面板。
+- 视觉 QA 修复：深色主题选中导航对比度、`blocked` 质量状态中文标签。
+- 后端 UI contract：76 项通过。
+- 生产依赖审计：0 个漏洞。
+- Bundle：60 个 JS chunks、1,377,293 bytes；入口 chunk 40,367 bytes，低于 69,000 bytes 预算。命令面板、诊断抽屉、状态按钮、设置向导和首书引导均按需加载。

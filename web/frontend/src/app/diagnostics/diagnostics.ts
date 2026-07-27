@@ -22,6 +22,7 @@ const QUALITY_STATUS_LABELS: Record<string, string> = {
   passed: '质量通过',
   failing: '质量未通过',
   failed: '质量未通过',
+  blocked: '质量受阻',
   unknown: '状态未知',
 }
 

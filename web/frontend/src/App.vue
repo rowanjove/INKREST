@@ -11,8 +11,6 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AppShell from './app/shell/AppShell.vue'
 import { useDesktopLifecycle } from './app/bootstrap/useDesktopLifecycle'
-import SetupWizard from './components/SetupWizard.vue'
-import FirstBookGuide from './components/workbench/FirstBookGuide.vue'
 import {
   isAppTourPending,
   isOnboardingCompleted,
@@ -22,6 +20,10 @@ import { useProjectStore } from './stores/project'
 
 const AppTourOverlay = defineAsyncComponent(
   () => import('./components/AppTourOverlay.vue'),
+)
+const SetupWizard = defineAsyncComponent(() => import('./components/SetupWizard.vue'))
+const FirstBookGuide = defineAsyncComponent(
+  () => import('./components/workbench/FirstBookGuide.vue'),
 )
 const NovelBatchRunDialog = defineAsyncComponent(
   () => import('./components/NovelBatchRunDialog.vue'),
@@ -106,12 +108,14 @@ watch(
     />
 
     <SetupWizard
+      v-if="showSetupWizard"
       :visible="showSetupWizard"
       @close="showSetupWizard = false"
       @completed="handleWizardCompleted"
     />
 
     <AppTourOverlay
+      v-if="tourActive"
       :visible="tourActive"
       :step="tourStep"
       :step-index="tourStepIndex"
