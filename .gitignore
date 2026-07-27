@@ -38,6 +38,10 @@ web/frontend/test-results/
 web/frontend/win-unpacked/
 dist/
 build/
+!web/frontend/build/
+!web/frontend/build/icon.png
+!web/frontend/build/icon.ico
+!web/frontend/build/tray_icon.png
 NovelAgent-Portable/
 
 # IDE

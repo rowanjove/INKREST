@@ -2,6 +2,8 @@
 
 **Canonical 源码**：`web/frontend/electron/`
 
-历史副本 `electron_version/electron/` 仅用于旧打包流水线，新改动请只改 canonical 路径；发布前用 diff 或同步脚本对齐。
+该目录是桌面主进程、preload、窗口和 IPC 的唯一源码。构建、测试与发布不得读取
+`electron_version/` 或其他本地副本。
 
-安全回归测试会扫描两处 `export.ts`，确保不使用 `execSync` 带 shell 字符串。
+安全回归测试扫描 canonical TypeScript 源码，确保不使用 `execSync` 带 shell 字符串。
+桌面图标位于 `web/frontend/build/`，是 Electron 打包输入并由 Git 跟踪。

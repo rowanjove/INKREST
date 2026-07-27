@@ -61,7 +61,7 @@
 
 ### P2
 
-- [x] Electron 单源：`scripts/sync_electron_canonical.ps1`（canonical：`web/frontend/electron`）
+- [x] Electron 单源：规范源码只位于 `web/frontend/electron/`，不再维护本地副本
 - [x] 插件子进程沙箱（hook 隔离，`runtime.plugin_sandbox`）
 - [x] `ProjectSession` 轻量 DI（`web/deps.py`，`/api/system/readiness` 已接入）
 

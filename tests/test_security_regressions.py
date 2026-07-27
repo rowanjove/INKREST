@@ -388,26 +388,12 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(body["detail"], "服务器内部错误")
         self.assertNotIn("secret-path", body["detail"])
 
-    def test_legacy_electron_export_routes_do_not_use_shell_command_strings(self):
-        root = Path(__file__).resolve().parents[1]
-        for rel in (
-            "electron_version/electron/server/routes/export.ts",
-            "web/frontend/electron/server/routes/export.ts",
-        ):
-            source = (root / rel).read_text(encoding="utf-8")
-            self.assertNotIn("execSync(", source, rel)
-            self.assertIn("spawnSync(", source, rel)
-            self.assertIn("args = [", source, rel)
-
     def test_electron_runtime_sources_do_not_use_execsync_shell_strings(self):
         root = Path(__file__).resolve().parents[1]
-        for rel in (
-            "electron_version/electron",
-            "web/frontend/electron",
-        ):
-            for path in (root / rel).rglob("*.ts"):
-                source = path.read_text(encoding="utf-8")
-                self.assertNotIn("execSync(", source, str(path.relative_to(root)))
+        electron_root = root / "web/frontend/electron"
+        for path in electron_root.rglob("*.ts"):
+            source = path.read_text(encoding="utf-8")
+            self.assertNotIn("execSync(", source, str(path.relative_to(root)))
 
     def test_import_zip_slip_traversal_denied(self):
         client = TestClient(web_app)

@@ -150,6 +150,13 @@ git commit -m "build: restore reproducible v2 toolchain"
 - Modify: `tests/test_brand_contract.py`
 - Modify: `tests/test_security_regressions.py`
 - Modify: `CONTRIBUTING.md`
+- Modify: `docs/IMPROVEMENT-ROADMAP-2026Q2.md`
+- Modify: `docs/ELECTRON-LAYOUT.md`
+- Modify: `.gitignore`
+- Modify: `web/frontend/tsconfig.electron.json`
+- Create: `web/frontend/build/icon.png`
+- Create: `web/frontend/build/icon.ico`
+- Create: `web/frontend/build/tray_icon.png`
 - Delete: `scripts/sync_electron_canonical.ps1`
 - Delete: `scripts/_patch_orchestrator_delegate.py`
 - Delete: `scripts/_extract_novel_batch.py`
@@ -163,7 +170,7 @@ git commit -m "build: restore reproducible v2 toolchain"
 - Delete: `web/frontend/electron/server/routes/state.ts`
 - Delete: `web/frontend/electron/database/connection.ts`
 
-- [ ] **Step 1: 运行干净工作区中的失败测试**
+- [x] **Step 1: 运行干净工作区中的失败测试**
 
 Run:
 
@@ -173,7 +180,20 @@ py -3.12 -m pytest tests/test_brand_contract.py tests/test_security_regressions.
 
 Expected: FAIL，失败路径包含不存在且被忽略的 `electron_version/`。
 
-- [ ] **Step 2: 让品牌测试只读取规范目录**
+- [x] **Step 2: 跟踪规范桌面图标**
+
+在 `.gitignore` 的 `build/` 规则后加入：
+
+```gitignore
+!web/frontend/build/
+!web/frontend/build/icon.png
+!web/frontend/build/icon.ico
+!web/frontend/build/tray_icon.png
+```
+
+把现有规范图标放入 `web/frontend/build/` 并纳入 Git。它们已经由 `package.json` 的 Electron `files`、`asarUnpack` 和 `win.icon` 引用，不能依赖开发者机器残留。
+
+- [x] **Step 3: 让品牌测试只读取规范目录**
 
 删除 `ELECTRON_COPY`，把所有：
 
@@ -187,7 +207,7 @@ for root in (FRONTEND, ELECTRON_COPY):
 for root in (FRONTEND,):
 ```
 
-- [ ] **Step 3: 让安全测试只读取规范目录**
+- [x] **Step 4: 让安全测试只读取规范目录**
 
 把旧导出测试改为只检查：
 
@@ -205,7 +225,7 @@ for path in electron_root.rglob("*.ts"):
     ...
 ```
 
-- [ ] **Step 4: 删除无构建引用的旧实现和一次性脚本**
+- [x] **Step 5: 删除无构建引用的旧实现和一次性脚本**
 
 先运行：
 
@@ -215,7 +235,7 @@ rg -n "main\\.cjs|electron/server|electron/database|sync_electron_canonical|_pat
 
 Expected: 只剩待更新文档、旧测试或文件自身引用。完成对应更新后删除文件。
 
-- [ ] **Step 5: 更新贡献文档**
+- [x] **Step 6: 更新贡献文档**
 
 删除 `electron_version` 同步章节，并明确：
 
@@ -223,7 +243,7 @@ Expected: 只剩待更新文档、旧测试或文件自身引用。完成对应�
 桌面壳唯一源码位于 `web/frontend/electron/`；测试和打包不得读取本地忽略副本。
 ```
 
-- [ ] **Step 6: 验证**
+- [x] **Step 7: 验证**
 
 Run:
 
@@ -234,10 +254,11 @@ npm run build:electron --prefix web/frontend
 
 Expected: 两条命令均 PASS。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 8: 提交**
 
 ```powershell
-git add tests/test_brand_contract.py tests/test_security_regressions.py CONTRIBUTING.md scripts web/frontend/electron
+git add .gitignore tests/test_brand_contract.py tests/test_security_regressions.py CONTRIBUTING.md scripts web/frontend/electron
+git add -f web/frontend/build/icon.png web/frontend/build/icon.ico web/frontend/build/tray_icon.png
 git commit -m "refactor: remove legacy electron source copies"
 ```
 

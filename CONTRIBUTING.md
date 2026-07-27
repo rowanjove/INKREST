@@ -58,11 +58,7 @@ python scripts/perf_api_baseline.py --check
 
 ## Electron
 
-桌面壳源码以 `web/frontend/electron` 为准。若曾改 `electron_version/`，请用：
-
-```powershell
-.\scripts\sync_electron_canonical.ps1
-```
+桌面壳唯一源码位于 `web/frontend/electron/`；测试和打包不得读取本地忽略副本。
 
 ## 发布清单（portable / Electron）
 

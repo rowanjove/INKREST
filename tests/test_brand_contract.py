@@ -5,7 +5,6 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "web" / "frontend"
-ELECTRON_COPY = ROOT / "electron_version"
 
 
 def test_primary_brand_entries_use_inkrest_name() -> None:
@@ -27,20 +26,6 @@ def test_primary_brand_entries_use_inkrest_name() -> None:
     assert "请输入栖墨远程访问令牌" not in api_client
 
 
-def test_secondary_electron_source_copy_uses_inkrest_name() -> None:
-    expected = {
-        ELECTRON_COPY / "package.json": ('"productName": "栖墨"',),
-        ELECTRON_COPY / "electron" / "main.ts": ("title: '栖墨 · INKREST'", "app.setName('栖墨')"),
-        ELECTRON_COPY / "electron" / "tray" / "tray-manager.ts": ("栖墨 · INKREST - 智能长篇写作空间", "退出栖墨"),
-        ELECTRON_COPY / "electron" / "updater" / "auto-updater.ts": ("`栖墨 ${info.version} 已发布`",),
-    }
-
-    for path, snippets in expected.items():
-        source = path.read_text(encoding="utf-8")
-        for snippet in snippets:
-            assert snippet in source, f"{path} is missing {snippet!r}"
-
-
 def test_inkrest_icon_assets_exist() -> None:
     favicon = FRONTEND / "public" / "favicon.svg"
     png = FRONTEND / "build" / "icon.png"
@@ -51,38 +36,21 @@ def test_inkrest_icon_assets_exist() -> None:
     assert ico.exists() and ico.stat().st_size > 0
 
 
-def test_secondary_electron_source_copy_has_icon_assets() -> None:
-    for name in ("icon.png", "icon.ico", "tray_icon.png"):
-        path = ELECTRON_COPY / "build" / name
-        assert path.exists(), f"missing icon asset: {path}"
-        assert path.stat().st_size > 0
-
-
-def test_secondary_electron_runtime_sources_match_primary_copy() -> None:
-    primary_root = FRONTEND / "electron"
-    secondary_root = ELECTRON_COPY / "electron"
-    for primary_path in primary_root.rglob("*.ts"):
-        relative = primary_path.relative_to(primary_root)
-        secondary_path = secondary_root / relative
-        assert secondary_path.exists(), f"missing secondary Electron source: {relative}"
-        assert secondary_path.read_text(encoding="utf-8") == primary_path.read_text(encoding="utf-8"), (
-            f"secondary Electron source is out of sync: {relative}"
-        )
-
-
 def test_desktop_icons_use_transparent_canvas_edges() -> None:
-    for root in (FRONTEND, ELECTRON_COPY):
+    for root in (FRONTEND,):
         for name in ("icon.png", "icon.ico"):
             image = Image.open(root / "build" / name).convert("RGBA")
             assert image.getpixel((0, 0))[3] == 0
 
 
 def test_tray_png_transparent_pixels_do_not_carry_bright_rgb() -> None:
-    for root in (FRONTEND, ELECTRON_COPY):
+    for root in (FRONTEND,):
         image = Image.open(root / "build" / "icon.png").convert("RGBA")
         dirty_transparent_pixels = [
             (red, green, blue, alpha)
-            for red, green, blue, alpha in image.getdata()
+            for y in range(image.height)
+            for x in range(image.width)
+            for red, green, blue, alpha in (image.getpixel((x, y)),)
             if alpha == 0 and (red != 0 or green != 0 or blue != 0)
         ]
         assert not dirty_transparent_pixels, (
@@ -92,7 +60,7 @@ def test_tray_png_transparent_pixels_do_not_carry_bright_rgb() -> None:
 
 
 def test_desktop_icon_corner_pixels_do_not_scale_into_white_dots() -> None:
-    for root in (FRONTEND, ELECTRON_COPY):
+    for root in (FRONTEND,):
         for name in ("icon.png", "icon.ico"):
             image = Image.open(root / "build" / name).convert("RGBA")
             width, height = image.size
@@ -117,7 +85,7 @@ def test_desktop_icon_corner_pixels_do_not_scale_into_white_dots() -> None:
 
 
 def test_tray_icon_uses_dedicated_no_white_small_asset() -> None:
-    for root in (FRONTEND, ELECTRON_COPY):
+    for root in (FRONTEND,):
         tray_icon = root / "build" / "tray_icon.png"
         assert tray_icon.exists(), f"missing tray icon asset: {tray_icon}"
         image = Image.open(tray_icon).convert("RGBA")
@@ -125,7 +93,9 @@ def test_tray_icon_uses_dedicated_no_white_small_asset() -> None:
         small = image.resize((16, 16), Image.Resampling.LANCZOS)
         white_pixels = [
             (red, green, blue, alpha)
-            for red, green, blue, alpha in small.getdata()
+            for y in range(small.height)
+            for x in range(small.width)
+            for red, green, blue, alpha in (small.getpixel((x, y)),)
             if alpha > 32 and red > 220 and green > 220 and blue > 220
         ]
         assert not white_pixels, f"{tray_icon} scales to visible white tray pixels"
