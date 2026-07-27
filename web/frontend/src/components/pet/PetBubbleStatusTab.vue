@@ -45,7 +45,7 @@ function briefTagClass(severity: string) {
     >
       <span class="batch-pause-icon">⏸</span>
       <p class="batch-pause-text">{{ SHANSHAN_BATCH_PAUSE_HINT(pet.context.novel_batch) }}</p>
-      <span class="batch-pause-cta">去章节维护续跑 →</span>
+      <span class="batch-pause-cta">去生产中心处理 →</span>
     </div>
 
     <div
@@ -184,14 +184,14 @@ function briefTagClass(severity: string) {
       </div>
     </div>
 
-    <p class="status-scope-hint">待处理修章与续跑以章节维护为准，任务日志在日志中心；山山负责说明与指路。</p>
+    <p class="status-scope-hint">待处理修章、续跑与任务日志以生产中心为准；山山负责说明与指路。</p>
 
     <section class="quick-actions-compact">
       <button
         type="button"
         class="nav-btn-compact"
         :class="{ primary: pet.novelBatchPaused }"
-        @click="onNavigate('/chapters/maintenance')"
+        @click="onNavigate('/production?tab=reviews')"
       >
         <span>🔧 修章</span>
       </button>

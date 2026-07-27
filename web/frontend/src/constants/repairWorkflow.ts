@@ -9,7 +9,7 @@ export const EXTERNAL_AUDIT_HINT =
 export const DUAL_AUDIT_HINT = `${INTERNAL_GATE_HINT} ${EXTERNAL_AUDIT_HINT} 修章顺序：写作页改正文 → 复制试发 → 重跑审校或查统一门禁 → 通过后再「继续写书」。`
 
 export const SEMI_AUTO_STEPS = [
-  '章节维护看待处理章节',
+  '生产中心看待处理章节',
   '写作页或章节详情改正文',
   '复制全文到平台试审',
   '重试审校 / 查统一门禁',
@@ -63,7 +63,7 @@ export const SEMI_AUTO_REPAIR_STEPS: SemiAutoRepairStep[] = [
   },
 ]
 
-export const LANE_A_HINT = '全书连写：工作台开书清单 → 连写启动；暂停后章节维护 → 继续写书。'
+export const LANE_A_HINT = '全书连写：概览确认准备状态 → 生产中心继续生产；暂停后先处理审校队列。'
 
 export const LANE_B_HINT =
   '半自动修章：门禁或外站不过时，先改稿再续批量，不要直接无上限续跑。'

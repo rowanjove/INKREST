@@ -10,10 +10,10 @@ describe('useFactoryActions', () => {
     expect(navigate).toHaveBeenCalledWith('/create')
   })
 
-  it('routes repair to maintenance alerts', () => {
+  it('routes repair to the production review queue', () => {
     const navigate = vi.fn()
     resolveFactoryIntent('repair', { navigate })
-    expect(navigate).toHaveBeenCalledWith('/chapters/maintenance?expand=alerts')
+    expect(navigate).toHaveBeenCalledWith('/production?tab=reviews')
   })
 
   it('prefers onExport callback for export intent', () => {

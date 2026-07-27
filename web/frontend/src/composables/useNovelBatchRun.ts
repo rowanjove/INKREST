@@ -375,14 +375,14 @@ export function useNovelBatchRun() {
 
   function goMonitorAlerts() {
     closeBatchDialog()
-    router.push('/chapters/maintenance')
+    router.push('/production?tab=reviews')
   }
 
   function goChapterRepair() {
     const ch = ctx.value.lastChapterId
     closeBatchDialog()
     if (ch) {
-      router.push(`/chapters/${ch}`)
+      router.push({ path: '/writer', query: { chapter: ch } })
       return
     }
     goMonitorAlerts()
@@ -406,7 +406,7 @@ export function useNovelBatchRun() {
 
     if (isExternalBlockActive.value) {
       ElMessage.warning(
-        `尚有 ${ctx.value.externalPendingCount} 章待外审通过。请先到章节维护标记「外审已通过」，或在设置关闭「外审未过禁止续跑」。`,
+        `尚有 ${ctx.value.externalPendingCount} 章待外审通过。请先到生产中心标记「外审已通过」，或在设置关闭「外审未过禁止续跑」。`,
       )
       return
     }

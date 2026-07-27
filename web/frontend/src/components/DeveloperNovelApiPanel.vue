@@ -56,7 +56,7 @@ const probeContinue = async () => {
     <summary>开发者 · 全书 API（高级）</summary>
     <div class="body">
       <el-alert type="warning" :closable="false" show-icon title="请勿替代主路径">
-        用户连写请用：<strong>工作台「连写启动」</strong> → <strong>章节维护「继续写书」</strong>（同一弹窗）。
+        用户连写请用：<strong>生产中心「继续生产」</strong>（确认弹窗）。
         下列接口需服务端 <code>NOVEL_AGENT_DEBUG_RUN=1</code> 或开发模式。
       </el-alert>
       <table class="api-table">

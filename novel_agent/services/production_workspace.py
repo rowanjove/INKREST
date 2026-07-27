@@ -79,6 +79,8 @@ def _task_view(task: TaskRecord) -> dict[str, Any]:
     payload = dict(task.payload_json)
     checkpoint = dict(task.checkpoint or {})
     result = dict(task.result_json or {})
+    result_error = result.get("error")
+    result_error = result_error if isinstance(result_error, dict) else {}
     progress = checkpoint.get("progress")
     progress = progress if isinstance(progress, dict) else {}
     chapter_id = str(
@@ -99,13 +101,20 @@ def _task_view(task: TaskRecord) -> dict[str, Any]:
         recovery_action = "open_writer"
     else:
         recovery_action = "none"
-    failure_message = str(
-        result.get("failure_hint")
-        or result.get("message")
-        or result.get("_error")
-        or task.status_reason
-        or ""
-    )
+    failure_message = ""
+    failure_code = ""
+    if task.status is TaskStatus.FAILED:
+        failure_message = str(
+            result.get("failure_hint")
+            or result.get("message")
+            or result.get("_error")
+            or result_error.get("message")
+            or task.status_reason
+            or ""
+        )
+        failure_code = str(result.get("code") or result_error.get("code") or "")
+    elif task.status is TaskStatus.PAUSED:
+        failure_message = str(task.status_reason or "")
     return {
         "id": task.id,
         "project_id": task.project_id,
@@ -124,7 +133,7 @@ def _task_view(task: TaskRecord) -> dict[str, Any]:
             "progress": progress or None,
         },
         "status_reason": task.status_reason,
-        "failure_code": str(result.get("code") or "") or None,
+        "failure_code": failure_code or None,
         "failure_message": failure_message or None,
         "recovery_action": recovery_action,
         "heartbeat_at": task.heartbeat_at,

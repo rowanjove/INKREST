@@ -571,8 +571,8 @@ def _stability_report(
             "Continuity failures",
             "danger",
             f"{continuity_failures} chapter report(s) mention continuity or state problems.",
-            "/chapters/maintenance?expand=alerts",
-            "Open repair queue",
+            "/production?tab=reviews",
+            "Open review queue",
             min(30, continuity_failures * 10),
         )
     if target >= 100 and sum(tracked.values()) < 3:

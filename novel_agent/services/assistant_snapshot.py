@@ -111,7 +111,7 @@ def format_repair_steps_hint(chapter_id: str, stage: str = "") -> str:
     stage_part = f"（当前：{stage}）" if stage else ""
     return (
         f"第 {chapter_id} 章{stage_part}建议："
-        "1) 写作页改稿 → 2) 修章队列「只重跑门禁」 → 3) 通过后工作台连写启动或章节维护继续写书"
+        "1) 正文页改稿 → 2) 生产中心「重跑门禁」 → 3) 通过后在生产中心确认继续生产"
     )
 
 

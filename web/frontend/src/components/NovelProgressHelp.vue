@@ -58,7 +58,7 @@ const progress = computed(() => snapshot.value)
         </li>
       </ul>
       <p class="footnote">
-        若三处数字不一致，以章节维护「待处理」+ 批量断点为准排查；连写续跑请用「继续写书」弹窗，勿裸调 API。
+        若三处数字不一致，以生产中心「审校修复」+ 批量断点为准排查；连写续跑请用确认弹窗，勿裸调 API。
         {{ INTERNAL_GATE_HINT }}
         {{ EXTERNAL_AUDIT_HINT }}
       </p>

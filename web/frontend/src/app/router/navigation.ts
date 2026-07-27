@@ -51,9 +51,9 @@ export const PROJECT_NAV_ITEMS: readonly NavigationItem[] = [
   {
     id: 'production',
     label: '生产',
-    path: '/monitor',
+    path: '/production',
     icon: 'production',
-    match: ['/monitor', '/tasks', '/logs'],
+    match: ['/production', '/monitor', '/tasks', '/pipeline', '/logs'],
   },
   {
     id: 'publishing',

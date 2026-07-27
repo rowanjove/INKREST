@@ -99,8 +99,8 @@ const showVectorAlert = computed(() =>
         title="有待外审章节"
         class="external-alert"
       >
-        <p>{{ ctx.externalPendingCount }} 章待外审通过后再续跑。可在设置 → 流水线高级关闭「外审未过禁止续跑」，或到章节维护标记通过。</p>
-        <el-button size="small" type="warning" plain @click="goMonitorAlerts">去章节维护</el-button>
+        <p>{{ ctx.externalPendingCount }} 章待外审通过后再续跑。可在设置 → 流水线高级关闭「外审未过禁止续跑」，或到生产中心标记通过。</p>
+        <el-button size="small" type="warning" plain @click="goMonitorAlerts">去审校修复</el-button>
       </el-alert>
       <el-alert
         v-else-if="ctx.externalPendingCount > 0"

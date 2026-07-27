@@ -37,3 +37,23 @@ def test_runtime_logs_can_be_scoped_to_one_project():
     assert [row["message"] for row in tail_runtime_logs(20, project_id="book-2")] == [
         "book two"
     ]
+
+
+def test_runtime_logs_can_clear_only_one_project():
+    clear_runtime_logs()
+    first_id = append_runtime_log(
+        {"type": "log", "message": "book one", "project_id": "book-1"}
+    )
+    second_id = append_runtime_log(
+        {"type": "log", "message": "book two", "project_id": "book-2"}
+    )
+
+    clear_runtime_logs(project_id="book-1")
+
+    assert list_runtime_logs(project_id="book-1") == []
+    assert [row["message"] for row in list_runtime_logs(project_id="book-2")] == [
+        "book two"
+    ]
+    assert append_runtime_log(
+        {"type": "log", "message": "book one again", "project_id": "book-1"}
+    ) > max(first_id, second_id)

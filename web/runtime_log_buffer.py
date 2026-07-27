@@ -106,11 +106,21 @@ def tail_runtime_logs(
     return rows
 
 
-def clear_runtime_logs() -> None:
+def clear_runtime_logs(*, project_id: str | None = None) -> None:
+    """Clear every log for tests/maintenance, or only one project's UI logs."""
     global _seq
     with _lock:
+        if project_id is None:
+            _buffer.clear()
+            _seq = 0
+            return
+        retained = [
+            item
+            for item in _buffer
+            if str(item.get("project_id") or "") != project_id
+        ]
         _buffer.clear()
-        _seq = 0
+        _buffer.extend(retained)
 
 
 def read_system_log_tail(log_path: Optional[Any], max_lines: int = 60) -> List[str]:

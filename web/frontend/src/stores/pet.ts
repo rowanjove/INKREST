@@ -206,7 +206,7 @@ export const usePetStore = defineStore('pet', () => {
     }
     const pendingTotal = context.value?.pipeline_pending?.pending_total ?? 0
     if (pendingTotal > 0) {
-      return `${pendingTotal} 章待处理修章，可到章节维护查看。`
+      return `${pendingTotal} 章待处理修章，可到生产中心查看。`
     }
     if (workProgressLine.value) return workProgressLine.value
     return '助手正在待命，有任务动态会及时提醒。'

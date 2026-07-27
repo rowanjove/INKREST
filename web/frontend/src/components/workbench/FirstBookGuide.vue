@@ -101,7 +101,7 @@ const steps = computed(() => {
   }
   base.push(
     { label: '工作台连写', route: '/workspace' },
-    { label: '章节维护', route: '/chapters/maintenance' },
+    { label: '审校修复', route: '/production?tab=reviews' },
   )
   return base
 })
@@ -132,11 +132,11 @@ const goStep = (path: string) => {
       <span class="dialog-title">首次创作向导</span>
     </template>
     <p class="guide-desc">
-      新书已创建（{{ stepCountLabel }}）。建议按下面顺序完成配置后再点工作台「连写启动」；系统暂停后可在章节维护处理待改章节。
+      新书已创建（{{ stepCountLabel }}）。建议按下面顺序完成配置后再到生产中心确认继续；系统暂停后可在审校修复队列处理待改章节。
     </p>
     <ul class="guide-bullets">
       <li>配置模型 → 完善大纲与卷纲 → 开书清单全绿 → 连写启动</li>
-      <li>门禁或外审未过时，在章节维护「待处理章节」改稿并复制试审</li>
+      <li>门禁或外审未过时，在生产中心「审校修复」改稿并复制试审</li>
     </ul>
     <div class="guide-steps">
       <el-button

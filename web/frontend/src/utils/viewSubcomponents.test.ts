@@ -250,18 +250,13 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('.config-page :deep(.fold-head)')
   })
 
-  it('MonitorView shell wires tabs pane composable', () => {
-    const source = read('views/MonitorView.vue')
-    expect(source).toContain('MonitorTabsPane')
-    expect(source).toContain('useMonitorView')
-    expect(source).toContain('min-height: calc(100vh - 96px)')
-  })
-
-  it('MonitorTabsPane keeps task rounds split layout', () => {
-    const source = read('components/monitor/MonitorTabsPane.vue')
-    expect(source).toContain('task-rounds-split')
-    expect(source).toContain('CostSummaryPanel')
-    expect(source).toContain('hide-recent-rounds')
+  it('ProductionCenter unifies runs, reviews, costs, and logs', () => {
+    const source = read('views/ProductionCenter.vue')
+    expect(source).toContain('ProductionTaskWorkspace')
+    expect(source).toContain('ProductionReviewWorkspace')
+    expect(source).toContain('ProductionCostPanel')
+    expect(source).toContain('ProductionLogsPanel')
+    expect(source).toContain('ProductionActionDialog')
   })
 
   it('PetView shell uses window interaction composable', () => {
@@ -270,26 +265,12 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('pet-hit-area')
   })
 
-  it('chapter maintenance stays in the production route', () => {
+  it('legacy production routes redirect into the production center', () => {
     const source = read('router.ts')
     expect(source).toContain("path: '/chapters/maintenance'")
-    expect(source).toContain("navId: 'production'")
-  })
-
-  it('ChapterMaintenance shell wires repair queue and expand composable', () => {
-    const source = read('views/ChapterMaintenance.vue')
-    expect(source).toContain('useChapterMaintenance')
-    expect(source).toContain('SemiAutoRepairHint')
-    expect(source).toContain('PendingChaptersPanel')
-    expect(source).toContain(':link-focus="true"')
-    expect(source).toContain('BatchRunStatusBanner')
-  })
-
-  it('useChapterMaintenance expands pending panel on alerts query', () => {
-    const source = read('composables/useChapterMaintenance.ts')
-    expect(source).toContain("expand !== 'alerts'")
-    expect(source).toContain('expandPendingPanel')
-    expect(source).toContain('lastExpandedQuery')
+    expect(source).toContain("path: '/production', query: { tab: 'reviews' }")
+    expect(source).toContain("path: '/monitor'")
+    expect(source).toContain("path: '/tasks'")
   })
 
   it('App starts pending product tour after onboarding route transition', () => {
@@ -299,12 +280,11 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('isAppTourPending')
   })
 
-  it('MonitorTabsPane wires LLM log viewer on logs tab', () => {
-    const source = read('components/monitor/MonitorTabsPane.vue')
-    expect(source).toContain('name="logs"')
+  it('ProductionLogsPanel keeps project runtime and LLM logs together', () => {
+    const source = read('components/production/ProductionLogsPanel.vue')
+    expect(source).toContain('ProductionRuntimeLog')
     expect(source).toContain('LLMLogViewer')
-    expect(source).toContain('费用与接口')
     const router = read('router.ts')
-    expect(router.replace(/\s/g, '')).toContain("redirect:'/monitor?tab=logs'")
+    expect(router.replace(/\s/g, '')).toContain("path:'/logs',redirect:{path:'/production',query:{tab:'logs'}}")
   })
 })

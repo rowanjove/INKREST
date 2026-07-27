@@ -14,12 +14,7 @@ const router = createRouter({
     { path: '/outline', name: 'outline', component: () => import('./views/OutlineView.vue'), meta: { scope: 'project', title: '策划', navId: 'planning', fullBleed: true } },
     { path: '/chapters', redirect: '/writer', meta: { scope: 'project', title: '正文', navId: 'manuscript' } },
     { path: '/chapters/list', redirect: '/writer', meta: { scope: 'project', title: '正文', navId: 'manuscript' } },
-    {
-      path: '/chapters/maintenance',
-      name: 'chapters-maintenance',
-      component: () => import('./views/ChapterMaintenance.vue'),
-      meta: { scope: 'project', title: '章节维护', navId: 'production' },
-    },
+    { path: '/chapters/maintenance', redirect: { path: '/production', query: { tab: 'reviews' } }, meta: { scope: 'project', title: '审校修复', navId: 'production' } },
     {
       path: '/chapters/:id',
       name: 'chapter-detail',
@@ -28,9 +23,28 @@ const router = createRouter({
     },
     { path: '/state', name: 'state', component: () => import('./views/StateView.vue'), meta: { scope: 'project', title: '剧情状态', navId: 'planning' } },
     { path: '/assets', name: 'assets', component: () => import('./views/AssetEditor.vue'), meta: { scope: 'project', title: '故事素材', navId: 'planning' } },
-    { path: '/monitor', name: 'monitor', component: () => import('./views/MonitorView.vue'), meta: { scope: 'project', title: '生产', navId: 'production' } },
-    { path: '/tasks', redirect: '/chapters/maintenance', meta: { scope: 'project', title: '任务', navId: 'production' } },
-    { path: '/logs', redirect: '/monitor?tab=logs', meta: { scope: 'project', title: '日志', navId: 'production' } },
+    { path: '/production', name: 'production', component: () => import('./views/ProductionCenter.vue'), meta: { scope: 'project', title: '生产', navId: 'production', fullBleed: true } },
+    {
+      path: '/monitor',
+      redirect: (to) => ({
+        path: '/production',
+        query: {
+          ...to.query,
+          tab:
+            to.query.tab === 'agent_logs'
+              ? 'logs'
+              : to.query.tab === 'logs' || to.query.tab === 'interface_logs'
+                ? 'costs'
+                : to.query.tab === 'tasks'
+                  ? 'reviews'
+                  : 'runs',
+        },
+      }),
+      meta: { scope: 'project', title: '生产', navId: 'production' },
+    },
+    { path: '/tasks', redirect: { path: '/production', query: { tab: 'runs' } }, meta: { scope: 'project', title: '任务', navId: 'production' } },
+    { path: '/pipeline', redirect: { path: '/production', query: { tab: 'reviews' } }, meta: { scope: 'project', title: '审校修复', navId: 'production' } },
+    { path: '/logs', redirect: { path: '/production', query: { tab: 'logs' } }, meta: { scope: 'project', title: '日志', navId: 'production' } },
     { path: '/config', name: 'config', component: () => import('./views/ConfigView.vue'), meta: { scope: 'global', title: '设置', navId: 'settings' } },
     { path: '/writer', name: 'writer', component: () => import('./views/WritingWorkspace.vue'), meta: { scope: 'project', title: '正文', navId: 'manuscript', fullBleed: true } },
     { path: '/plugins', name: 'plugins', component: () => import('./views/PluginManager.vue'), meta: { scope: 'global', title: '扩展', navId: 'extensions' } },

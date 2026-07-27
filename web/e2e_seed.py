@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict
 
+from novel_agent.domain.tasks import TaskStatus
 from novel_agent.services.arc_queue import record_novel_batch_paused
 from novel_agent.services.batch_retry_queue import record_batch_retry
 from novel_agent.services.outline_sync import mark_arcs_synced_with_outline
@@ -120,13 +121,139 @@ def _seed_quality_blocked_chapter(root: Path, chapter_id: str = "003") -> None:
     (reports / "quality.json").write_text(
         json.dumps(
             {
+                "overall_score": 48,
                 "overall_pass": False,
-                "guard_summary": {"overall_status": "FAIL", "blocked_by": ["test_guard"]},
+                "checks": {
+                    "style": {
+                        "pass": False,
+                        "score": 42,
+                        "level": "fail",
+                        "details": ["连续短句过多，段落节奏需要调整。"],
+                    }
+                },
+                "guard_summary": {"overall_status": "FAIL", "blocked_by": ["style"]},
             },
             ensure_ascii=False,
         ),
         encoding="utf-8",
     )
+
+
+def _seed_production_history(root: Path, project_id: str) -> list[str]:
+    store = SQLiteStateStore(root)
+    repo = store.task_repository
+    task_ids = [
+        "e2e-production-queued",
+        "e2e-production-failed",
+        "e2e-production-done",
+    ]
+    with safe_connection(store.db_path) as conn:
+        with conn:
+            for task_id in task_ids:
+                conn.execute("delete from task_logs where task_id = ?", (task_id,))
+                conn.execute(
+                    "delete from task_status_events where task_id = ?", (task_id,)
+                )
+                conn.execute("delete from tasks where id = ?", (task_id,))
+
+    repo.create_task(
+        task_id=task_ids[0],
+        project_id=project_id,
+        task_type="export",
+        payload={"goal": "等待导出审校样稿"},
+    )
+
+    repo.create_task(
+        task_id=task_ids[1],
+        project_id=project_id,
+        task_type="chapter",
+        payload={"chapter_id": "003", "goal": "修订门后影子章节"},
+        max_attempts=1,
+    )
+    claimed = repo.claim_task(task_ids[1])
+    assert claimed is not None and claimed.claim_token
+    repo.start_task(task_ids[1], claimed.claim_token)
+    repo.append_task_log(
+        task_ids[1],
+        message="正文已完成，进入质量门禁",
+        step="quality_guard",
+    )
+    repo.heartbeat(
+        task_ids[1],
+        claimed.claim_token,
+        checkpoint={
+            "resumable_from": "audit",
+            "progress": {"step": "quality_guard", "chapter_id": "003"},
+        },
+    )
+    repo.finish_task(
+        task_ids[1],
+        claimed.claim_token,
+        status=TaskStatus.FAILED,
+        result={
+            "error": {
+                "code": "quality_blocked",
+                "message": "文风与表达未达到质量门禁要求",
+            }
+        },
+        reason="quality_blocked",
+    )
+    repo.append_task_log(
+        task_ids[1],
+        level="error",
+        message="文风与表达未达到质量门禁要求",
+        step="quality_guard",
+    )
+
+    repo.create_task(
+        task_id=task_ids[2],
+        project_id=project_id,
+        task_type="export",
+        payload={"goal": "生成审校预览"},
+    )
+    done = repo.claim_task(task_ids[2])
+    assert done is not None and done.claim_token
+    repo.start_task(task_ids[2], done.claim_token)
+    repo.append_task_log(
+        task_ids[2],
+        message="审校预览已生成",
+        step="export",
+    )
+    repo.finish_task(
+        task_ids[2],
+        done.claim_token,
+        status=TaskStatus.SUCCEEDED,
+        result={"format": "preview"},
+        reason="completed",
+    )
+
+    from web.runtime_log_buffer import (
+        append_runtime_log,
+        clear_runtime_logs,
+    )
+
+    clear_runtime_logs(project_id=project_id)
+    append_runtime_log(
+        {
+            "type": "progress",
+            "project_id": project_id,
+            "task_id": task_ids[1],
+            "chapter_id": "003",
+            "step": "quality_guard",
+            "status": "blocked",
+            "message": "第 003 章质量门禁阻断",
+        }
+    )
+    append_runtime_log(
+        {
+            "type": "log",
+            "project_id": project_id,
+            "task_id": task_ids[2],
+            "step": "export",
+            "message": "审校预览已生成",
+        }
+    )
+    return task_ids
 
 
 def seed_maintenance_scenario(project_manager) -> Dict[str, Any]:
@@ -163,6 +290,7 @@ def seed_maintenance_scenario(project_manager) -> Dict[str, Any]:
         arc_id="A01",
         streak=1,
     )
+    production_task_ids = _seed_production_history(root, project_id)
 
     try:
         from novel_agent.services.pipeline_pending import (
@@ -183,4 +311,5 @@ def seed_maintenance_scenario(project_manager) -> Dict[str, Any]:
         "last_chapter_id": "003",
         "pending_chapter_ids": ["002", "003"],
         "pending_total": int(pending.get("pending_total") or 0),
+        "production_task_ids": production_task_ids,
     }

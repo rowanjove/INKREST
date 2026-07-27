@@ -40,23 +40,25 @@ PET_BUBBLE_CHAT = (
     ROOT / "web" / "frontend" / "src" / "components" / "pet" / "PetBubbleChatTab.vue"
 )
 PET_BUBBLE_VIEW = ROOT / "web" / "frontend" / "src" / "composables" / "usePetBubbleView.ts"
-TASK_LOG = ROOT / "web" / "frontend" / "src" / "components" / "TaskLog.vue"
 LLM_CONFIG = ROOT / "web" / "frontend" / "src" / "components" / "LLMConfig.vue"
-LOG_STREAM = ROOT / "web" / "frontend" / "src" / "components" / "LogStream.vue"
-MONITOR = ROOT / "web" / "frontend" / "src" / "views" / "MonitorView.vue"
-MONITOR_TABS = (
-    ROOT / "web" / "frontend" / "src" / "components" / "monitor" / "MonitorTabsPane.vue"
+PRODUCTION_CENTER = ROOT / "web" / "frontend" / "src" / "views" / "ProductionCenter.vue"
+PRODUCTION_TASKS = (
+    ROOT / "web" / "frontend" / "src" / "components" / "production" / "ProductionTaskWorkspace.vue"
 )
-MONITOR_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "useMonitorView.ts"
+PRODUCTION_REVIEWS = (
+    ROOT / "web" / "frontend" / "src" / "components" / "production" / "ProductionReviewWorkspace.vue"
+)
+PRODUCTION_COSTS = (
+    ROOT / "web" / "frontend" / "src" / "components" / "production" / "ProductionCostPanel.vue"
+)
+PRODUCTION_LOGS = (
+    ROOT / "web" / "frontend" / "src" / "components" / "production" / "ProductionLogsPanel.vue"
+)
 CONFIG_SECTIONS_STACK = (
     ROOT / "web" / "frontend" / "src" / "components" / "config" / "ConfigSectionsStack.vue"
 )
 PET_WINDOW_INTERACTION = (
     ROOT / "web" / "frontend" / "src" / "composables" / "usePetWindowInteraction.ts"
-)
-CHAPTER_MAINTENANCE = ROOT / "web" / "frontend" / "src" / "views" / "ChapterMaintenance.vue"
-CHAPTER_MAINTENANCE_COMPOSABLE = (
-    ROOT / "web" / "frontend" / "src" / "composables" / "useChapterMaintenance.ts"
 )
 
 OUTLINE_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "OutlineView.vue"
@@ -95,11 +97,8 @@ OUTLINE_MINDMAP = (
 PLUGIN_MANAGER = ROOT / "web" / "frontend" / "src" / "views" / "PluginManager.vue"
 PLUGIN_GRID = ROOT / "web" / "frontend" / "src" / "components" / "plugin" / "PluginGrid.vue"
 PLUGIN_MANAGER_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "usePluginManager.ts"
-EMPTY_STATE = ROOT / "web" / "frontend" / "src" / "components" / "EmptyStatePanel.vue"
 SHARED_EMPTY_STATE = ROOT / "web" / "frontend" / "src" / "shared" / "ui" / "EmptyState.vue"
-COST_PANEL = ROOT / "web" / "frontend" / "src" / "components" / "CostSummaryPanel.vue"
 NOVEL_PROGRESS_HELP = ROOT / "web" / "frontend" / "src" / "components" / "NovelProgressHelp.vue"
-BATCH_BANNER = ROOT / "web" / "frontend" / "src" / "components" / "BatchRunStatusBanner.vue"
 EMBEDDING_CONFIG = ROOT / "web" / "frontend" / "src" / "components" / "EmbeddingConfig.vue"
 PIPELINE_RUNTIME = ROOT / "web" / "frontend" / "src" / "components" / "PipelineRuntimeConfig.vue"
 SHANSHAN_COPY = ROOT / "web" / "frontend" / "src" / "constants" / "shanshanCopy.ts"
@@ -248,19 +247,16 @@ def test_library_cards_show_pending_alert_badge() -> None:
     assert 'class="risk-link"' in grid_source
     assert "未解决风险" in grid_source
     assert "openPendingMaintenance" in projects_source
-    assert "expand=alerts" in projects_source
+    assert "/production?tab=reviews" in projects_source
 
 
 def test_empty_state_panel_used_in_key_views() -> None:
     library = LIBRARY_VIEW.read_text(encoding="utf-8")
-    task_log = TASK_LOG.read_text(encoding="utf-8")
-    pending = (
-        ROOT / "web" / "frontend" / "src" / "components" / "PendingChaptersPanel.vue"
-    ).read_text(encoding="utf-8")
+    tasks = PRODUCTION_TASKS.read_text(encoding="utf-8")
+    reviews = PRODUCTION_REVIEWS.read_text(encoding="utf-8")
     assert "shared/ui/EmptyState.vue" in library
-    assert "EmptyStatePanel" in task_log
-    assert "EmptyStatePanel" in pending
-    assert "empty-state-panel" in EMPTY_STATE.read_text(encoding="utf-8")
+    assert "尚无生产任务" in tasks
+    assert "没有匹配的审校问题" in reviews
     assert 'class="ui-empty-state"' in SHARED_EMPTY_STATE.read_text(encoding="utf-8")
 
 
@@ -279,30 +275,27 @@ def test_manuscript_tree_virtualizes_and_filters_chapters() -> None:
     assert "getItemKey" in source
 
 
-def test_monitor_includes_cost_summary_panel() -> None:
-    shell_source = MONITOR.read_text(encoding="utf-8")
-    tabs_source = MONITOR_TABS.read_text(encoding="utf-8")
-    assert "MonitorTabsPane" in shell_source
-    assert "CostSummaryPanel" in tabs_source
-    assert "cost-api-pane" in tabs_source
-    assert "hide-recent-rounds" in tabs_source
+def test_production_center_includes_canonical_cost_panel() -> None:
+    shell_source = PRODUCTION_CENTER.read_text(encoding="utf-8")
+    costs_source = PRODUCTION_COSTS.read_text(encoding="utf-8")
+    assert "ProductionCostPanel" in shell_source
+    assert "summary.persisted" in costs_source
+    assert "persisted_error" in costs_source
 
 
-def test_monitor_task_logs_splits_rounds_and_task_log() -> None:
-    tabs_source = MONITOR_TABS.read_text(encoding="utf-8")
-    assert "task-rounds-split" in tabs_source
-    assert "AutopilotRoundsPanel" in tabs_source
-    assert "TaskLog" in tabs_source
-    task_logs_block = tabs_source.split('name="task_logs"', 1)[1].split('name="agent_logs"', 1)[0]
-    assert "CostSummaryPanel" not in task_logs_block
+def test_production_tasks_unify_queue_timeline_and_logs() -> None:
+    source = PRODUCTION_TASKS.read_text(encoding="utf-8")
+    assert "运行与队列" in source
+    assert "状态时间线" in source
+    assert "任务日志" in source
+    assert "useVirtualizer" in source
 
 
-def test_pending_panel_has_filter_tabs() -> None:
-    source = (
-        ROOT / "web" / "frontend" / "src" / "components" / "PendingChaptersPanel.vue"
-    ).read_text(encoding="utf-8")
-    assert "pending-filter-tabs" in source
-    assert "activeFilterId" in source
+def test_production_reviews_have_filter_tabs() -> None:
+    source = PRODUCTION_REVIEWS.read_text(encoding="utf-8")
+    assert "筛选审校问题" in source
+    assert "filterProductionReviews" in source
+    assert "外审" in source
 
 
 def test_app_shows_backend_offline_alert() -> None:
@@ -324,18 +317,17 @@ def test_batch_dialog_blocks_submit_when_external_review_active() -> None:
     assert "isExternalBlockActive" in dialog
 
 
-def test_pending_panel_scopes_select_all_to_filter() -> None:
-    source = (
-        ROOT / "web" / "frontend" / "src" / "components" / "PendingChaptersPanel.vue"
-    ).read_text(encoding="utf-8")
-    assert "全选当前筛选" in source
-    assert "filteredAlerts.value" in source
+def test_production_reviews_scope_bulk_actions_to_compatible_items() -> None:
+    source = PRODUCTION_REVIEWS.read_text(encoding="utf-8")
+    assert "resolveReviewActionTargets" in source
+    assert "compatibleCount" in source
+    assert "批量修复动作" in source
 
 
-def test_cost_summary_panel_handles_load_error() -> None:
-    source = COST_PANEL.read_text(encoding="utf-8")
+def test_production_cost_panel_handles_load_error() -> None:
+    source = PRODUCTION_COSTS.read_text(encoding="utf-8")
     assert "persisted_error" in source
-    assert "loadError" in source
+    assert "cost-warning" in source
 
 
 def test_legacy_chapter_routes_converge_on_manuscript_center() -> None:
@@ -393,14 +385,15 @@ def test_pet_bubble_initial_position_is_clamped_to_work_area() -> None:
     assert "Math.min(" in create_block
 
 
-def test_task_log_uses_tasks_store_with_manual_refresh() -> None:
-    source = TASK_LOG.read_text(encoding="utf-8")
+def test_production_center_uses_manual_refresh_and_shared_polling() -> None:
+    source = PRODUCTION_CENTER.read_text(encoding="utf-8")
+    composable = (
+        ROOT / "web" / "frontend" / "src" / "composables" / "useProductionWorkspace.ts"
+    ).read_text(encoding="utf-8")
     assert "Refresh" in source
-    assert "refreshing" in source
-    assert "useTasksStore" in source
-    assert "refreshTaskList" in source
-    assert "@click=\"handleRefresh\"" in source
-    assert "window.setInterval(refreshTasks, 2000)" not in source
+    assert '@click="load()"' in source
+    assert "subscribePolling" in composable
+    assert "window.setInterval" not in composable
 
 
 def test_sidebar_brand_uses_single_line_inkrest_lockup() -> None:
@@ -423,21 +416,19 @@ def test_pet_monitor_navigation_uses_short_label() -> None:
     composable_source = PET_BUBBLE_VIEW.read_text(encoding="utf-8")
     source = status_source + composable_source
     assert "<span>🔧 修章</span>" in source
-    assert "navigate('/chapters/maintenance')" in composable_source
-    assert "onNavigate('/chapters/maintenance')" in status_source
+    assert "navigate('/production?tab=reviews')" in composable_source
+    assert "onNavigate('/production?tab=reviews')" in status_source
     assert "<span>📊 运行监控</span>" not in source
 
 
-def test_monitor_logs_fill_remaining_viewport_height() -> None:
-    monitor_source = MONITOR.read_text(encoding="utf-8")
-    task_source = TASK_LOG.read_text(encoding="utf-8")
-    log_source = LOG_STREAM.read_text(encoding="utf-8")
+def test_production_workspace_fills_remaining_viewport_height() -> None:
+    center_source = PRODUCTION_CENTER.read_text(encoding="utf-8")
+    task_source = PRODUCTION_TASKS.read_text(encoding="utf-8")
+    log_source = PRODUCTION_LOGS.read_text(encoding="utf-8")
 
-    assert "min-height: calc(100vh - 96px);" in monitor_source
-    assert "height: calc(100vh - 96px);" in monitor_source
-    assert "max-height: 320px" not in task_source
+    assert "height: 100%;" in center_source
+    assert "min-height: 0;" in center_source
     assert "height: 100%;" in task_source
-    assert "max-height: 400px" not in log_source
     assert "height: 100%;" in log_source
 
 
@@ -450,35 +441,24 @@ def test_settings_page_applies_shared_fold_card_alignment() -> None:
     assert ".fold-card {" not in runtime_source
 
 
-def test_chapter_maintenance_exposes_repair_queue_grouping() -> None:
-    maintenance = CHAPTER_MAINTENANCE.read_text(encoding="utf-8")
-    composable = CHAPTER_MAINTENANCE_COMPOSABLE.read_text(encoding="utf-8")
-    pending = (
-        ROOT / "web" / "frontend" / "src" / "components" / "PendingChaptersPanel.vue"
+def test_production_center_exposes_review_queue_and_confirmation() -> None:
+    center = PRODUCTION_CENTER.read_text(encoding="utf-8")
+    reviews = PRODUCTION_REVIEWS.read_text(encoding="utf-8")
+    dialog = (
+        ROOT / "web" / "frontend" / "src" / "components" / "production" / "ProductionActionDialog.vue"
     ).read_text(encoding="utf-8")
-    semi = (ROOT / "web" / "frontend" / "src" / "components" / "SemiAutoRepairHint.vue").read_text(
-        encoding="utf-8"
-    )
-    shanshan = SHANSHAN_COPY.read_text(encoding="utf-8")
-    assert "useChapterMaintenance" in maintenance
-    assert "expand !== 'alerts'" in composable
-    assert "lastExpandedQuery" in composable
-    assert "expandPendingPanel" in composable
-    assert "PendingChaptersPanel" in maintenance
-    assert "修章队列" in pending
-    assert "展开修章队列" in semi
-    assert "SHANSHAN_REPAIR_STEPS_HINT" in shanshan
+    assert "ProductionReviewWorkspace" in center
+    assert "审校与修复" in reviews
+    assert "重跑门禁" in reviews
+    assert "只有点击下方确认按钮后才会提交" in dialog
 
 
-def test_chapter_maintenance_remains_a_separate_production_route() -> None:
+def test_chapter_maintenance_redirects_to_unified_production_route() -> None:
     router_source = ROUTER.read_text(encoding="utf-8")
-    maintenance_source = CHAPTER_MAINTENANCE.read_text(encoding="utf-8")
 
     assert "path: '/chapters/maintenance'" in router_source
-    assert "navId: 'production'" in router_source
-    assert ":link-focus=\"true\"" in maintenance_source
-    assert "SemiAutoRepairHint" in maintenance_source
-    assert "PendingChaptersPanel" in maintenance_source
+    assert "path: '/production', query: { tab: 'reviews' }" in router_source
+    assert "ChapterMaintenance.vue" not in router_source
 
 
 def test_tasks_store_uses_polling_reference_counts() -> None:
@@ -488,15 +468,15 @@ def test_tasks_store_uses_polling_reference_counts() -> None:
     transport_source = (
         ROOT / "web" / "frontend" / "src" / "composables" / "useTaskProgress.ts"
     ).read_text(encoding="utf-8")
-    log_stream_source = (
-        ROOT / "web" / "frontend" / "src" / "components" / "LogStream.vue"
+    production_source = (
+        ROOT / "web" / "frontend" / "src" / "composables" / "useProductionWorkspace.ts"
     ).read_text(encoding="utf-8")
 
     assert "createTaskListTransport" in tasks_source
     assert "createRuntimeLogTransport" in tasks_source
     assert "consumers" in transport_source
     assert "wsAllowReconnect" in transport_source
-    assert "startRuntimeLogPolling" not in log_stream_source
+    assert "subscribePolling" in production_source
 
 
 def test_tasks_store_exposes_failure_action_contract() -> None:
@@ -525,37 +505,32 @@ def test_manuscript_composable_guards_save_and_conflict_races() -> None:
     assert "keepLocalAsNewRevision" in source
 
 
-def test_monitor_llm_logs_tab_wires_viewer() -> None:
-    tabs_source = MONITOR_TABS.read_text(encoding="utf-8")
+def test_production_logs_tab_wires_viewer() -> None:
+    logs_source = PRODUCTION_LOGS.read_text(encoding="utf-8")
     router_source = (ROOT / "web" / "frontend" / "src" / "router.ts").read_text(encoding="utf-8")
 
-    assert 'name="logs"' in tabs_source
-    assert "LLMLogViewer" in tabs_source
-    assert "费用与接口" in tabs_source
+    assert "ProductionRuntimeLog" in logs_source
+    assert "LLMLogViewer" in logs_source
     compact_router = router_source.replace(" ", "").replace("'", '"')
-    assert 'redirect:"/monitor?tab=logs"' in compact_router
+    assert 'path:"/logs",redirect:{path:"/production",query:{tab:"logs"}}' in compact_router
 
 
-def test_monitor_page_is_log_center_without_tasks_tab() -> None:
-    shell_source = MONITOR.read_text(encoding="utf-8")
-    tabs_source = MONITOR_TABS.read_text(encoding="utf-8")
-    composable_source = MONITOR_COMPOSABLE.read_text(encoding="utf-8")
-    assert ">日志中心<" in shell_source.replace("\n", "").replace(" ", "")
-    assert "任务执行监控" not in shell_source
-    assert "NovelProgressHelp" not in shell_source
-    assert 'name="task_logs"' in tabs_source
-    assert "费用与接口" in tabs_source
-    assert "router.replace('/chapters/maintenance')" in composable_source
-    assert "interface_logs" in composable_source
+def test_production_page_is_the_single_operations_center() -> None:
+    source = PRODUCTION_CENTER.read_text(encoding="utf-8")
+    compact = source.replace("\n", "").replace(" ", "")
+    assert ">生产中心<" in compact
+    assert "运行、审校修复、费用与日志" in source
+    assert "ProductionTaskWorkspace" in source
+    assert "ProductionReviewWorkspace" in source
 
 
-def test_batch_banner_prioritizes_repair_before_force_resume() -> None:
-    source = BATCH_BANNER.read_text(encoding="utf-8")
-    assert "先处理待处理章" in source
-    assert "仍继续写书" in source
+def test_production_pause_banner_prioritizes_repair_before_resume() -> None:
+    source = PRODUCTION_CENTER.read_text(encoding="utf-8")
+    assert "处理待修章节" in source
+    assert "仍要继续" in source
     assert "useNovelBatchRun" in source
-    assert "needsRepairBeforeResume" in source
-    assert "formatBatchPauseReason" in source
+    assert "batchPaused" in source
+    assert "pauseReason" in source
 
 
 def test_novel_progress_help_includes_dual_audit_footnote() -> None:
@@ -583,17 +558,17 @@ def test_dual_audit_copy_splits_internal_and_external() -> None:
     assert "Phase 5 审校中心" in inspector
 
 
-def test_task_log_and_pet_share_task_step_labels() -> None:
-    task_source = TASK_LOG.read_text(encoding="utf-8")
+def test_production_tasks_and_pet_localize_task_steps() -> None:
+    task_source = PRODUCTION_TASKS.read_text(encoding="utf-8")
     pet_source = (ROOT / "web" / "frontend" / "src" / "stores" / "pet.ts").read_text(
         encoding="utf-8"
     )
-    labels_source = (
-        ROOT / "web" / "frontend" / "src" / "utils" / "taskStepLabels.ts"
+    production_labels = (
+        ROOT / "web" / "frontend" / "src" / "entities" / "production" / "production.ts"
     ).read_text(encoding="utf-8")
-    assert "formatTaskStep" in task_source
+    assert "productionStepLabel" in task_source
     assert "formatTaskStep" in pet_source
-    assert "writer: 'AI 写作正文初稿'" in labels_source
+    assert "writer: '正文写作'" in production_labels
 
 
 def test_llm_log_viewer_fills_remaining_height() -> None:
@@ -612,17 +587,18 @@ def test_outline_page_places_progress_help_above_queue_status() -> None:
     assert help_idx < queue_idx
 
 
-def test_progress_help_uses_shared_novel_progress_composable() -> None:
+def test_progress_help_and_production_use_canonical_progress_sources() -> None:
     help_source = NOVEL_PROGRESS_HELP.read_text(encoding="utf-8")
-    banner_source = BATCH_BANNER.read_text(encoding="utf-8")
+    production_source = PRODUCTION_CENTER.read_text(encoding="utf-8")
     assert "useNovelProgress" in help_source
-    assert "useNovelProgress" in banner_source
+    assert "snapshot.chapter_progress" in production_source
     assert "getNovelBatchStatus" not in help_source
 
 
-def test_shanshan_copy_points_to_chapter_maintenance_not_monitor() -> None:
+def test_shanshan_copy_points_to_production_center() -> None:
     source = SHANSHAN_COPY.read_text(encoding="utf-8")
-    assert "章节维护" in source
+    assert "生产中心" in source
+    assert "章节维护" not in source
     assert "运行监控" not in source
 
 
@@ -660,7 +636,7 @@ def test_vector_readiness_and_task_queue_wired_in_batch_run() -> None:
     batch_run = (
         ROOT / "web" / "frontend" / "src" / "composables" / "useNovelBatchRun.ts"
     ).read_text(encoding="utf-8")
-    task_log = TASK_LOG.read_text(encoding="utf-8")
+    production_tasks = PRODUCTION_TASKS.read_text(encoding="utf-8")
     readiness = (ROOT / "web" / "frontend" / "src" / "utils" / "projectReadiness.ts").read_text(
         encoding="utf-8"
     )
@@ -670,9 +646,8 @@ def test_vector_readiness_and_task_queue_wired_in_batch_run() -> None:
     assert "readinessCanContinue" in batch_run
     assert "serverReadiness" in batch_run
     assert "vectorReadiness" in batch_run
-    assert "getTaskQueue" in task_log
-    assert "queueSummary" in task_log
-    assert "max_concurrent_chapters" in task_log
+    assert "运行与队列" in production_tasks
+    assert "filterProductionTasks" in production_tasks
 
 
 def test_batch_run_cost_uses_model_pricing_hint() -> None:
@@ -705,9 +680,9 @@ def test_shanshan_chat_opens_with_compact_editor_welcome_card() -> None:
     assert "结合当前作品体量与门禁摘要排障" in copy_source
     assert "嗨，我是山山，栖墨里的驻场小编辑。" in copy_source
     assert "查任务进度、体量与已写章数" in copy_source
-    assert "统一门禁摘要" in copy_source
-    assert "章节维护" in copy_source
-    assert "章节详情" in copy_source
+    assert "门禁摘要" in copy_source
+    assert "生产中心" in copy_source
+    assert "正文" in copy_source
     assert "你现在想先处理哪一件？" in copy_source
     assert "'全书暂停了，怎么续跑？'" in copy_source
     assert "'日常档和逻辑档怎么选？'" in copy_source
@@ -815,12 +790,14 @@ def test_config_view_shell_delegates_to_nav_and_sections() -> None:
     assert "EmbeddingConfig" in stack_source
 
 
-def test_monitor_shell_delegates_to_tabs_pane() -> None:
-    shell_source = MONITOR.read_text(encoding="utf-8")
-    composable_source = MONITOR_COMPOSABLE.read_text(encoding="utf-8")
-    assert "MonitorTabsPane" in shell_source
-    assert "useMonitorView" in shell_source
-    assert "startRuntimeLogPolling" in composable_source
+def test_production_shell_delegates_to_workspace_panels() -> None:
+    shell_source = PRODUCTION_CENTER.read_text(encoding="utf-8")
+    composable_source = (
+        ROOT / "web" / "frontend" / "src" / "composables" / "useProductionWorkspace.ts"
+    ).read_text(encoding="utf-8")
+    assert "ProductionTaskWorkspace" in shell_source
+    assert "ProductionReviewWorkspace" in shell_source
+    assert "getProductionWorkspace" in composable_source
 
 
 def test_pet_view_shell_delegates_to_window_interaction() -> None:

@@ -422,9 +422,9 @@ async def get_assistant_diagnose(
                     ),
                 })
                 suggestions.append({
-                    "label": "去章节维护续跑",
+                    "label": "去生产中心审校修复",
                     "type": "navigate",
-                    "payload": {"route": "/chapters/maintenance"},
+                    "payload": {"route": "/production?tab=reviews"},
                 })
         except Exception:
             pass

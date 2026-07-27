@@ -48,12 +48,12 @@ export function usePetBubbleView() {
       pet.context?.running_tasks?.length ||
       (pet.context?.pipeline_pending?.pending_total ?? 0) > 0
     ) {
-      navigate('/chapters/maintenance')
+      navigate('/production?tab=reviews')
     }
   }
 
   function openMonitorForBatch() {
-    navigate('/chapters/maintenance')
+    navigate('/production?tab=reviews')
   }
 
   function scrollToBottom() {

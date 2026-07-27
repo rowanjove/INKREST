@@ -78,7 +78,7 @@ const {
 } = useStateViewChronicle({ state, chapterRange, loadState })
 
 const goChapters = () => router.push('/chapters')
-const goMonitor = () => router.push('/monitor')
+const goMonitor = () => router.push('/production?tab=runs')
 const goSettingsTab = () => {
   activeOuterTab.value = 'settings'
 }

@@ -173,7 +173,7 @@ async def run_novel_autopilot_helper(
                 "paused": True,
                 "circuit_breaker": True,
                 "round_summaries": outcome.round_summaries,
-                "message": "全书自动续跑因批量熔断暂停，请处理章节后于运行监控续跑。",
+                "message": "全书自动续跑因批量熔断暂停，请处理章节后于生产中心续跑。",
             }
         else:
             status = "completed"

@@ -41,7 +41,7 @@ ERROR_HINTS: Dict[ErrorCode, str] = {
     ErrorCode.ARC_QUEUE_STALE: "卷队列与大纲不一致，请在工作台先点「同步卷队列」或重新 ensure-queue。",
     ErrorCode.READINESS_BLOCKED: "开书清单未就绪，请按监控/工作台提示补齐大纲、书名与核心资产。",
     ErrorCode.CIRCUIT_PAUSED: "全书因质量熔断已暂停，建议先改稿并重跑门禁，再在监控确认后续跑。",
-    ErrorCode.CHAPTER_ALREADY_RUNNING: "该章节已有任务在跑，请等待完成或在运行监控中止后再试。",
+    ErrorCode.CHAPTER_ALREADY_RUNNING: "该章节已有任务在跑，请等待完成或在生产中心中止后再试。",
     ErrorCode.NOVEL_BATCH_RUNNING: "全书批量任务已在运行，请等待结束后再启动新的续跑。",
     ErrorCode.EXTERNAL_REVIEW_PENDING: "有待外审章节未通过，请先在章节详情标记外审通过或关闭该门禁。",
     ErrorCode.LLM_AUTH: "模型 API 认证失败，请检查 Key 是否有效、是否过期。",
@@ -51,7 +51,7 @@ ERROR_HINTS: Dict[ErrorCode, str] = {
     ErrorCode.TASK_ABORTED: "任务已被用户中止。",
     ErrorCode.RECOVERABLE_PIPELINE: "本章可重试：查看运行日志后补跑单章或只重跑门禁。",
     ErrorCode.VALIDATION: "请求参数或项目状态无效，请按提示修正后重试。",
-    ErrorCode.UNKNOWN: "发生未分类错误，请查看 logs/novel_agent.log 或运行监控日志。",
+    ErrorCode.UNKNOWN: "发生未分类错误，请查看 logs/novel_agent.log 或生产中心日志。",
 }
 
 ERROR_ACTIONS: Dict[ErrorCode, Dict[str, Any]] = {

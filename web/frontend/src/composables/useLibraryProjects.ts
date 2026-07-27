@@ -93,7 +93,7 @@ export function useLibraryProjects() {
     event.stopPropagation()
     try {
       await projectStore.switchProject(project.id)
-      await router.push('/chapters/maintenance?expand=alerts')
+      await router.push('/production?tab=reviews')
     } catch (error: any) {
       ElMessage.error(apiErrorMessage(error, '打开修章维护失败'))
     }

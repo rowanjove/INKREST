@@ -252,7 +252,7 @@ async def run_chapter_briefs(
                     + (
                         "达到跳章保护阈值后将暂停全书批量。"
                         if skip_pause_max > 0
-                        else "请尽快在章节维护处理后再续跑。"
+                        else "请尽快在生产中心处理后再续跑。"
                     )
                 ),
                 "run_chapter",

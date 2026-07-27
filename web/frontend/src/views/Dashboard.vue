@@ -51,7 +51,7 @@ function openAction(action: SnapshotAction) {
     router.push(action.target)
     return
   }
-  router.push({ path: '/monitor', query: { intent: action.id, confirm: '1' } })
+  router.push({ path: '/production', query: { intent: action.target, confirm: '1' } })
 }
 
 async function load() {
@@ -132,9 +132,9 @@ onMounted(load)
                 v-if="issue.chapter_id"
                 text
                 type="primary"
-                @click="router.push(`/chapters/${issue.chapter_id}`)"
+                @click="router.push({ path: '/production', query: { tab: 'reviews', chapter: issue.chapter_id } })"
               >
-                查看章节
+                处理问题
               </el-button>
             </div>
           </div>

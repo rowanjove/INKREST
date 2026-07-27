@@ -13,10 +13,10 @@ test.describe('route smoke coverage', () => {
     await expect(page.locator('.config-nav .nav-chip').first()).toBeVisible()
   })
 
-  test('monitor log center renders split task pane', async ({ page, request }) => {
-    await openWithActiveProject(page, request, '/monitor?tab=task_logs')
-    await expect(page.getByRole('heading', { name: '日志中心' })).toBeVisible({ timeout: 15_000 })
-    await expect(page.locator('.task-rounds-split')).toBeVisible()
+  test('production center renders the unified task workspace', async ({ page, request }) => {
+    await openWithActiveProject(page, request, '/production?tab=runs')
+    await expect(page.getByRole('heading', { name: '生产中心' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('.task-workspace')).toBeVisible()
   })
 
   test('planning canvas nodes remain visible and selectable', async ({ page, request }) => {
@@ -59,10 +59,10 @@ test.describe('route smoke coverage', () => {
     ).toBeVisible()
   })
 
-  test('monitor llm logs tab renders viewer shell', async ({ page, request }) => {
-    await openWithActiveProject(page, request, '/monitor?tab=logs')
-    await expect(page.getByRole('heading', { name: '日志中心' })).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole('tab', { name: '费用与接口' })).toBeVisible()
+  test('production logs tab renders project and LLM log shells', async ({ page, request }) => {
+    await openWithActiveProject(page, request, '/production?tab=logs')
+    await expect(page.getByRole('heading', { name: '生产中心' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText('Agent 实时日志')).toBeVisible()
     await expect(page.locator('.llm-log-card').first()).toBeVisible({ timeout: 15_000 })
   })
 })

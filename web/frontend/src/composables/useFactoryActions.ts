@@ -16,11 +16,11 @@ export function resolveFactoryIntent(intent: string, options: UseFactoryActionsO
     return
   }
   if (intent === 'monitor') {
-    navigate('/monitor')
+    navigate('/production?tab=runs')
     return
   }
   if (intent === 'repair') {
-    navigate('/chapters/maintenance?expand=alerts')
+    navigate('/production?tab=reviews')
     return
   }
   if (intent === 'export') {
@@ -51,7 +51,7 @@ export function resolveFactoryRiskAction(
     return
   }
   if (action.intent === 'repair') {
-    options.navigate('/chapters/maintenance?expand=alerts')
+    options.navigate('/production?tab=reviews')
     return
   }
   if (action.intent === 'chapter' || action.route.startsWith('/chapters/')) {

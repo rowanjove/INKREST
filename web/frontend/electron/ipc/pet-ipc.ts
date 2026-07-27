@@ -182,7 +182,7 @@ export function registerPetIpc(ctx: PetIpcContext) {
     const petWindow = ensurePetWindow(ctx);
     const menu = Menu.buildFromTemplate([
       { label: '打开主界面', click: () => ctx.navigateMain('/') },
-      { label: '任务监控', click: () => ctx.navigateMain('/monitor?tab=tasks') },
+      { label: '任务监控', click: () => ctx.navigateMain('/production?tab=runs') },
       { label: '日志', click: () => ctx.navigateMain('/logs') },
       { type: 'separator' },
       {

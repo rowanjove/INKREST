@@ -4,7 +4,7 @@ export const ERROR_CODE_HINTS: Record<string, string> = {
   LLM_NOT_READY: '请在「设置 → Agent 路由」选择可用的日常模型（非 Static 占位）并填写 API Key。',
   ARC_QUEUE_STALE: '卷队列与大纲不一致，请在工作台先点「同步卷队列」或重新 ensure-queue。',
   READINESS_BLOCKED: '开书清单未就绪，请按工作台提示补齐大纲、书名与核心资产。',
-  CIRCUIT_PAUSED: '全书因质量熔断已暂停，建议先到章节维护改稿并重跑门禁，再续跑批量。',
+  CIRCUIT_PAUSED: '全书因质量熔断已暂停，建议先到生产中心改稿并重跑门禁，再续跑批量。',
   CHAPTER_ALREADY_RUNNING: '该章节已有任务在跑，请等待完成或在工作台生产线中止后再试。',
   NOVEL_BATCH_RUNNING: '全书批量任务已在运行，请等待结束后再启动新的续跑。',
   EXTERNAL_REVIEW_PENDING: '有待外审章节未通过，请先在章节详情标记外审通过或关闭该门禁。',

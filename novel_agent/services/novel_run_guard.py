@@ -297,7 +297,7 @@ def validate_novel_continue(root: Path, *, force_resume: bool = False) -> Tuple[
         return (
             False,
             f"{head}（卷 {arc} / 章 {ch}{extra}）。"
-            "请先在章节维护或写作页处理阻断章，确认后使用 force_resume 续跑。",
+            "请先在生产中心或正文页处理阻断章，确认后使用 force_resume 续跑。",
         )
 
     if report.get("remaining_chapters", 0) <= 0 and chapters_remaining_to_target(root) <= 0:
