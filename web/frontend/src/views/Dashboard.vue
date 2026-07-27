@@ -1,501 +1,244 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, h, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { DocumentAdd, Plus } from '@element-plus/icons-vue'
-import { ElMessage, ElNotification } from 'element-plus'
-import DashboardWorkbenchPane from '../components/dashboard/DashboardWorkbenchPane.vue'
-import DashboardMetricsPane from '../components/dashboard/DashboardMetricsPane.vue'
-import DashboardSerializationPane from '../components/dashboard/DashboardSerializationPane.vue'
-import DashboardOutlineDiffDialog from '../components/dashboard/DashboardOutlineDiffDialog.vue'
-import DashboardAddChapterDialog from '../components/dashboard/DashboardAddChapterDialog.vue'
-
-
-import { useDashboardWorkbench } from '../composables/useDashboardWorkbench'
-import { useDashboardSerial } from '../composables/useDashboardSerial'
-import { useDashboardBatchDialog } from '../composables/useDashboardBatchDialog'
-import { useDashboardPolling } from '../composables/useDashboardPolling'
-import { useChapterStore } from '../stores/chapter'
-import { useFactoryStore } from '../stores/factory'
-import type { FactoryMode, FactoryRiskAction, ProductionPlanNextStep } from '../types/factory'
-import { apiErrorMessage, updateAuthorLabel } from '../api'
-import { useFactoryActions } from '../composables/useFactoryActions'
-import { useNovelBatchRun } from '../composables/useNovelBatchRun'
-import { useFactoryAdvancedView } from '../composables/useFactoryAdvancedView'
+import { Refresh } from '@element-plus/icons-vue'
+import PageShell from '../shared/ui/PageShell.vue'
+import ErrorState from '../shared/ui/ErrorState.vue'
+import StatusBadge from '../shared/ui/StatusBadge.vue'
+import { useProjectStore } from '../stores/project'
+import { useProjectSnapshotStore } from '../stores/projectSnapshot'
+import {
+  TASK_STATUS_LABELS,
+  type BlockingIssue,
+  type SnapshotAction,
+} from '../entities/project/projectSnapshot'
+import { PLANNING_KIND_LABELS, type PlanningWorkspace } from '../entities/planning/planningWorkspace'
+import { getPlanningWorkspace } from '../api'
+import { ref } from 'vue'
 
 const router = useRouter()
-const route = useRoute()
-const chapterStore = useChapterStore()
-const factoryStore = useFactoryStore()
-const FactoryControlPanel = defineAsyncComponent(() => import('../components/workbench/FactoryControlPanel.vue'))
-const FactoryPipelinePanel = defineAsyncComponent(() => import('../components/workbench/FactoryPipelinePanel.vue'))
-const ProductionPlanPanel = defineAsyncComponent(() => import('../components/workbench/ProductionPlanPanel.vue'))
-const RepairCommandPanel = defineAsyncComponent(() => import('../components/workbench/RepairCommandPanel.vue'))
-const LongformStabilityPanel = defineAsyncComponent(() => import('../components/workbench/LongformStabilityPanel.vue'))
-const NaturalnessRiskPanel = defineAsyncComponent(() => import('../components/workbench/NaturalnessRiskPanel.vue'))
-const { loading } = storeToRefs(chapterStore)
-const {
-  dashboard: factoryDashboard,
-  loading: factoryLoading,
-  savingMode: factorySavingMode,
-  error: factoryError,
-} = storeToRefs(factoryStore)
+const projectStore = useProjectStore()
+const snapshotStore = useProjectSnapshotStore()
+const { snapshot, status, error } = storeToRefs(snapshotStore)
+const planning = ref<PlanningWorkspace | null>(null)
 
-const {
-  assets,
-  outline,
-  engineStatus,
-  vectorReadiness,
-  serverReadiness,
-  form,
-  chapterCountTotal,
-  calibration,
-  scaleProfile,
-  allDebt,
-  outlineTheme,
-  workScale,
-  maxAvailableChapters,
-  loadWorkbench,
-  refreshScaleArchitecture,
-} = useDashboardWorkbench()
-
-const {
-  serialStatus,
-  copyingTrial,
-  virtualComments,
-  rewritingOutline,
-  applyingOutline,
-  outlineDiffDialogVisible,
-  adaptiveOutlineDiff,
-  exportingSerial,
-  loadSerialData,
-  triggerAdaptiveRewrite,
-  applyAdaptive,
-  copyTrialForPlatform,
-  downloadSerial,
-} = useDashboardSerial()
-
-const {
-  addChapterDialogVisible,
-  addChapterTab,
-  batchSubmitting,
-  chapterPlanGenerating,
-  batchInputMode,
-  bulkText,
-  chapterPlanCount,
-  chapterPlanInstructions,
-  batchRows,
-  openAddChapterDialog,
-  addBatchRow,
-  quickAddChapters,
-  clearBatchRows,
-  importFromBulkText,
-  removeBatchRow,
-  submitChapter,
-  submitBatch,
-  fillBatchFromAI,
-} = useDashboardBatchDialog({ outline, outlineTheme, form })
-
-const activeTab = ref('workbench')
-const savingAuthorLabel = ref(false)
-const { showAdvanced: showFactoryAdvanced, toggleFactoryAdvanced, expandFactoryAdvanced } =
-  useFactoryAdvancedView(factoryDashboard)
-const { restartDashboardTimer, stopDashboardPolling, tasksStore } = useDashboardPolling({
-  activeTab,
-  loadSerialData,
+const completed = computed(() => Number(snapshot.value?.chapter_progress.authoritative_completed || 0))
+const target = computed(() => Number(snapshot.value?.outline_progress.target_chapters || 0))
+const progress = computed(() => target.value ? Math.min(100, Math.round(completed.value / target.value * 100)) : 0)
+const activeTaskCount = computed(() => snapshot.value?.active_tasks.length || 0)
+const blockingIssues = computed(() => snapshot.value?.blocking_issues || [])
+const healthTone = computed(() => {
+  if (blockingIssues.value.some((issue) => issue.severity === 'error')) return 'danger'
+  if (blockingIssues.value.length || snapshot.value?.readiness.warnings.length) return 'warning'
+  return 'success'
 })
-const productionPlan = computed(() => factoryDashboard.value?.production_plan || null)
-const factoryPipeline = computed(() => factoryDashboard.value?.pipeline || [])
-const qualitySummary = computed(() => factoryDashboard.value?.quality_summary || null)
-const repairSummary = computed(() => factoryDashboard.value?.repair || null)
-const stabilityReport = computed(() => factoryDashboard.value?.stability_report || null)
-const naturalnessReport = computed(() => factoryDashboard.value?.naturalness_report || null)
-
-function scrollToWorkbenchPipeline() {
-  activeTab.value = 'workbench'
-  window.setTimeout(() => {
-    document.querySelector('.production-line')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, 80)
-}
-
-const { openDialog: openBatchRunDialog } = useNovelBatchRun()
-
-function continueProduction() {
-  scrollToWorkbenchPipeline()
-  void openBatchRunDialog()
-}
-
-const {
-  handleFactoryIntent,
-  handleFactoryRiskAction,
-  repairChapter,
-  rerunGate,
-} = useFactoryActions({
-  navigate: (path) => router.push(path),
-  onExport: () => {
-    activeTab.value = 'serialization'
-  },
-  onRun: scrollToWorkbenchPipeline,
+const healthLabel = computed(() => {
+  if (healthTone.value === 'danger') return '存在阻塞'
+  if (healthTone.value === 'warning') return '需要关注'
+  return '状态正常'
 })
 
-function handleFactoryAction(intent: string) {
-  handleFactoryIntent(intent)
+function issueTone(issue: BlockingIssue): 'danger' | 'warning' | 'info' {
+  if (issue.severity === 'error') return 'danger'
+  if (issue.severity === 'warning') return 'warning'
+  return 'info'
 }
 
-function handleProductionPlanNextStep(step: ProductionPlanNextStep) {
-  if (step.route) {
-    router.push(step.route)
+function openAction(action: SnapshotAction) {
+  if (!action.enabled) return
+  if (action.kind === 'navigate' && action.target.startsWith('/')) {
+    router.push(action.target)
     return
   }
-  handleFactoryIntent(step.intent)
+  router.push({ path: '/monitor', query: { intent: action.id, confirm: '1' } })
 }
 
-function applyDashboardDeepLink() {
-  if (route.query.tab === 'serialization') {
-    activeTab.value = 'serialization'
-  }
-  if (route.query.focus === 'pipeline') {
-    scrollToWorkbenchPipeline()
-  }
+async function load() {
+  const projectId = projectStore.currentProject?.id
+  if (!projectId) return
+  await Promise.all([
+    snapshotStore.refresh(projectId, { force: true }),
+    getPlanningWorkspace()
+      .then(({ data }) => { planning.value = data })
+      .catch(() => { planning.value = null }),
+  ])
 }
 
-async function handleAuthorLabelChange(label: string) {
-  const pid = factoryDashboard.value?.project.id
-  if (!pid) return
-  savingAuthorLabel.value = true
-  try {
-    await updateAuthorLabel(pid, label)
-    await factoryStore.refreshDashboard()
-    ElMessage.success('作者标签已保存')
-  } catch (error: any) {
-    ElMessage.error(apiErrorMessage(error, '作者标签保存失败'))
-  } finally {
-    savingAuthorLabel.value = false
-  }
-}
-
-async function handleFactoryModeChange(mode: FactoryMode) {
-  try {
-    await factoryStore.saveMode(mode)
-    ElMessage.success('生产模式已更新')
-  } catch (error: any) {
-    ElMessage.error(apiErrorMessage(error, '生产模式保存失败'))
-  }
-}
-
-async function goRepairChapter(chapterId: string) {
-  try {
-    await repairChapter(chapterId)
-    await Promise.all([factoryStore.refreshDashboard(), tasksStore.refreshTaskList()])
-    const notification = ElNotification({
-      title: '自动修复已提交',
-      type: 'success',
-      duration: 8000,
-      message: h('div', { class: 'repair-continue-notice' }, [
-        h('p', { style: 'margin: 0 0 8px' }, `第 ${chapterId} 章已进入修复队列。`),
-        h(
-          'button',
-          {
-            type: 'button',
-            style:
-              'padding:4px 12px;border:1px solid var(--el-color-success);border-radius:4px;background:var(--el-color-success-light-9);color:var(--el-color-success);cursor:pointer;font-size:13px',
-            onClick: () => {
-              notification.close()
-              continueProduction()
-            },
-          },
-          '继续生产',
-        ),
-      ]),
-    })
-    scrollToWorkbenchPipeline()
-  } catch (error: any) {
-    ElMessage.error(apiErrorMessage(error, '自动修复提交失败'))
-    router.push(`/chapters/${chapterId}`)
-  }
-}
-
-function goEditChapter(chapterId: string) {
-  router.push(`/writer?chapter=${chapterId}`)
-}
-
-async function goRerunGate(chapterId: string) {
-  try {
-    await rerunGate(chapterId)
-    ElMessage.success(`第 ${chapterId} 章已提交门禁重跑`)
-    await factoryStore.refreshDashboard()
-  } catch (error: any) {
-    ElMessage.error(apiErrorMessage(error, '门禁重跑提交失败'))
-    router.push(`/chapters/${chapterId}`)
-  }
-}
-
-function onBatchFinished() {
-  void tasksStore.refreshTaskList()
-  void factoryStore.refreshDashboard()
-  void loadWorkbench(loadSerialData)
-}
-
-onMounted(async () => {
-  await Promise.all([loadWorkbench(loadSerialData), factoryStore.loadDashboard()])
-  applyDashboardDeepLink()
-  restartDashboardTimer()
-  watch(() => tasksStore.isRunning, restartDashboardTimer)
-  tasksStore.startRuntimeLogPolling()
-  window.addEventListener('inkrest-batch-finished', onBatchFinished)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('inkrest-batch-finished', onBatchFinished)
-  stopDashboardPolling()
-  tasksStore.stopRuntimeLogPolling()
-})
+onMounted(load)
 </script>
 
 <template>
-  <section class="dashboard">
-    <header class="page-head">
-      <div>
-        <h1>AI 工厂控制台</h1>
-        <p>从灵感到章节产出，监控生产计划、流水线、质量与自动修复。</p>
-      </div>
-      <div class="head-actions">
-        <el-button :icon="DocumentAdd" @click="router.push('/outline')">查看大纲</el-button>
-        <el-button type="primary" :icon="Plus" :disabled="tasksStore.isRunning" @click="openAddChapterDialog">
-          运行单章
-        </el-button>
-      </div>
-    </header>
+  <PageShell
+    :title="snapshot?.project.name || projectStore.currentProject?.name || '项目概览'"
+    description="聚焦项目健康、策划完成度、正文进度和当前阻塞；生产操作统一在生产中心确认。"
+    eyebrow="项目概览"
+  >
+    <template #actions>
+      <el-button :icon="Refresh" :loading="status === 'loading'" @click="load">刷新</el-button>
+      <el-button type="primary" @click="router.push('/outline')">继续策划</el-button>
+    </template>
 
-    <div class="factory-first-screen">
-      <FactoryControlPanel
-        :dashboard="factoryDashboard"
-        :loading="factoryLoading"
-        :saving-mode="factorySavingMode"
-        :saving-author-label="savingAuthorLabel"
-        :error="factoryError"
-        :show-advanced-details="showFactoryAdvanced"
-        @action="handleFactoryAction"
-        @refresh="factoryStore.refreshDashboard"
-        @mode-change="handleFactoryModeChange"
-        @author-label-change="handleAuthorLabelChange"
-        @toggle-advanced="toggleFactoryAdvanced"
-      />
-      <div class="factory-first-screen__grid">
-        <ProductionPlanPanel :plan="productionPlan" @next-step="handleProductionPlanNextStep" />
-        <FactoryPipelinePanel
-          v-if="showFactoryAdvanced"
-          :steps="factoryPipeline"
-          :quality="qualitySummary"
-        />
-      </div>
-      <div class="factory-risk-grid">
-        <LongformStabilityPanel
-          :report="stabilityReport"
-          :priority="factoryDashboard?.project.mode === 'longform_stable'"
-          @action="handleFactoryRiskAction"
-        />
-        <NaturalnessRiskPanel
-          :report="naturalnessReport"
-          :priority="factoryDashboard?.project.mode === 'platform_review'"
-          @action="handleFactoryRiskAction"
-        />
-      </div>
-      <div
-        v-if="!showFactoryAdvanced && repairSummary?.blocked_count"
-        class="factory-repair-compact"
-      >
-        <span>{{ repairSummary.blocked_count }} 章待修复，展开后可自动修复或改稿。</span>
-        <el-button size="small" type="primary" plain @click="expandFactoryAdvanced">
-          展开修复中心
-        </el-button>
-      </div>
-      <RepairCommandPanel
-        v-if="showFactoryAdvanced"
-        :repair="repairSummary"
-        @repair="goRepairChapter"
-        @edit="goEditChapter"
-        @rerun-gate="goRerunGate"
-        @continue-production="continueProduction"
-      />
-    </div>
-
-    <el-tabs v-model="activeTab" class="dashboard-main-tabs">
-      <el-tab-pane label="创作工作台" name="workbench" class="tab-pane-workbench">
-        <DashboardWorkbenchPane
-          :engine-status="engineStatus"
-          :outline="outline"
-          :assets="assets"
-          :max-available-chapters="maxAvailableChapters"
-          :vector-readiness="vectorReadiness"
-          :server-readiness="serverReadiness"
-          :work-scale="workScale"
-          :scale-profile="scaleProfile"
-          :chapter-count-total="chapterCountTotal"
-          @saved="refreshScaleArchitecture"
-        />
-      </el-tab-pane>
-
-      <el-tab-pane label="长篇指标" name="metrics" class="tab-pane-metrics">
-        <DashboardMetricsPane v-model:active-tab="activeTab" :calibration="calibration" :all-debt="allDebt" />
-      </el-tab-pane>
-
-      <el-tab-pane label="连载运营（高级）" name="serialization" class="tab-pane-serialization">
-        <DashboardSerializationPane
-          :serial-status="serialStatus"
-          :virtual-comments="virtualComments"
-          :rewriting-outline="rewritingOutline"
-          :copying-trial="copyingTrial"
-          :exporting-serial="exportingSerial"
-          @refresh="loadSerialData"
-          @trigger-rewrite="triggerAdaptiveRewrite"
-          @copy-trial="copyTrialForPlatform"
-          @download="downloadSerial"
-        />
-      </el-tab-pane>
-    </el-tabs>
-
-    <DashboardOutlineDiffDialog
-      v-model="outlineDiffDialogVisible"
-      :diff="adaptiveOutlineDiff"
-      :applying="applyingOutline"
-      @apply="applyAdaptive"
+    <ErrorState
+      v-if="status === 'error'"
+      title="项目概览加载失败"
+      :description="error"
+      action-label="重试"
+      @action="load"
     />
 
-    <DashboardAddChapterDialog
-      v-model="addChapterDialogVisible"
-      v-model:add-chapter-tab="addChapterTab"
-      v-model:batch-input-mode="batchInputMode"
-      v-model:chapter-plan-count="chapterPlanCount"
-      v-model:chapter-plan-instructions="chapterPlanInstructions"
-      v-model:bulk-text="bulkText"
-      :form="form"
-      :batch-rows="batchRows"
-      :batch-submitting="batchSubmitting"
-      :chapter-plan-generating="chapterPlanGenerating"
-      :loading="loading"
-      @submit-chapter="submitChapter"
-      @submit-batch="submitBatch"
-      @fill-batch-from-ai="fillBatchFromAI"
-      @add-batch-row="addBatchRow"
-      @quick-add-chapters="quickAddChapters"
-      @clear-batch-rows="clearBatchRows"
-      @import-from-bulk-text="importFromBulkText"
-      @remove-batch-row="removeBatchRow"
-    />
+    <template v-else-if="snapshot">
+      <section class="overview-grid">
+        <article class="summary-card health-card">
+          <div class="card-heading">
+            <span>项目健康</span>
+            <StatusBadge :label="healthLabel" :tone="healthTone" dot />
+          </div>
+          <strong>{{ blockingIssues.length }}</strong>
+          <p>项阻塞或风险需要处理</p>
+        </article>
 
-  </section>
+        <article class="summary-card">
+          <div class="card-heading"><span>正文进度</span><span>{{ progress }}%</span></div>
+          <strong>{{ completed }}<small> / {{ target || '—' }} 章</small></strong>
+          <el-progress :percentage="progress" :show-text="false" />
+        </article>
+
+        <article class="summary-card">
+          <div class="card-heading"><span>策划实体</span><span>{{ planning?.entities.length || 0 }}</span></div>
+          <div class="planning-counts">
+            <span v-for="(count, kind) in planning?.counts" :key="kind">
+              {{ PLANNING_KIND_LABELS[kind] || kind }} {{ count }}
+            </span>
+          </div>
+          <p v-if="!planning?.entities.length">尚未建立结构化策划实体</p>
+        </article>
+
+        <article class="summary-card">
+          <div class="card-heading"><span>质量状态</span></div>
+          <strong>{{ snapshot.quality_summary.passed }}<small> 通过</small></strong>
+          <p>{{ snapshot.quality_summary.failed }} 项未通过 · {{ snapshot.quality_summary.total_reports }} 份报告</p>
+        </article>
+      </section>
+
+      <section class="overview-columns">
+        <article class="panel">
+          <header><h2>当前阻塞</h2><span>{{ blockingIssues.length }}</span></header>
+          <div v-if="blockingIssues.length" class="issue-list">
+            <div v-for="issue in blockingIssues" :key="`${issue.code}-${issue.chapter_id || ''}`" class="issue-row">
+              <StatusBadge :label="issue.label" :tone="issueTone(issue)" />
+              <p>{{ issue.detail || issue.source }}</p>
+              <el-button
+                v-if="issue.chapter_id"
+                text
+                type="primary"
+                @click="router.push(`/chapters/${issue.chapter_id}`)"
+              >
+                查看章节
+              </el-button>
+            </div>
+          </div>
+          <p v-else class="empty-copy">没有阻塞项，可以继续策划或前往生产中心。</p>
+        </article>
+
+        <article class="panel">
+          <header><h2>安全的下一步</h2><span>{{ snapshot.next_actions.length }}</span></header>
+          <div class="action-list">
+            <button
+              v-for="action in snapshot.next_actions"
+              :key="action.id"
+              type="button"
+              :disabled="!action.enabled"
+              @click="openAction(action)"
+            >
+              <span>{{ action.label }}</span>
+              <small>{{ action.enabled ? (action.kind === 'intent' ? '前往确认' : '打开') : action.reason }}</small>
+            </button>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <header><h2>正在进行的任务</h2><span>{{ activeTaskCount }}</span></header>
+        <div v-if="snapshot.active_tasks.length" class="task-list">
+          <div v-for="task in snapshot.active_tasks" :key="task.id">
+            <StatusBadge :label="TASK_STATUS_LABELS[task.status]" tone="info" dot />
+            <span>{{ task.task_type }}</span>
+            <small>尝试 {{ task.attempt }}/{{ task.max_attempts }}</small>
+          </div>
+        </div>
+        <p v-else class="empty-copy">当前没有运行中的后台任务。</p>
+      </section>
+    </template>
+  </PageShell>
 </template>
 
 <style scoped>
-.dashboard {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-  animation: dashboardFadeIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-@keyframes dashboardFadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.head-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.factory-first-screen {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.factory-first-screen__grid {
+.overview-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 0.85fr) minmax(0, 1.15fr);
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
 }
-
-.factory-risk-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+.summary-card,
+.panel {
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-sm);
 }
-
-.factory-first-screen__grid > *, .factory-risk-grid > * {
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease;
-}
-
-.factory-first-screen__grid > *:hover, .factory-risk-grid > *:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-panel);
-}
-
-.factory-repair-compact {
+.card-heading,
+.panel header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-alert-danger-border);
-  border-radius: var(--radius-md);
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  color: var(--color-danger);
-  font-size: 13px;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: 12px;
 }
-
-.dashboard-main-tabs {
-  flex: 1;
-  min-height: 0;
+.summary-card > strong { display: block; margin: var(--space-4) 0 5px; color: var(--color-text-strong); font-size: 30px; }
+.summary-card strong small { color: var(--color-text-muted); font-size: 13px; font-weight: 500; }
+.summary-card p,
+.empty-copy { margin: 0; color: var(--color-text-muted); font-size: 12px; line-height: 1.6; }
+.planning-counts { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: var(--space-4); color: var(--color-text); font-size: 12px; }
+.overview-columns { display: grid; grid-template-columns: 1.15fr .85fr; gap: var(--space-4); margin: var(--space-4) 0; }
+.panel header { margin-bottom: var(--space-4); }
+.panel h2 { margin: 0; color: var(--color-text-strong); font-size: 15px; }
+.issue-list,
+.action-list,
+.task-list { display: grid; gap: 8px; }
+.issue-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 9px 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.issue-row p { margin: 0; color: var(--color-text); font-size: 12px; }
+.action-list button {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface-muted);
+  color: var(--color-text-strong);
+  text-align: left;
+  cursor: pointer;
 }
+.action-list button:disabled { opacity: .55; cursor: not-allowed; }
+.action-list small,
+.task-list small { color: var(--color-text-muted); }
+.task-list > div { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--space-3); }
 
-.dashboard-main-tabs :deep(.el-tabs__content) {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+@media (max-width: 1100px) {
+  .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-
-.dashboard-main-tabs :deep(.el-tab-pane) {
-  height: 100%;
-}
-
-.dashboard-main-tabs :deep(.tab-pane-workbench),
-.dashboard-main-tabs :deep(.tab-pane-metrics) {
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding-right: 4px;
-  padding-bottom: 36px;
-  scroll-padding-bottom: 28px;
-}
-
-.dashboard-main-tabs :deep(.tab-pane-serialization) {
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding-right: 4px;
-  padding-bottom: 40px;
-  scroll-padding-bottom: 32px;
-}
-
-@media (max-width: 1120px) {
-  .page-head {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .factory-first-screen__grid {
-    grid-template-columns: 1fr;
-  }
-
-  .factory-risk-grid {
-    grid-template-columns: 1fr;
-  }
+@media (max-width: 720px) {
+  .overview-grid,
+  .overview-columns { grid-template-columns: 1fr; }
 }
 </style>

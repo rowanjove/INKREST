@@ -256,6 +256,15 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('不会自动触发章节生成')
   })
 
+  it('Dashboard stays a snapshot overview without direct generation controls', () => {
+    const source = read('views/Dashboard.vue')
+    expect(source).toContain('useProjectSnapshotStore')
+    expect(source).toContain('项目健康')
+    expect(source).toContain('安全的下一步')
+    expect(source).not.toContain('submitChapter')
+    expect(source).not.toContain('continueNovel')
+  })
+
   it('ConfigView shell wires navigation and sections stack', () => {
     const source = read('views/ConfigView.vue')
     expect(source).toContain('ConfigPageNav')
