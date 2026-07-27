@@ -35,11 +35,11 @@
 - Modify: `web/frontend/src/router.ts`
 - Modify: `web/frontend/src/stores/project.ts`
 
-- [ ] project store 提供幂等 `hydrate()`，明确 `idle/loading/ready/error`。
-- [ ] 路由守卫先等待 hydration，再判断项目范围，避免深链刷新误跳书库。
-- [ ] 路由通过 meta 声明 global/project/pet 范围与页面标题。
-- [ ] 普通切页回到顶部，hash 导航定位目标。
-- [ ] 测试覆盖深链启动、无项目重定向、全局页放行、滚动行为。
+- [x] project store 提供幂等 `hydrate()`，明确 `idle/loading/ready/error`。
+- [x] 路由守卫先等待 hydration，再判断项目范围，避免深链刷新误跳书库。
+- [x] 路由通过 meta 声明 global/project/pet 范围与页面标题。
+- [x] 普通切页回到顶部，hash 导航定位目标。
+- [x] 测试覆盖深链启动、无项目重定向、全局页放行、滚动行为。
 
 ## Task 3：拆分 AppShell 与统一导航
 

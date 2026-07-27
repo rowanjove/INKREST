@@ -31,18 +31,24 @@ export const useProjectStore = defineStore('project', () => {
   const projects = ref<Project[]>([])
   const currentProject = ref<Project | null>(null)
   const loading = ref(false)
+  const hydrationStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const hydrationError = ref('')
+  let hydrationRequest: Promise<void> | null = null
 
-  async function fetchProjects() {
+  async function fetchProjects(throwOnError = false) {
     try {
       const { data } = await listProjects()
       projects.value = data
       if (currentProject.value?.id && !data.some((project: Project) => project.id === currentProject.value?.id)) {
         currentProject.value = null
       }
-    } catch { /* backend warming up */ }
+    } catch (error) {
+      if (throwOnError) throw error
+      /* backend warming up */
+    }
   }
 
-  async function fetchCurrent() {
+  async function fetchCurrent(throwOnError = false) {
     try {
       const { data } = await getCurrentProject()
       if (data.id && data.name) {
@@ -50,12 +56,35 @@ export const useProjectStore = defineStore('project', () => {
       } else if (!currentProject.value?.id) {
         currentProject.value = null
       }
-    } catch {
+    } catch (error) {
       // 网络抖动时保留当前项目，避免 App 层 v-if 卸载连写弹窗
       if (!currentProject.value?.id) {
         currentProject.value = null
       }
+      if (throwOnError) throw error
     }
+  }
+
+  function hydrate(options: { force?: boolean } = {}): Promise<void> {
+    if (hydrationRequest && !options.force) return hydrationRequest
+    if (hydrationStatus.value === 'ready' && !options.force) {
+      return Promise.resolve()
+    }
+    hydrationStatus.value = 'loading'
+    hydrationError.value = ''
+    const pending = Promise.all([fetchProjects(true), fetchCurrent(true)])
+      .then(() => {
+        hydrationStatus.value = 'ready'
+      })
+      .catch((error: unknown) => {
+        hydrationStatus.value = 'error'
+        hydrationError.value = error instanceof Error ? error.message : '项目状态加载失败'
+      })
+      .finally(() => {
+        if (hydrationRequest === pending) hydrationRequest = null
+      })
+    hydrationRequest = pending
+    return pending
   }
 
   async function createProject(
@@ -117,6 +146,8 @@ export const useProjectStore = defineStore('project', () => {
 
   return {
     projects, currentProject, loading,
+    hydrationStatus, hydrationError,
+    hydrate,
     fetchProjects, fetchCurrent, createProject, switchProject, deleteProject,
   }
 })

@@ -1,18 +1,21 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { appScrollBehavior, routeFallback } from './app/router/routeMeta'
 import { useProjectStore } from './stores/project'
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior: appScrollBehavior,
   routes: [
-    { path: '/', name: 'library', component: () => import('./views/LibraryView.vue') },
-    { path: '/onboarding', name: 'onboarding', component: () => import('./views/OnboardingView.vue') },
-    { path: '/create', name: 'create', component: () => import('./views/CreateWizard.vue') },
-    { path: '/reader', name: 'reader', component: () => import('./views/ReaderView.vue') },
-    { path: '/workspace', name: 'dashboard', component: () => import('./views/Dashboard.vue') },
-    { path: '/outline', name: 'outline', component: () => import('./views/OutlineView.vue') },
+    { path: '/', name: 'library', component: () => import('./views/LibraryView.vue'), meta: { scope: 'global', title: '书库', navId: 'library' } },
+    { path: '/onboarding', name: 'onboarding', component: () => import('./views/OnboardingView.vue'), meta: { scope: 'global', title: '欢迎使用栖墨' } },
+    { path: '/create', name: 'create', component: () => import('./views/CreateWizard.vue'), meta: { scope: 'global', title: '新建作品', navId: 'create' } },
+    { path: '/reader', name: 'reader', component: () => import('./views/ReaderView.vue'), meta: { scope: 'project', title: '发布', navId: 'publishing', fullBleed: true } },
+    { path: '/workspace', name: 'dashboard', component: () => import('./views/Dashboard.vue'), meta: { scope: 'project', title: '概览', navId: 'overview' } },
+    { path: '/outline', name: 'outline', component: () => import('./views/OutlineView.vue'), meta: { scope: 'project', title: '策划', navId: 'planning' } },
     {
       path: '/chapters',
       component: () => import('./views/ChaptersLayout.vue'),
+      meta: { scope: 'project', title: '正文', navId: 'manuscript' },
       children: [
         { path: '', redirect: { name: 'chapters-list' } },
         {
@@ -31,38 +34,31 @@ const router = createRouter({
       path: '/chapters/:id',
       name: 'chapter-detail',
       component: () => import('./views/ChapterDetail.vue'),
+      meta: { scope: 'project', title: '章节详情', navId: 'manuscript' },
     },
-    { path: '/state', name: 'state', component: () => import('./views/StateView.vue') },
-    { path: '/assets', name: 'assets', component: () => import('./views/AssetEditor.vue') },
-    { path: '/monitor', name: 'monitor', component: () => import('./views/MonitorView.vue') },
-    { path: '/tasks', redirect: '/chapters/maintenance' },
-    { path: '/logs', redirect: '/monitor?tab=logs' },
-    { path: '/config', name: 'config', component: () => import('./views/ConfigView.vue') },
-    { path: '/writer', name: 'writer', component: () => import('./views/WritingWorkspace.vue') },
-    { path: '/plugins', name: 'plugins', component: () => import('./views/PluginManager.vue') },
-    { path: '/pet', name: 'pet', component: () => import('./views/PetView.vue'), meta: { petShell: true } },
-    { path: '/pet-bubble', name: 'pet-bubble', component: () => import('./views/PetBubbleView.vue'), meta: { petShell: true } },
-    { path: '/trope-workshop', name: 'trope-workshop', component: () => import('./views/TropeWorkshop.vue') },
+    { path: '/state', name: 'state', component: () => import('./views/StateView.vue'), meta: { scope: 'project', title: '剧情状态', navId: 'planning' } },
+    { path: '/assets', name: 'assets', component: () => import('./views/AssetEditor.vue'), meta: { scope: 'project', title: '故事素材', navId: 'planning' } },
+    { path: '/monitor', name: 'monitor', component: () => import('./views/MonitorView.vue'), meta: { scope: 'project', title: '生产', navId: 'production' } },
+    { path: '/tasks', redirect: '/chapters/maintenance', meta: { scope: 'project', title: '任务', navId: 'production' } },
+    { path: '/logs', redirect: '/monitor?tab=logs', meta: { scope: 'project', title: '日志', navId: 'production' } },
+    { path: '/config', name: 'config', component: () => import('./views/ConfigView.vue'), meta: { scope: 'global', title: '设置', navId: 'settings' } },
+    { path: '/writer', name: 'writer', component: () => import('./views/WritingWorkspace.vue'), meta: { scope: 'project', title: '正文', navId: 'manuscript', fullBleed: true } },
+    { path: '/plugins', name: 'plugins', component: () => import('./views/PluginManager.vue'), meta: { scope: 'global', title: '扩展', navId: 'extensions' } },
+    { path: '/pet', name: 'pet', component: () => import('./views/PetView.vue'), meta: { scope: 'pet', title: '杉杉', fullBleed: true } },
+    { path: '/pet-bubble', name: 'pet-bubble', component: () => import('./views/PetBubbleView.vue'), meta: { scope: 'pet', title: '杉杉助手', fullBleed: true } },
+    { path: '/trope-workshop', name: 'trope-workshop', component: () => import('./views/TropeWorkshop.vue'), meta: { scope: 'project', title: '题材模板', navId: 'planning' } },
   ],
 })
 
-// Redirect to library if no project is active (except library, create, trope-workshop & plugins pages)
-router.beforeEach((to) => {
-  if (
-    to.name === 'library' ||
-    to.name === 'onboarding' ||
-    to.name === 'create' ||
-    to.name === 'config' ||
-    to.name === 'plugins' ||
-    to.name === 'pet' ||
-    to.name === 'pet-bubble' ||
-    to.name === 'trope-workshop'
-  ) return true
+router.beforeEach(async (to) => {
+  if (to.meta.scope === 'pet') return true
   const projectStore = useProjectStore()
-  if (!projectStore.currentProject?.id) {
-    return { name: 'library' }
-  }
-  return true
+  await projectStore.hydrate()
+  return routeFallback(to.meta.scope, Boolean(projectStore.currentProject?.id))
+})
+
+router.afterEach((to) => {
+  document.title = to.meta.title ? `${to.meta.title} · 栖墨` : '栖墨'
 })
 
 export default router
