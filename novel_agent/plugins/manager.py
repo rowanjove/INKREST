@@ -30,6 +30,13 @@ from novel_agent.plugins.base import (
 from novel_agent.plugins.discovery import PluginDiscovery, PluginEntry
 from novel_agent.plugins.installer import install_plugin_zip, uninstall_plugin
 from novel_agent.plugins.manifest import find_manifest_path, load_manifest, manifest_to_plugin_meta, ManifestError
+from novel_agent.plugins.permissions import (
+    capability_details,
+    digest_plugin_path,
+    effective_capabilities,
+    risk_level,
+    risk_summary,
+)
 
 logger = get_logger("plugins.manager")
 
@@ -93,17 +100,37 @@ class PluginManager:
             self._active_by_type = {t: [] for t in PluginType}
         self._load_state_config()
         discovered_entries = self.discovery.discover_all()
+        state_changed = False
 
         for name, entry in discovered_entries.items():
             try:
                 plugin_state = self._state_config.get("plugins", {}).get("registry", {}).get(name, {})
                 enabled = plugin_state.get("enabled", entry.source == "entry_point")
-                if entry.source == "local" and not enabled:
-                    logger.info("Skipping untrusted local plugin '%s' until explicitly enabled.", name)
-                    continue
+                descriptor = self._security_descriptor(name, entry)
+                if entry.source == "local":
+                    if enabled and not plugin_state.get("trust_digest"):
+                        self._migrate_legacy_trust(plugin_state, descriptor)
+                        state_changed = True
+                    if not self._is_security_grant_current(plugin_state, descriptor):
+                        if enabled:
+                            plugin_state["enabled"] = False
+                            state_changed = True
+                            logger.warning(
+                                "Disabling local plugin '%s' because its code or permission grant changed.",
+                                name,
+                            )
+                        continue
+                    if not enabled:
+                        continue
 
                 plugin_cls = entry.load_fn()
                 instance = plugin_cls()
+                declared_type = descriptor.get("plugin_type")
+                actual_type = instance.get_meta().plugin_type.value
+                if declared_type and declared_type != "legacy" and actual_type != declared_type:
+                    raise RuntimeError(
+                        f"Plugin type mismatch: manifest={declared_type}, runtime={actual_type}"
+                    )
                 if instance.get_meta().plugin_type == PluginType.WEB_EXTENSION and not self.allow_web_extensions:
                     logger.warning("Skipping project-scoped web extension plugin '%s'.", name)
                     continue
@@ -116,23 +143,41 @@ class PluginManager:
             except Exception as e:
                 logger.error("Failed to load plugin '%s': %s", name, e, exc_info=True)
                 self._set_desired_enabled(name, False)
+        if state_changed:
+            self._save_state_config()
 
     def list_untrusted_local_plugins(self) -> List[str]:
         """List local plugin names without importing their Python modules."""
-        registry = self._state_config.get("plugins", {}).get("registry", {})
         return sorted(
-            name
-            for name, entry in self.discovery.discover_all().items()
-            if entry.source == "local" and not registry.get(name, {}).get("enabled", False)
+            row["name"]
+            for row in self.list_plugin_catalog()
+            if row.get("source") == "local" and not row.get("trusted")
         )
 
-    def trust_local_plugin(self, name: str) -> bool:
-        """Persist explicit trust for a local plugin without importing it yet."""
+    def trust_local_plugin(
+        self,
+        name: str,
+        *,
+        digest: str,
+        capabilities: List[str],
+    ) -> bool:
+        """Persist an explicit content-bound permission grant without importing code."""
         entry = self.discovery.discover_all().get(name)
         if not entry or entry.source != "local":
             return False
-        plugin_state = self._state_config.setdefault("plugins", {}).setdefault("registry", {}).setdefault(name, {})
-        plugin_state["enabled"] = True
+        descriptor = self._security_descriptor(name, entry)
+        expected_capabilities = descriptor["effective_capabilities"]
+        if digest != descriptor["digest"] or sorted(capabilities) != sorted(expected_capabilities):
+            return False
+        plugin_state = (
+            self._state_config
+            .setdefault("plugins", {})
+            .setdefault("registry", {})
+            .setdefault(name, {})
+        )
+        plugin_state["enabled"] = False
+        plugin_state["trust_digest"] = descriptor["digest"]
+        plugin_state["granted_capabilities"] = expected_capabilities
         plugin_state.setdefault("config", {})
         self._save_state_config()
         return True
@@ -190,6 +235,21 @@ class PluginManager:
         if not loaded:
             logger.warning("Plugin '%s' not found.", name)
             return False
+
+        if loaded.entry.source == "local":
+            plugin_state = (
+                self._state_config.get("plugins", {})
+                .get("registry", {})
+                .get(name, {})
+            )
+            descriptor = self._security_descriptor(name, loaded.entry)
+            if not self._is_security_grant_current(plugin_state, descriptor):
+                logger.error(
+                    "Cannot enable local plugin '%s': trust digest or permission grant is stale.",
+                    name,
+                )
+                self._set_desired_enabled(name, False)
+                return False
 
         if loaded.enabled:
             return True
@@ -422,6 +482,52 @@ class PluginManager:
             return None
         return entry.path if entry.path.is_dir() else entry.path.parent
 
+    def _security_descriptor(self, name: str, entry: PluginEntry) -> Dict[str, Any]:
+        """Describe a plugin without importing local Python code."""
+        local = entry.source == "local"
+        legacy = bool(local and (not entry.path or not entry.path.is_dir() or not find_manifest_path(entry.path)))
+        meta = self._meta_from_discovery_entry(name, entry)
+        plugin_type = str(meta.get("plugin_type") or ("legacy" if legacy else ""))
+        declared = list(meta.get("declared_capabilities") or [])
+        capabilities = (
+            effective_capabilities(plugin_type, declared, local=local, legacy=legacy)
+            if local
+            else list(meta.get("capabilities") or [])
+        )
+        digest = digest_plugin_path(entry.path) if local and entry.path else "entry-point"
+        return {
+            "digest": digest,
+            "plugin_type": plugin_type,
+            "declared_capabilities": declared,
+            "effective_capabilities": capabilities,
+            "capability_details": capability_details(capabilities),
+            "capability_mode": "legacy" if legacy else meta.get("capability_mode", "inferred"),
+            "legacy": legacy,
+            "risk_level": risk_level(capabilities),
+            "risk_summary": risk_summary(capabilities, legacy=legacy),
+        }
+
+    @staticmethod
+    def _is_security_grant_current(
+        plugin_state: Dict[str, Any],
+        descriptor: Dict[str, Any],
+    ) -> bool:
+        return (
+            plugin_state.get("trust_digest") == descriptor.get("digest")
+            and sorted(plugin_state.get("granted_capabilities") or [])
+            == sorted(descriptor.get("effective_capabilities") or [])
+        )
+
+    @staticmethod
+    def _migrate_legacy_trust(
+        plugin_state: Dict[str, Any],
+        descriptor: Dict[str, Any],
+    ) -> None:
+        """Bind pre-V2 enabled plugins to their current content on first upgrade."""
+        plugin_state["trust_digest"] = descriptor["digest"]
+        plugin_state["granted_capabilities"] = descriptor["effective_capabilities"]
+        plugin_state["trust_migrated"] = True
+
     def _meta_from_discovery_entry(self, name: str, entry: PluginEntry) -> Dict[str, Any]:
         if entry.path and entry.path.is_dir() and find_manifest_path(entry.path):
             try:
@@ -441,6 +547,8 @@ class PluginManager:
             "min_core_version": "0.1.0",
             "config_schema": {},
             "capabilities": [],
+            "declared_capabilities": [],
+            "capability_mode": "legacy",
         }
 
     def list_plugin_catalog(self) -> List[Dict[str, Any]]:
@@ -454,9 +562,47 @@ class PluginManager:
             entry = discovered.get(name)
             loaded = self.plugins.get(name)
             reg = registry.get(name, {})
-            trusted = bool(reg.get("enabled", False)) or (
-                entry and entry.source == "entry_point"
+            catalog_entry = entry or (loaded.entry if loaded else None)
+            descriptor = (
+                self._security_descriptor(name, catalog_entry)
+                if catalog_entry
+                else {
+                    "digest": "",
+                    "effective_capabilities": [],
+                    "capability_details": [],
+                    "capability_mode": "unknown",
+                    "risk_level": "high",
+                    "risk_summary": "无法确认插件来源与权限。",
+                }
             )
+            trusted = bool(
+                catalog_entry
+                and (
+                    catalog_entry.source == "entry_point"
+                    or self._is_security_grant_current(reg, descriptor)
+                )
+            )
+            security_fields = {
+                "digest": descriptor["digest"],
+                "declared_capabilities": descriptor.get("declared_capabilities", []),
+                "effective_capabilities": descriptor["effective_capabilities"],
+                "capability_details": descriptor["capability_details"],
+                "capability_mode": descriptor["capability_mode"],
+                "risk_level": descriptor["risk_level"],
+                "risk_summary": descriptor["risk_summary"],
+                "requires_reauthorization": bool(
+                    catalog_entry
+                    and catalog_entry.source == "local"
+                    and reg.get("trust_digest")
+                    and not trusted
+                ),
+                "trust_migrated": bool(reg.get("trust_migrated", False)),
+                "origin": (
+                    f"plugins/{catalog_entry.path.name}"
+                    if catalog_entry and catalog_entry.source == "local" and catalog_entry.path
+                    else "Python entry point"
+                ),
+            }
             if loaded:
                 meta = loaded.meta
                 catalog.append({
@@ -476,7 +622,8 @@ class PluginManager:
                     "trusted": trusted,
                     "loaded": True,
                     "installed_version": reg.get("installed_version", meta.version),
-                    "capabilities": getattr(meta, "capabilities", []) or [],
+                    "capabilities": descriptor["effective_capabilities"],
+                    **security_fields,
                 })
             elif entry:
                 meta = self._meta_from_discovery_entry(name, entry)
@@ -489,7 +636,8 @@ class PluginManager:
                     "trusted": trusted,
                     "loaded": False,
                     "installed_version": reg.get("installed_version", meta.get("version")),
-                    "capabilities": meta.get("capabilities", []),
+                    "capabilities": descriptor["effective_capabilities"],
+                    **security_fields,
                 })
         return catalog
 
@@ -498,6 +646,9 @@ class PluginManager:
         pid = result["id"]
         reg = self._state_config.setdefault("plugins", {}).setdefault("registry", {}).setdefault(pid, {})
         reg["enabled"] = False
+        reg.pop("trust_digest", None)
+        reg.pop("granted_capabilities", None)
+        reg.pop("trust_migrated", None)
         reg.setdefault("config", {})
         reg["installed_version"] = result.get("version", "0.1.0")
         self._save_state_config()

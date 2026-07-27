@@ -42,7 +42,7 @@ test.describe('manuscript center and plugin manager', () => {
   test('plugin manager loads plugin grid', async ({ page, request }) => {
     await injectLocalAccessToken(page, request)
     await page.goto('/plugins')
-    await expect(page.getByRole('heading', { name: /插件生态管理/ })).toBeVisible({
+    await expect(page.getByRole('heading', { name: '扩展中心' })).toBeVisible({
       timeout: 15_000,
     })
     await expect(page.locator('.plugins-grid-container')).toBeVisible()

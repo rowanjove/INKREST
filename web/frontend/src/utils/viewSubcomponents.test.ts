@@ -180,10 +180,16 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('pulse-dot')
     expect(source).toContain('onShowDetail')
     expect(source).toContain('onToggle')
+    expect(source).toContain('onTrust')
+    expect(source).toContain('requires_reauthorization')
   })
 
-  it('PluginManagerDialogs keeps install dropzone and config schema form', () => {
+  it('PluginManagerDialogs keeps permission trust, install, and config forms', () => {
     const source = read('components/plugin/PluginManagerDialogs.vue')
+    expect(source).toContain('内容摘要 SHA-256')
+    expect(source).toContain('capability_details')
+    expect(source).toContain('trustAcknowledged')
+    expect(source).toContain('仅建立信任')
     expect(source).toContain('install-dropzone')
     expect(source).toContain('inkrest.plugin.json')
     expect(source).toContain('config_schema.properties')

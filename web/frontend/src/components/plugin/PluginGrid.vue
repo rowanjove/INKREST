@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Delete, Edit, InfoFilled } from '@element-plus/icons-vue'
+import { Delete, Edit, InfoFilled, Lock } from '@element-plus/icons-vue'
 import type { PluginInfo } from '../../utils/pluginManagerConfig'
 
 defineProps<{
@@ -9,6 +9,7 @@ defineProps<{
   onShowConfig: (plugin: PluginInfo) => void
   onDelete: (plugin: PluginInfo) => void
   onToggle: (plugin: PluginInfo) => void
+  onTrust: (plugin: PluginInfo) => void
 }>()
 </script>
 
@@ -20,11 +21,25 @@ defineProps<{
           <div class="card-top">
             <span class="status-indicator" :class="{ enabled: plugin.enabled }">
               <span v-if="plugin.enabled" class="pulse-dot" />
-              {{ plugin.enabled ? '运行中' : plugin.trusted === false ? '待信任' : '已禁用' }}
+              {{
+                plugin.enabled
+                  ? '运行中'
+                  : plugin.requires_reauthorization
+                    ? '需重新授权'
+                    : plugin.trusted === false
+                      ? '待信任'
+                      : '已禁用'
+              }}
             </span>
-            <el-tag size="small" type="info" class="plugin-type-tag">
-              {{ plugin.plugin_type }}
-            </el-tag>
+            <div class="risk-tags">
+              <el-tag
+                size="small"
+                :type="plugin.risk_level === 'high' ? 'danger' : plugin.risk_level === 'medium' ? 'warning' : 'info'"
+              >
+                {{ plugin.risk_level === 'high' ? '高风险' : plugin.risk_level === 'medium' ? '中风险' : '低风险' }}
+              </el-tag>
+              <el-tag size="small" type="info" class="plugin-type-tag">{{ plugin.plugin_type }}</el-tag>
+            </div>
           </div>
 
           <div class="plugin-title-info">
@@ -39,6 +54,17 @@ defineProps<{
             <div class="author-info">
               <span>作者: {{ plugin.author || '未知' }}</span>
               <span class="source-tag" :class="plugin.source">{{ plugin.source }}</span>
+            </div>
+            <div class="permission-preview">
+              <span
+                v-for="permission in plugin.capability_details.slice(0, 3)"
+                :key="permission.id"
+              >
+                {{ permission.label }}
+              </span>
+              <span v-if="plugin.capability_details.length > 3">
+                +{{ plugin.capability_details.length - 3 }}
+              </span>
             </div>
           </div>
 
@@ -59,9 +85,20 @@ defineProps<{
               </el-button>
             </div>
             <div class="action-right">
+              <el-button
+                v-if="plugin.source === 'local' && !plugin.trusted"
+                size="small"
+                type="warning"
+                plain
+                :icon="Lock"
+                @click="onTrust(plugin)"
+              >
+                {{ plugin.requires_reauthorization ? '重新授权' : '检查并信任' }}
+              </el-button>
               <span class="switch-label">{{ plugin.enabled ? '启用' : '关闭' }}</span>
               <el-switch
                 :model-value="plugin.enabled"
+                :disabled="plugin.source === 'local' && !plugin.trusted"
                 active-color="#c66f4f"
                 @change="onToggle(plugin)"
               />
@@ -104,6 +141,13 @@ defineProps<{
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.risk-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
 }
 
 .status-indicator {
@@ -180,6 +224,21 @@ defineProps<{
   color: var(--text-muted);
 }
 
+.permission-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.permission-preview span {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--color-bg-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
 .source-tag {
   font-size: 10px;
   font-weight: 700;
@@ -207,6 +266,13 @@ defineProps<{
 
 .action-left {
   display: flex;
+  gap: 6px;
+}
+
+.action-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 6px;
 }
 

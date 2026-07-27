@@ -10,6 +10,20 @@ export interface PluginInfo {
   min_core_version: string
   enabled: boolean
   trusted?: boolean
+  digest: string
+  effective_capabilities: string[]
+  declared_capabilities: string[]
+  capability_details: Array<{
+    id: string
+    label: string
+    description: string
+    risk: 'low' | 'medium' | 'high'
+  }>
+  capability_mode: 'explicit' | 'inferred' | 'legacy' | string
+  risk_level: 'low' | 'medium' | 'high'
+  risk_summary: string
+  requires_reauthorization: boolean
+  origin: string
   loaded?: boolean
   installed_version?: string
   config_schema: any

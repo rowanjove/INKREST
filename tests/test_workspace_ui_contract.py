@@ -766,6 +766,8 @@ def test_plugin_grid_keeps_trust_toggle_actions() -> None:
     assert "status-indicator" in source
     assert "待信任" in source
     assert "onToggle" in source
+    assert "onTrust" in source
+    assert "requires_reauthorization" in source
     assert "onDelete" in source
 
 

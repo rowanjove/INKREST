@@ -8,7 +8,7 @@
   "entry": "plugin:PLUGIN_CLASS",
   "min_core_version": "1.0.0",
   "requires": [],
-  "capabilities": ["hooks"],
+  "capabilities": ["project_read", "project_write", "model_access"],
   "config_schema": {
     "type": "object",
     "properties": {

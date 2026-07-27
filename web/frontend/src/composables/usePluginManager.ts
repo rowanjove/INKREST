@@ -36,6 +36,10 @@ export function usePluginManager() {
   const installDragOver = ref(false)
   const installFile = ref<File | null>(null)
   const helpDialogVisible = ref(false)
+  const trustDialogVisible = ref(false)
+  const trustTarget = ref<PluginInfo | null>(null)
+  const trustAcknowledged = ref(false)
+  const trustLoading = ref(false)
 
   const fetchPlugins = async () => {
     loading.value = true
@@ -50,20 +54,39 @@ export function usePluginManager() {
     }
   }
 
-  const handleTrust = async (name: string) => {
+  const handleTrust = (target: string | PluginInfo) => {
+    const plugin =
+      typeof target === 'string'
+        ? pluginsList.value.find((item) => item.name === target)
+        : target
+    if (!plugin) {
+      ElMessage.warning('插件信息已变化，请先重新扫描。')
+      return
+    }
+    trustTarget.value = plugin
+    trustAcknowledged.value = false
+    trustDialogVisible.value = true
+  }
+
+  const confirmTrust = async () => {
+    const plugin = trustTarget.value
+    if (!plugin || !trustAcknowledged.value) return
+    trustLoading.value = true
     try {
-      await ElMessageBox.confirm(
-        `插件 ${name} 是本地 Python 代码。仅在确认来源可信时继续。`,
-        '信任本地插件',
-        { type: 'warning', confirmButtonText: '信任并启用', cancelButtonText: '取消' }
+      await trustPlugin(
+        plugin.name,
+        plugin.digest,
+        plugin.effective_capabilities,
       )
-      await trustPlugin(name)
-      ElMessage.success(`${name} 已信任并启用`)
+      trustDialogVisible.value = false
+      ElMessage.success(`${plugin.display_name} 已建立信任；需要时可单独启用。`)
       await fetchPlugins()
     } catch (error: any) {
-      if (error !== 'cancel') {
-        ElMessage.error('信任插件失败: ' + (error.response?.data?.detail || error.message))
-      }
+      const data = error.response?.data
+      ElMessage.error('信任插件失败: ' + (data?.message || data?.detail || error.message))
+      await fetchPlugins()
+    } finally {
+      trustLoading.value = false
     }
   }
 
@@ -83,24 +106,21 @@ export function usePluginManager() {
   const handleToggle = async (plugin: PluginInfo) => {
     const target = !plugin.enabled
     if (target && plugin.source === 'local' && !plugin.trusted) {
-      try {
-        await ElMessageBox.confirm(
-          `启用 ${plugin.display_name} 将信任并加载本地 Python 代码，请确认来源可靠。`,
-          '信任并启用',
-          { type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消' }
-        )
-      } catch {
-        return
-      }
+      handleTrust(plugin)
+      return
     }
     try {
       const res = await togglePlugin(plugin.name, target)
       plugin.enabled = res.data.enabled
-      if (target) plugin.trusted = true
       ElMessage.success(`${plugin.display_name} 已${plugin.enabled ? '启用' : '禁用'}`)
       await fetchPlugins()
     } catch (error: any) {
-      ElMessage.error('切换插件状态失败: ' + (error.response?.data?.detail || error.message))
+      const data = error.response?.data
+      if (data?.code === 'plugin_trust_required') {
+        handleTrust(plugin)
+        return
+      }
+      ElMessage.error('切换插件状态失败: ' + (data?.message || data?.detail || error.message))
     }
   }
 
@@ -261,11 +281,16 @@ export function usePluginManager() {
     installDragOver,
     installFile,
     helpDialogVisible,
+    trustDialogVisible,
+    trustTarget,
+    trustAcknowledged,
+    trustLoading,
     filteredPlugins,
     totalCount,
     activeCount,
     fetchPlugins,
     handleTrust,
+    confirmTrust,
     handleScan,
     handleToggle,
     openInstallDialog,

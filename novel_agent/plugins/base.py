@@ -36,6 +36,7 @@ class PluginMeta:
     min_core_version: str = "0.1.0"
     config_schema: Dict[str, Any] = field(default_factory=dict)  # JSON Schema for config
     tags: List[str] = field(default_factory=list)          # Tag list
+    capabilities: List[str] = field(default_factory=list)  # Additional declared permissions
 
 
 @dataclass

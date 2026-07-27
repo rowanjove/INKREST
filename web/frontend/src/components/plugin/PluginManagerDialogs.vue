@@ -4,6 +4,8 @@ import type { PluginInfo } from '../../utils/pluginManagerConfig'
 const detailDialogVisible = defineModel<boolean>('detailDialogVisible', { required: true })
 const configDialogVisible = defineModel<boolean>('configDialogVisible', { required: true })
 const installDialogVisible = defineModel<boolean>('installDialogVisible', { required: true })
+const trustDialogVisible = defineModel<boolean>('trustDialogVisible', { required: true })
+const trustAcknowledged = defineModel<boolean>('trustAcknowledged', { required: true })
 const configForm = defineModel<Record<string, any>>('configForm', { required: true })
 const configJsonText = defineModel<string>('configJsonText', { required: true })
 const installDragOver = defineModel<boolean>('installDragOver', { required: true })
@@ -13,15 +15,89 @@ defineProps<{
   configJsonMode: boolean
   installUploading: boolean
   installFile: File | null
+  trustTarget: PluginInfo | null
+  trustLoading: boolean
   getTypeLabel: (typeVal: string) => string
   onInstallDrop: (e: DragEvent) => void
   onInstallFileChange: (e: Event) => void
   onSubmitInstall: () => void
   onSaveConfig: () => void
+  onConfirmTrust: () => void
 }>()
 </script>
 
 <template>
+  <el-dialog
+    v-model="trustDialogVisible"
+    title="检查插件权限"
+    width="560px"
+    align-center
+    @closed="trustAcknowledged = false"
+  >
+    <div v-if="trustTarget" class="trust-dialog">
+      <el-alert
+        :title="trustTarget.requires_reauthorization ? '插件内容或权限已变化，需要重新授权' : '本地插件将在栖墨后端进程中运行代码'"
+        type="warning"
+        :closable="false"
+        show-icon
+      >
+        {{ trustTarget.risk_summary }}
+      </el-alert>
+
+      <dl class="trust-facts">
+        <div><dt>插件</dt><dd>{{ trustTarget.display_name }} · v{{ trustTarget.version }}</dd></div>
+        <div><dt>来源</dt><dd>{{ trustTarget.origin }}</dd></div>
+        <div><dt>作者</dt><dd>{{ trustTarget.author || '未声明' }}</dd></div>
+        <div>
+          <dt>权限模式</dt>
+          <dd>
+            {{
+              trustTarget.capability_mode === 'legacy'
+                ? '旧式插件（最高边界）'
+                : trustTarget.capability_mode === 'explicit'
+                  ? '清单已声明'
+                  : '按插件类型推导'
+            }}
+          </dd>
+        </div>
+      </dl>
+
+      <section class="permission-list">
+        <h3>将授予的权限</h3>
+        <article
+          v-for="permission in trustTarget.capability_details"
+          :key="permission.id"
+        >
+          <div>
+            <strong>{{ permission.label }}</strong>
+            <span :class="`risk-${permission.risk}`">{{ permission.risk }}</span>
+          </div>
+          <p>{{ permission.description }}</p>
+        </article>
+      </section>
+
+      <div class="digest-row">
+        <span>内容摘要 SHA-256</span>
+        <code>{{ trustTarget.digest }}</code>
+      </div>
+
+      <el-checkbox v-model="trustAcknowledged" class="trust-check">
+        我已核对来源、内容摘要与上述权限，并理解 Python 插件不受操作系统沙箱隔离。
+      </el-checkbox>
+    </div>
+    <template #footer>
+      <el-button @click="trustDialogVisible = false">取消</el-button>
+      <el-button
+        type="warning"
+        :loading="trustLoading"
+        :disabled="!trustAcknowledged"
+        @click="onConfirmTrust"
+      >
+        仅建立信任
+      </el-button>
+    </template>
+  </el-dialog>
+
   <el-dialog v-model="detailDialogVisible" title="ℹ️ 插件详细信息" width="500px" align-center>
     <div v-if="selectedPlugin" class="plugin-detail-dialog-content">
       <div class="detail-row">
@@ -69,6 +145,20 @@ defineProps<{
       <div class="detail-row">
         <span class="detail-label">最小核心版本：</span>
         <span class="detail-value"><code>{{ selectedPlugin.min_core_version }}</code></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">信任状态：</span>
+        <span class="detail-value">
+          {{ selectedPlugin.trusted ? '内容与权限已确认' : '尚未确认' }}
+        </span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">内容摘要：</span>
+        <span class="detail-value digest-value"><code>{{ selectedPlugin.digest }}</code></span>
+      </div>
+      <div class="detail-desc-box">
+        <strong>有效权限：</strong>
+        <p>{{ selectedPlugin.capability_details.map((item) => item.label).join('、') }}</p>
       </div>
       <div class="detail-desc-box">
         <strong>插件描述：</strong>
@@ -185,6 +275,52 @@ defineProps<{
 </template>
 
 <style scoped>
+.trust-dialog {
+  display: grid;
+  gap: 16px;
+}
+
+.trust-facts {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+.trust-facts > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; }
+.trust-facts dt { color: var(--color-text-muted); font-size: 12px; }
+.trust-facts dd { margin: 0; color: var(--color-text-strong); font-size: 12px; }
+
+.permission-list {
+  display: grid;
+  gap: 7px;
+}
+.permission-list h3 { margin: 0 0 2px; color: var(--color-text-strong); font-size: 13px; }
+.permission-list article {
+  padding: 9px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg-surface-muted);
+}
+.permission-list article > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.permission-list strong { color: var(--color-text-strong); font-size: 12px; }
+.permission-list article span { font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.permission-list article p { margin: 3px 0 0; color: var(--color-text-muted); font-size: 11px; line-height: 1.45; }
+.risk-low { color: var(--color-success); }
+.risk-medium { color: var(--color-warning); }
+.risk-high { color: var(--color-danger); }
+
+.digest-row {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-bg-surface-muted);
+}
+.digest-row span { color: var(--color-text-muted); font-size: 10px; }
+.digest-row code,
+.digest-value code { overflow-wrap: anywhere; color: var(--color-text-strong); font-size: 10px; }
+.trust-check { align-items: flex-start; white-space: normal; }
+.trust-check :deep(.el-checkbox__label) { color: var(--color-text); font-size: 11px; line-height: 1.5; white-space: normal; }
+
 .install-dropzone {
   border: 2px dashed #d1d5db;
   border-radius: 12px;

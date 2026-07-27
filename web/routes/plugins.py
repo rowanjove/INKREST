@@ -13,6 +13,11 @@ class ToggleRequest(BaseModel):
     enabled: bool
 
 
+class TrustRequest(BaseModel):
+    digest: str
+    capabilities: List[str]
+
+
 class ConfigUpdateRequest(BaseModel):
     config: Dict[str, Any]
 
@@ -78,16 +83,35 @@ def reload_plugins():
 
 
 @router.post("/{name}/trust")
-def trust_plugin(name: str):
-    """Explicitly trust a local plugin, then import and activate it."""
+def trust_plugin(name: str, req: TrustRequest):
+    """Persist the exact content digest and permission grant confirmed by the user."""
     name = _validate_id(name, "plugin_name")
     pm = get_plugin_manager()
-    if not pm.trust_local_plugin(name):
+    catalog = {item["name"]: item for item in pm.list_plugin_catalog()}
+    row = catalog.get(name)
+    if not row or row.get("source") != "local":
         raise HTTPException(404, f"Local plugin {name} not found")
-    _reload_plugin_manager(pm)
-    if not pm.enable_plugin(name):
-        raise HTTPException(400, f"Failed to enable trusted plugin {name}")
-    return {"name": name, "enabled": True, "trusted": True}
+    if not pm.trust_local_plugin(
+        name,
+        digest=req.digest,
+        capabilities=req.capabilities,
+    ):
+        raise HTTPException(
+            409,
+            detail={
+                "code": "plugin_grant_changed",
+                "message": "插件内容或权限已变化，请刷新后重新确认。",
+                "digest": row.get("digest"),
+                "capabilities": row.get("effective_capabilities", []),
+            },
+        )
+    return {
+        "name": name,
+        "enabled": False,
+        "trusted": True,
+        "digest": row.get("digest"),
+        "effective_capabilities": row.get("effective_capabilities", []),
+    }
 
 
 @router.get("/{name}")
@@ -124,14 +148,21 @@ def toggle_plugin(name: str, req: ToggleRequest):
 
     if req.enabled:
         if row.get("source") == "local" and not row.get("trusted"):
-            if not pm.trust_local_plugin(name):
-                raise HTTPException(400, f"无法信任插件 {name}")
-            _reload_plugin_manager(pm)
-        if name not in pm.plugins:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "plugin_trust_required",
+                    "message": "启用前必须先确认插件来源、内容摘要与权限。",
+                    "digest": row.get("digest"),
+                    "capabilities": row.get("effective_capabilities", []),
+                },
+            )
+        if row.get("source") == "local" and name not in pm.plugins:
+            pm._set_desired_enabled(name, True)
             _reload_plugin_manager(pm)
         if name not in pm.plugins:
             raise HTTPException(400, f"插件 {name} 未能加载，请检查清单与代码")
-        success = pm.enable_plugin(name)
+        success = pm.plugins[name].enabled or pm.enable_plugin(name)
     else:
         if name not in pm.plugins:
             pm._set_desired_enabled(name, False)

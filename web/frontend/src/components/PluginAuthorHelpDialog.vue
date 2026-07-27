@@ -30,6 +30,7 @@ const manifestExample = `{
   "entry": "plugin:PLUGIN_CLASS",
   "min_core_version": "1.0.0",
   "requires": [],
+  "capabilities": ["project_read", "project_write", "model_access"],
   "config_schema": {
     "type": "object",
     "properties": {
@@ -94,13 +95,25 @@ PLUGIN_CLASS = MyPlugin`
           <li><code>version</code> / <code>display_name</code> / <code>description</code> / <code>author</code></li>
           <li><code>min_core_version</code> — 要求的栖墨核心版本，当前为 <code>1.0.0</code></li>
           <li><code>requires</code> — 依赖的其他插件 id 数组</li>
+          <li><code>capabilities</code> — 权限数组；未知或重复值会被拒绝，省略时按类型推导</li>
           <li><code>config_schema</code> — JSON Schema，用于设置页「配置」表单</li>
         </ul>
         <pre class="code-sample">{{ manifestExample }}</pre>
       </section>
 
       <section class="help-block">
-        <h3>3. entry 写法</h3>
+        <h3>3. 权限值</h3>
+        <p>
+          支持 <code>project_read</code>、<code>project_write</code>、
+          <code>model_access</code>、<code>network_access</code>、
+          <code>file_export</code>、<code>web_routes</code> 和
+          <code>command_execution</code>。应用会补齐插件类型的最低权限，
+          并为所有本地插件标记 <code>local_code</code>。
+        </p>
+      </section>
+
+      <section class="help-block">
+        <h3>4. entry 写法</h3>
         <ul>
           <li><code>plugin:PLUGIN_CLASS</code> — 从 <code>plugin.py</code> 或包 <code>__init__.py</code> 加载类</li>
           <li><code>package:子模块路径:类名</code> — 例如 <code>package:hooks.writer:WriterHook</code></li>
@@ -108,13 +121,13 @@ PLUGIN_CLASS = MyPlugin`
       </section>
 
       <section class="help-block">
-        <h3>4. Python 最小示例（plugin.py）</h3>
+        <h3>5. Python 最小示例（plugin.py）</h3>
         <p class="muted">继承类型须与 <code>plugin_type</code> 匹配，例如流水线钩子继承 <code>PipelineHookPlugin</code>。</p>
         <pre class="code-sample">{{ pluginPyExample }}</pre>
       </section>
 
       <section class="help-block">
-        <h3>5. 常用 plugin_type</h3>
+        <h3>6. 常用 plugin_type</h3>
         <table class="type-table">
           <thead>
             <tr>
@@ -132,17 +145,18 @@ PLUGIN_CLASS = MyPlugin`
       </section>
 
       <section class="help-block">
-        <h3>6. 安装、信任与配置</h3>
+        <h3>7. 安装、信任与配置</h3>
         <ol>
           <li>点击「载入插件」上传 <code>.zip</code>，安装后默认<strong>未信任、未启用</strong></li>
-          <li>打开卡片开关 → 确认信任后才会执行本地 Python 代码</li>
+          <li>核对来源、内容摘要与权限，明确确认后仅建立信任</li>
+          <li>再单独打开启用开关；代码或权限变化后必须重新确认</li>
           <li>点「配置」编辑参数，保存到 <code>config/plugins.yaml</code></li>
           <li>改代码后点「重新扫描」或重启应用以重新加载</li>
         </ol>
       </section>
 
       <section class="help-block">
-        <h3>7. 本地打包（可选）</h3>
+        <h3>8. 本地打包（可选）</h3>
         <p>项目内提供模板目录 <code>templates/plugin-starter/</code>，可用脚本打包：</p>
         <pre class="code-sample">.\scripts\package-plugin.ps1 -PluginDir .\templates\plugin-starter</pre>
         <p class="muted">更完整的说明见仓库 <code>docs/plugins/PLUGIN_AUTHOR.md</code>。</p>

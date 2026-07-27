@@ -67,6 +67,65 @@ def test_install_plugin_zip_extracts_manifest(tmp_path: Path) -> None:
     assert (plugin_dir / "inkrest.plugin.json").is_file()
     manifest = load_manifest(plugin_dir)
     assert manifest["plugin_type"] == "pipeline_hook"
+    assert manifest["capability_mode"] == "inferred"
+    assert {"local_code", "project_read", "project_write", "model_access"} <= set(
+        manifest["capabilities"]
+    )
+
+
+@pytest.mark.parametrize(
+    "capabilities, message",
+    [
+        (["unknown_permission"], "未知插件权限"),
+        (["project_read", "project_read"], "重复插件权限"),
+        ("project_read", "capabilities 必须是字符串数组"),
+    ],
+)
+def test_manifest_rejects_invalid_capability_declarations(
+    tmp_path: Path,
+    capabilities: object,
+    message: str,
+) -> None:
+    root = tmp_path / "invalid-capability"
+    root.mkdir()
+    (root / "plugin.py").write_text("PLUGIN_CLASS = object\n", encoding="utf-8")
+    (root / "inkrest.plugin.json").write_text(
+        json.dumps(
+            {
+                "id": "invalid-capability",
+                "plugin_type": "quality_guard",
+                "entry": "plugin:PLUGIN_CLASS",
+                "capabilities": capabilities,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ManifestError, match=message):
+        load_manifest(root)
+
+
+def test_legacy_hooks_capability_uses_compatibility_inference(tmp_path: Path) -> None:
+    root = tmp_path / "legacy-hooks"
+    root.mkdir()
+    (root / "plugin.py").write_text("PLUGIN_CLASS = object\n", encoding="utf-8")
+    (root / "inkrest.plugin.json").write_text(
+        json.dumps(
+            {
+                "id": "legacy-hooks",
+                "plugin_type": "pipeline_hook",
+                "entry": "plugin:PLUGIN_CLASS",
+                "capabilities": ["hooks"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = load_manifest(root)
+    assert manifest["capability_mode"] == "compatibility"
+    assert {"project_read", "project_write", "model_access"} <= set(
+        manifest["capabilities"]
+    )
 
 
 def test_install_rejects_path_traversal(tmp_path: Path) -> None:
@@ -125,3 +184,7 @@ def test_plugin_manager_install_and_catalog(tmp_path: Path) -> None:
     row = next(p for p in catalog if p["name"] == "demo-hook")
     assert row["trusted"] is False
     assert row["loaded"] is False
+    assert row["digest"]
+    assert row["risk_level"] == "high"
+    assert row["origin"] == "plugins/demo-hook"
+    assert row["capability_details"]

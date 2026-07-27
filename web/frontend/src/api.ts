@@ -280,8 +280,8 @@ export const listPlugins = () =>
 export const listUntrustedPlugins = () =>
   api.get('/plugins/untrusted')
 
-export const trustPlugin = (name: string) =>
-  api.post(`/plugins/${name}/trust`)
+export const trustPlugin = (name: string, digest: string, capabilities: string[]) =>
+  api.post(`/plugins/${name}/trust`, { digest, capabilities })
 
 export const getPlugin = (name: string) =>
   api.get(`/plugins/${name}`)

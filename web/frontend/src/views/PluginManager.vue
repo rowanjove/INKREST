@@ -24,10 +24,15 @@ const {
   installDragOver,
   installFile,
   helpDialogVisible,
+  trustDialogVisible,
+  trustTarget,
+  trustAcknowledged,
+  trustLoading,
   filteredPlugins,
   totalCount,
   activeCount,
   handleTrust,
+  confirmTrust,
   handleScan,
   handleToggle,
   openInstallDialog,
@@ -46,8 +51,8 @@ const {
   <div class="plugin-manager-view">
     <header class="page-head">
       <div class="page-title-area">
-        <h1>🧩 插件生态管理</h1>
-        <p>扩展您的创作环境，切换丰富的底层策略、质量保障以及格式导出功能。</p>
+        <h1>扩展中心</h1>
+        <p>集中检查插件来源、内容摘要、运行权限与启用状态。</p>
       </div>
       <div class="head-actions">
         <el-tooltip content="插件格式与开发说明" placement="bottom">
@@ -110,6 +115,7 @@ const {
       :on-show-config="showConfig"
       :on-delete="handleDelete"
       :on-toggle="handleToggle"
+      :on-trust="handleTrust"
     />
 
     <PluginAuthorHelpDialog v-model:visible="helpDialogVisible" />
@@ -118,6 +124,8 @@ const {
       v-model:detail-dialog-visible="detailDialogVisible"
       v-model:config-dialog-visible="configDialogVisible"
       v-model:install-dialog-visible="installDialogVisible"
+      v-model:trust-dialog-visible="trustDialogVisible"
+      v-model:trust-acknowledged="trustAcknowledged"
       v-model:config-form="configForm"
       v-model:config-json-text="configJsonText"
       v-model:install-drag-over="installDragOver"
@@ -125,11 +133,14 @@ const {
       :config-json-mode="configJsonMode"
       :install-uploading="installUploading"
       :install-file="installFile"
+      :trust-target="trustTarget"
+      :trust-loading="trustLoading"
       :get-type-label="getTypeLabel"
       :on-install-drop="onInstallDrop"
       :on-install-file-change="onInstallFileChange"
       :on-submit-install="submitInstall"
       :on-save-config="saveConfig"
+      :on-confirm-trust="confirmTrust"
     />
   </div>
 </template>

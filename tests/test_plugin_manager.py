@@ -159,10 +159,95 @@ PLUGIN_CLASS = TestHook
         self.assertIn("trusted", pm.list_untrusted_local_plugins())
         self.assertFalse(marker.exists())
 
-        self.assertTrue(pm.trust_local_plugin("trusted"))
+        row = next(item for item in pm.list_plugin_catalog() if item["name"] == "trusted")
+        self.assertTrue(
+            pm.trust_local_plugin(
+                "trusted",
+                digest=row["digest"],
+                capabilities=row["effective_capabilities"],
+            )
+        )
+        self.assertFalse(marker.exists())
+        pm._set_desired_enabled("trusted", True)
         pm.initialize()
         self.assertTrue(marker.exists())
         self.assertTrue(pm.plugins["trusted"].enabled)
+
+    def test_plugin_change_invalidates_trust_before_import(self):
+        (self.config_dir / "plugins.yaml").unlink()
+        marker = self.plugins_dir / "changed.txt"
+        plugin_path = self.plugins_dir / "changed.py"
+        plugin_path.write_text(
+            "from novel_agent.plugins.base import PluginBase, PluginMeta\n"
+            "class Changed(PluginBase):\n"
+            "    def get_meta(self): return PluginMeta(name='changed')\n"
+            "PLUGIN_CLASS = Changed\n",
+            encoding="utf-8",
+        )
+        pm = PluginManager(self.temp_dir)
+        pm.initialize()
+        row = next(item for item in pm.list_plugin_catalog() if item["name"] == "changed")
+        self.assertTrue(
+            pm.trust_local_plugin(
+                "changed",
+                digest=row["digest"],
+                capabilities=row["effective_capabilities"],
+            )
+        )
+        pm._set_desired_enabled("changed", True)
+
+        plugin_path.write_text(
+            "from pathlib import Path\n"
+            "Path(__file__).with_name('changed.txt').write_text('executed', encoding='utf-8')\n"
+            + plugin_path.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        pm.initialize()
+
+        self.assertFalse(marker.exists())
+        self.assertNotIn("changed", pm.plugins)
+        changed = next(item for item in pm.list_plugin_catalog() if item["name"] == "changed")
+        self.assertFalse(changed["trusted"])
+        self.assertTrue(changed["requires_reauthorization"])
+        state = yaml.safe_load((self.config_dir / "plugins.yaml").read_text(encoding="utf-8"))
+        self.assertFalse(state["plugins"]["registry"]["changed"]["enabled"])
+
+    def test_enable_requires_digest_bound_trust(self):
+        (self.config_dir / "plugins.yaml").unlink()
+        (self.plugins_dir / "api_guard.py").write_text(
+            "from novel_agent.plugins.base import PluginBase, PluginMeta\n"
+            "class ApiGuard(PluginBase):\n"
+            "    def get_meta(self): return PluginMeta(name='api-guard')\n"
+            "PLUGIN_CLASS = ApiGuard\n",
+            encoding="utf-8",
+        )
+        pm = PluginManager(self.temp_dir)
+        pm.initialize()
+        client = TestClient(web_app)
+
+        with patch("web.routes.plugins.get_plugin_manager", return_value=pm):
+            denied = client.put("/api/plugins/api_guard/toggle", json={"enabled": True})
+            row = next(item for item in pm.list_plugin_catalog() if item["name"] == "api_guard")
+            stale = client.post(
+                "/api/plugins/api_guard/trust",
+                json={"digest": "stale", "capabilities": row["effective_capabilities"]},
+            )
+            trusted = client.post(
+                "/api/plugins/api_guard/trust",
+                json={
+                    "digest": row["digest"],
+                    "capabilities": row["effective_capabilities"],
+                },
+            )
+            enabled = client.put("/api/plugins/api_guard/toggle", json={"enabled": True})
+
+        self.assertEqual(denied.status_code, 409)
+        self.assertEqual(denied.json()["code"], "plugin_trust_required")
+        self.assertEqual(stale.status_code, 409)
+        self.assertEqual(trusted.status_code, 200)
+        self.assertFalse(trusted.json()["enabled"])
+        self.assertEqual(enabled.status_code, 200)
+        self.assertTrue(enabled.json()["enabled"])
 
     def test_project_scoped_web_extension_is_not_loaded(self):
         (self.plugins_dir / "project_web.py").write_text(

@@ -8,11 +8,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from novel_agent.plugins.base import PluginType
+from novel_agent.plugins.permissions import (
+    effective_capabilities,
+    validate_declared_capabilities,
+)
 
 MANIFEST_FILENAMES = ("inkrest.plugin.json", "plugin.json")
 PLUGIN_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 CORE_VERSION = "1.0.0"
 VALID_PLUGIN_TYPES = {t.value for t in PluginType}
+LEGACY_CAPABILITY_MARKERS = {"hooks"}
 
 
 class ManifestError(ValueError):
@@ -68,10 +73,23 @@ def validate_manifest(data: Dict[str, Any], plugin_root: Path) -> Dict[str, Any]
         raise ManifestError("requires 必须是字符串数组")
     requires = [str(r).strip() for r in requires if str(r).strip()]
 
-    capabilities = data.get("capabilities") or []
-    if not isinstance(capabilities, list):
-        capabilities = []
-    capabilities = [str(c).strip() for c in capabilities if str(c).strip()]
+    capabilities_declared = "capabilities" in data
+    raw_capabilities = data.get("capabilities")
+    legacy_capability_mode = bool(
+        isinstance(raw_capabilities, list)
+        and raw_capabilities
+        and all(item in LEGACY_CAPABILITY_MARKERS for item in raw_capabilities)
+    )
+    if legacy_capability_mode:
+        if len(raw_capabilities) != len(set(raw_capabilities)):
+            raise ManifestError(f"重复插件权限: {raw_capabilities[0]}")
+        declared_capabilities = []
+    else:
+        try:
+            declared_capabilities = validate_declared_capabilities(raw_capabilities)
+        except ValueError as exc:
+            raise ManifestError(str(exc)) from exc
+    capabilities = effective_capabilities(ptype, declared_capabilities)
 
     extract_rules = data.get("extract") or []
     bundles = data.get("bundles") or []
@@ -95,6 +113,14 @@ def validate_manifest(data: Dict[str, Any], plugin_root: Path) -> Dict[str, Any]
         "min_core_version": min_core,
         "requires": requires,
         "capabilities": capabilities,
+        "declared_capabilities": declared_capabilities,
+        "capability_mode": (
+            "compatibility"
+            if legacy_capability_mode
+            else "explicit"
+            if capabilities_declared
+            else "inferred"
+        ),
         "config_schema": data.get("config_schema") if isinstance(data.get("config_schema"), dict) else {},
         "tags": data.get("tags") if isinstance(data.get("tags"), list) else [],
         "extract": extract_rules,
@@ -144,6 +170,8 @@ def manifest_to_plugin_meta(data: Dict[str, Any]) -> Dict[str, Any]:
         "min_core_version": data.get("min_core_version") or "0.1.0",
         "config_schema": data.get("config_schema") or {},
         "capabilities": data.get("capabilities") or [],
+        "declared_capabilities": data.get("declared_capabilities") or [],
+        "capability_mode": data.get("capability_mode") or "inferred",
         "tags": data.get("tags") or [],
     }
 
