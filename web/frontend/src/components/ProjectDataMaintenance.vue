@@ -17,6 +17,9 @@ const backingUp = ref(false)
 const resetting = ref(false)
 const lastBackup = ref<ProjectBackupResult | null>(null)
 const project = computed(() => projectStore.currentProject)
+const backupPhrase = computed(() =>
+  project.value?.id ? `BACKUP ${project.value.id}` : '',
+)
 const resetPhrase = computed(() =>
   project.value?.id ? `RESET V2 ${project.value.id}` : '',
 )
@@ -30,15 +33,20 @@ function formatBytes(value: number): string {
 async function createBackup() {
   if (!project.value?.id) return
   try {
-    await ElMessageBox.confirm(
-      `为《${project.value.name}》创建一次项目数据备份？生成任务运行时不会执行备份。`,
+    const { value } = await ElMessageBox.prompt(
+      `为《${project.value.name}》创建项目备份。生成任务运行时不会执行。\n\n请输入：${backupPhrase.value}`,
       '备份当前项目',
       {
         confirmButtonText: '创建备份',
         cancelButtonText: '取消',
         type: 'info',
+        inputPlaceholder: backupPhrase.value,
       },
     )
+    if (value !== backupPhrase.value) {
+      ElMessage.error('确认语不匹配，未执行任何操作')
+      return
+    }
     backingUp.value = true
     const { data } = await backupProject(project.value.id)
     lastBackup.value = data.backup

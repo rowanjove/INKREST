@@ -280,6 +280,7 @@ describe('refactored view subcomponents', () => {
     const source = read('components/ProjectDataMaintenance.vue')
     expect(source).toContain('backupProject')
     expect(source).toContain('resetProjectToV2')
+    expect(source).toContain('BACKUP')
     expect(source).toContain('RESET V2')
     expect(source).toContain('SHA-256')
     expect(source).toContain('配置、提示词、素材与插件不会被删除')
