@@ -19,7 +19,7 @@
 - Create: `novel_agent/domain/project_snapshot.py`
 - Create: `tests/test_v2_domain_contracts.py`
 
-- [ ] **Step 1: 写失败的任务状态机测试**
+- [x] **Step 1: 写失败的任务状态机测试**
 
 覆盖：
 
@@ -30,7 +30,7 @@
 - 所有终态不能再次转移
 - 未知状态和非法转移抛出明确的领域异常
 
-- [ ] **Step 2: 写失败的 DTO 序列化测试**
+- [x] **Step 2: 写失败的 DTO 序列化测试**
 
 `TaskRecord` 必须包含设计中的全部字段；`ProjectSnapshot` 必须包含：
 
@@ -48,7 +48,7 @@ next_actions
 updated_at
 ```
 
-- [ ] **Step 3: 实现领域枚举、转移函数和 Pydantic DTO**
+- [x] **Step 3: 实现领域枚举、转移函数和 Pydantic DTO**
 
 任务状态固定为：
 
@@ -63,7 +63,7 @@ chapter, chapter_batch, novel_plan, chapter_plan, novel_run,
 novel_continue, novel_autopilot, embedding_setup, export
 ```
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 ```powershell
 py -3.12 -m pytest tests/test_v2_domain_contracts.py -q --tb=short
