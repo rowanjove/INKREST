@@ -34,6 +34,27 @@ class PublicationBook(BaseModel):
     chapters: list[PublicationChapter] = Field(default_factory=list)
 
 
+class PublicationChapterSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chapter_id: str
+    title: str
+    revision: int
+    word_count: int
+    has_content: bool
+    updated_at: str
+
+
+class PublicationBookSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    author: str = "栖墨"
+    language: str = "zh-CN"
+    chapter_count: int
+    word_count: int
+
+
 class PreflightItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -58,7 +79,8 @@ class PublishingWorkspace(BaseModel):
 
     schema_version: Literal[1] = 1
     snapshot: ProjectSnapshot
-    book: PublicationBook
+    book: PublicationBookSummary
+    chapters: list[PublicationChapterSummary]
     selected_chapter_id: str = ""
     selected_chapter: PublicationChapter | None = None
     platform: dict

@@ -81,6 +81,8 @@ class ApiPublishingTests(ApiTestBase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["book"]["title"], "数据库之书")
+        self.assertEqual(payload["book"]["chapter_count"], 2)
+        self.assertNotIn("plain_text", payload["chapters"][0])
         self.assertEqual(payload["selected_chapter_id"], "002")
         self.assertEqual(payload["selected_chapter"]["plain_text"], "数据库中的第二章。")
         self.assertNotIn(

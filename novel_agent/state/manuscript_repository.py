@@ -82,6 +82,34 @@ class ManuscriptRepositoryMixin:
             ).fetchall()
         return [self._document_row(row) for row in rows]
 
+    def list_manuscript_document_summaries(self) -> List[Dict[str, Any]]:
+        """Return lightweight publication rows without loading document bodies."""
+        with safe_connection(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                select chapter_id, title, revision, length(trim(plain_text)) as word_count,
+                       case when length(trim(plain_text)) > 0 then 1 else 0 end as has_content,
+                       updated_at
+                from documents
+                order by
+                  case when chapter_id GLOB '[0-9]*' then 0 else 1 end,
+                  cast(chapter_id as integer),
+                  chapter_id
+                """
+            ).fetchall()
+        return [
+            {
+                "chapter_id": str(row["chapter_id"]),
+                "title": str(row["title"]),
+                "revision": int(row["revision"]),
+                "word_count": int(row["word_count"] or 0),
+                "has_content": bool(row["has_content"]),
+                "updated_at": str(row["updated_at"]),
+            }
+            for row in rows
+        ]
+
     @db_write_lock
     def create_manuscript_document(
         self,

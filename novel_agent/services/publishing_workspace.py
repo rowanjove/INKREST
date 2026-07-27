@@ -11,7 +11,9 @@ from novel_agent.control.platform_profiles import resolve_platform_profile
 from novel_agent.domain.publishing import (
     ExportPreflight,
     PreflightItem,
-    PublicationBook,
+    PublicationBookSummary,
+    PublicationChapter,
+    PublicationChapterSummary,
     PublishingWorkspace,
 )
 from novel_agent.exporters.chapter_export import chapter_heading, collect_publication_book
@@ -44,10 +46,10 @@ def _platform_contract(meta: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_golden_check(book: PublicationBook) -> dict[str, Any]:
+def build_golden_check(chapters: list[PublicationChapterSummary]) -> dict[str, Any]:
     by_id = {
         f"{int(chapter.chapter_id):03d}": chapter
-        for chapter in book.chapters
+        for chapter in chapters
         if chapter.chapter_id.isdigit()
     }
     checks: list[dict[str, Any]] = []
@@ -57,7 +59,7 @@ def build_golden_check(book: PublicationBook) -> dict[str, Any]:
             {
                 "chapter_id": chapter_id,
                 "label": chapter_heading(chapter) if chapter else f"第 {int(chapter_id)} 章",
-                "status": "ready" if chapter and chapter.plain_text.strip() else "missing",
+                "status": "ready" if chapter and chapter.has_content else "missing",
                 "word_count": chapter.word_count if chapter else 0,
             }
         )
@@ -70,9 +72,13 @@ def build_golden_check(book: PublicationBook) -> dict[str, Any]:
     }
 
 
-def build_platform_check(book: PublicationBook, platform: dict[str, Any]) -> dict[str, Any]:
-    total_chars = sum(chapter.word_count for chapter in book.chapters)
-    chapter_count = len(book.chapters)
+def build_platform_check(
+    chapters: list[PublicationChapterSummary],
+    platform: dict[str, Any],
+) -> dict[str, Any]:
+    published = [chapter for chapter in chapters if chapter.has_content]
+    total_chars = sum(chapter.word_count for chapter in published)
+    chapter_count = len(published)
     average = round(total_chars / chapter_count) if chapter_count else 0
     items = [
         {
@@ -101,14 +107,15 @@ def build_platform_check(book: PublicationBook, platform: dict[str, Any]) -> dic
 
 
 def build_export_preflight(
-    book: PublicationBook,
+    chapters: list[PublicationChapterSummary],
     *,
     snapshot_quality: dict[str, Any],
     empty_document_count: int,
     platform_explicit: bool,
 ) -> ExportPreflight:
     items: list[PreflightItem] = []
-    if not book.chapters:
+    published = [chapter for chapter in chapters if chapter.has_content]
+    if not published:
         items.append(
             PreflightItem(
                 code="no_manuscript",
@@ -123,8 +130,8 @@ def build_export_preflight(
             PreflightItem(
                 code="manuscript_ready",
                 severity="ready",
-                label=f"已收集 {len(book.chapters)} 个正文章节",
-                detail=f"共 {sum(ch.word_count for ch in book.chapters)} 字，来自 SQLite 文稿。",
+                label=f"已收集 {len(published)} 个正文章节",
+                detail=f"共 {sum(ch.word_count for ch in published)} 字，来自 SQLite 文稿。",
             )
         )
     if empty_document_count:
@@ -149,7 +156,7 @@ def build_export_preflight(
                 route="/production?tab=reviews",
             )
         )
-    if len(book.chapters) < 3:
+    if len(published) < 3:
         items.append(
             PreflightItem(
                 code="golden_chapters_incomplete",
@@ -213,17 +220,41 @@ def build_publishing_workspace(
         project_info=project_info,
     )
     title = str(snapshot.project.get("name") or "未命名小说")
-    book = collect_publication_book(root, title=title)
-    selected = next(
-        (chapter for chapter in book.chapters if chapter.chapter_id == selected_chapter_id),
-        book.chapters[0] if book.chapters else None,
-    )
     store = SQLiteStateStore(root)
-    documents = store.list_manuscript_documents()
-    empty_count = sum(not str(document["plain_text"]).strip() for document in documents)
+    chapters = [
+        PublicationChapterSummary(**row)
+        for row in store.list_manuscript_document_summaries()
+    ]
+    published = [chapter for chapter in chapters if chapter.has_content]
+    selected_summary = next(
+        (
+            chapter
+            for chapter in chapters
+            if chapter.chapter_id == selected_chapter_id and chapter.has_content
+        ),
+        published[0] if published else None,
+    )
+    selected = None
+    if selected_summary:
+        document = store.get_manuscript_document(selected_summary.chapter_id)
+        if document:
+            selected = PublicationChapter(
+                chapter_id=str(document["chapter_id"]),
+                title=str(document["title"]),
+                plain_text=str(document["plain_text"]),
+                markdown_text=str(document["markdown_text"]),
+                revision=int(document["revision"]),
+                word_count=len(str(document["plain_text"]).strip()),
+            )
+    book = PublicationBookSummary(
+        title=title,
+        chapter_count=len(published),
+        word_count=sum(chapter.word_count for chapter in published),
+    )
+    empty_count = sum(not chapter.has_content for chapter in chapters)
     platform = _platform_contract(meta)
     preflight = build_export_preflight(
-        book,
+        chapters,
         snapshot_quality=snapshot.quality_summary,
         empty_document_count=empty_count,
         platform_explicit=bool(str(meta.get("platform") or "").strip()),
@@ -231,11 +262,12 @@ def build_publishing_workspace(
     return PublishingWorkspace(
         snapshot=snapshot,
         book=book,
+        chapters=chapters,
         selected_chapter_id=selected.chapter_id if selected else "",
         selected_chapter=selected,
         platform=platform,
-        platform_check=build_platform_check(book, platform),
-        golden_check=build_golden_check(book),
+        platform_check=build_platform_check(chapters, platform),
+        golden_check=build_golden_check(chapters),
         feedback=store.get_recent_feedback(limit=100),
         preflight=preflight,
         formats=publication_formats(),
