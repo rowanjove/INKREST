@@ -1,4 +1,11 @@
-import { app, BrowserWindow, ipcMain, Menu, Tray } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  Tray,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import net from 'net';
 import path from 'path';
 import { PythonBridge } from './agents/python-bridge';
@@ -6,6 +13,8 @@ import { ensurePetWindow, registerPetIpc } from './ipc/pet-ipc';
 import { readPetSettings } from './pet-settings';
 import { createTray } from './tray/tray-manager';
 import { initAutoUpdater } from './updater/auto-updater';
+import { appOrigins, assertTrustedSenderUrl } from './security';
+import { applyWindowSecurity } from './window-security';
 
 let mainWindow: BrowserWindow | null = null;
 let petWindow: BrowserWindow | null = null;
@@ -51,9 +60,10 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
+  applyWindowSecurity(mainWindow, appOrigins(isDev, apiPort));
   mainWindow.once('ready-to-show', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.maximize();
@@ -101,30 +111,18 @@ function navigateMain(route: string) {
 
 // ---- IPC Handlers ----
 
+function assertTrustedIpc(event: IpcMainInvokeEvent): void {
+  const frame = event.senderFrame;
+  if (!frame || frame.top !== frame) {
+    throw new Error('Untrusted IPC frame');
+  }
+  assertTrustedSenderUrl(frame.url, appOrigins(isDev, apiPort));
+}
+
 function registerIpcHandlers() {
-  ipcMain.handle('app:getPort', () => apiPort);
-  ipcMain.handle('app:getBackendStatus', () => isRestarting ? 'restarting' : 'online');
-
-  ipcMain.handle('chapter:run', async (_event, params: { chapter_id: string; goal: string; dry_run?: boolean }) => {
-    try {
-      const result = await pythonBridge.runChapter(params.chapter_id, params.goal, params.dry_run);
-      return { success: true, data: result };
-    } catch (error: any) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('chapter:abort', () => {
-    pythonBridge.abort();
-    return { success: true };
-  });
-
-  ipcMain.handle('app:getUserDataPath', () => {
-    return app.getPath('userData');
-  });
-
-  ipcMain.handle('window:minimizeToTray', () => {
-    mainWindow?.hide();
+  ipcMain.handle('app:getBackendStatus', (event) => {
+    assertTrustedIpc(event);
+    return isRestarting ? 'restarting' : 'online';
   });
 
   registerPetIpc({
@@ -140,6 +138,7 @@ function registerIpcHandlers() {
       bubbleWindow = window;
     },
     navigateMain,
+    assertTrustedSender: assertTrustedIpc,
   });
 }
 
@@ -255,6 +254,7 @@ app.whenReady().then(async () => {
         bubbleWindow = window;
       },
       navigateMain,
+      assertTrustedSender: assertTrustedIpc,
     });
   }
 

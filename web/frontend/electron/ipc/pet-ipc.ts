@@ -1,5 +1,18 @@
-import { BrowserWindow, Menu, app, ipcMain, screen } from 'electron';
+import {
+  BrowserWindow,
+  Menu,
+  app,
+  ipcMain,
+  screen,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import { PetSettings, readPetSettings, writePetSettings } from '../pet-settings';
+import {
+  parseMoveDelta,
+  parsePetSettingsPatch,
+  parseRoute,
+  parseWindowBounds,
+} from '../security';
 import { createBubbleWindow, positionBubbleNearPet } from '../windows/bubble-window';
 import { createPetWindow } from '../windows/pet-window';
 import { showWhenReady } from '../windows/window-ready';
@@ -13,6 +26,7 @@ export interface PetIpcContext {
   getBubbleWindow: () => BrowserWindow | null;
   setBubbleWindow: (window: BrowserWindow | null) => void;
   navigateMain: (route: string) => void;
+  assertTrustedSender: (event: IpcMainInvokeEvent) => void;
 }
 
 export function ensurePetWindow(ctx: PetIpcContext) {
@@ -60,7 +74,8 @@ function applySettingsToPetWindow(settings: PetSettings, petWindow: BrowserWindo
 }
 
 export function registerPetIpc(ctx: PetIpcContext) {
-  ipcMain.handle('pet:getWindowBounds', () => {
+  ipcMain.handle('pet:getWindowBounds', (event) => {
+    ctx.assertTrustedSender(event);
     const petWindow = ctx.getPetWindow();
     if (petWindow && !petWindow.isDestroyed()) {
       return petWindow.getBounds();
@@ -68,7 +83,8 @@ export function registerPetIpc(ctx: PetIpcContext) {
     return null;
   });
 
-  ipcMain.handle('pet:getWorkArea', () => {
+  ipcMain.handle('pet:getWorkArea', (event) => {
+    ctx.assertTrustedSender(event);
     const petWindow = ctx.getPetWindow();
     if (petWindow && !petWindow.isDestroyed()) {
       const display = screen.getDisplayMatching(petWindow.getBounds());
@@ -77,7 +93,9 @@ export function registerPetIpc(ctx: PetIpcContext) {
     return screen.getPrimaryDisplay().workArea;
   });
 
-  ipcMain.handle('pet:setWindowBounds', (_event, bounds: { x: number; y: number; width?: number; height?: number }) => {
+  ipcMain.handle('pet:setWindowBounds', (event, rawBounds: unknown) => {
+    ctx.assertTrustedSender(event);
+    const bounds = parseWindowBounds(rawBounds);
     const petWindow = ctx.getPetWindow();
     if (petWindow && !petWindow.isDestroyed()) {
       const currentBounds = petWindow.getBounds();
@@ -90,9 +108,14 @@ export function registerPetIpc(ctx: PetIpcContext) {
     }
   });
 
-  ipcMain.handle('pet:getSettings', () => readPetSettings());
+  ipcMain.handle('pet:getSettings', (event) => {
+    ctx.assertTrustedSender(event);
+    return readPetSettings();
+  });
 
-  ipcMain.handle('pet:updateSettings', (_event, patch: Partial<PetSettings>) => {
+  ipcMain.handle('pet:updateSettings', (event, rawPatch: unknown) => {
+    ctx.assertTrustedSender(event);
+    const patch = parsePetSettingsPatch(rawPatch);
     const settings = writePetSettings(patch);
     applySettingsToPetWindow(settings, ctx.getPetWindow());
     if (settings.enabled && settings.showOnStartup) {
@@ -101,18 +124,21 @@ export function registerPetIpc(ctx: PetIpcContext) {
     return settings;
   });
 
-  ipcMain.handle('pet:show', () => {
+  ipcMain.handle('pet:show', (event) => {
+    ctx.assertTrustedSender(event);
     writePetSettings({ enabled: true });
     showWhenReady(ensurePetWindow(ctx), 'showInactive');
   });
 
-  ipcMain.handle('pet:hide', () => {
+  ipcMain.handle('pet:hide', (event) => {
+    ctx.assertTrustedSender(event);
     writePetSettings({ enabled: false });
     ctx.getBubbleWindow()?.hide();
     ctx.getPetWindow()?.hide();
   });
 
-  ipcMain.handle('pet:toggleBubble', () => {
+  ipcMain.handle('pet:toggleBubble', (event) => {
+    ctx.assertTrustedSender(event);
     const bubbleWindow = ensureBubbleWindow(ctx);
     if (bubbleWindow.isVisible()) {
       bubbleWindow.hide();
@@ -122,13 +148,16 @@ export function registerPetIpc(ctx: PetIpcContext) {
     }
   });
 
-  ipcMain.handle('pet:moveBy', (_event, delta: { x: number; y: number }) => {
+  ipcMain.handle('pet:moveBy', (event, rawDelta: unknown) => {
+    ctx.assertTrustedSender(event);
+    const delta = parseMoveDelta(rawDelta);
     const petWindow = ensurePetWindow(ctx);
     const bounds = petWindow.getBounds();
     petWindow.setPosition(bounds.x + Math.round(delta.x), bounds.y + Math.round(delta.y));
   });
 
-  ipcMain.handle('pet:savePosition', () => {
+  ipcMain.handle('pet:savePosition', (event) => {
+    ctx.assertTrustedSender(event);
     const petWindow = ctx.getPetWindow();
     if (petWindow && !petWindow.isDestroyed()) {
       const { x, y } = petWindow.getBounds();
@@ -136,17 +165,20 @@ export function registerPetIpc(ctx: PetIpcContext) {
     }
   });
 
-  ipcMain.handle('pet:openMain', () => {
+  ipcMain.handle('pet:openMain', (event) => {
+    ctx.assertTrustedSender(event);
     const mainWindow = ctx.getMainWindow();
     mainWindow?.show();
     mainWindow?.focus();
   });
 
-  ipcMain.handle('pet:navigateMain', (_event, route: string) => {
-    ctx.navigateMain(route);
+  ipcMain.handle('pet:navigateMain', (event, rawRoute: unknown) => {
+    ctx.assertTrustedSender(event);
+    ctx.navigateMain(parseRoute(rawRoute));
   });
 
-  ipcMain.handle('pet:showContextMenu', () => {
+  ipcMain.handle('pet:showContextMenu', (event) => {
+    ctx.assertTrustedSender(event);
     const petWindow = ensurePetWindow(ctx);
     const menu = Menu.buildFromTemplate([
       { label: '打开主界面', click: () => ctx.navigateMain('/') },

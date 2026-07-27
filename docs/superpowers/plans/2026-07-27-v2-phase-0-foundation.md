@@ -541,6 +541,7 @@ git commit -m "fix: protect every project with active tasks"
 **Files:**
 
 - Create: `web/frontend/electron/security.ts`
+- Create: `web/frontend/electron/window-security.ts`
 - Create: `web/frontend/electron/security.test.ts`
 - Create: `web/frontend/vitest.electron.config.ts`
 - Modify: `web/frontend/electron/main.ts`
@@ -548,22 +549,26 @@ git commit -m "fix: protect every project with active tasks"
 - Modify: `web/frontend/electron/windows/pet-window.ts`
 - Modify: `web/frontend/electron/windows/bubble-window.ts`
 - Modify: `web/frontend/electron/preload.ts`
+- Modify: `web/frontend/electron/agents/python-bridge.ts`
+- Modify: `web/frontend/src/electron.d.ts`
 - Modify: `web/frontend/tsconfig.electron.json`
 
-- [ ] **Step 1: 写安全纯函数测试**
+- [x] **Step 1: 写安全纯函数测试**
 
 测试必须覆盖：
 
 ```typescript
 expect(isAllowedAppUrl('http://127.0.0.1:8123/workspace', origins)).toBe(true)
 expect(isAllowedAppUrl('https://evil.example/', origins)).toBe(false)
-expect(isAllowedExternalUrl('https://docs.example/')).toBe(true)
-expect(isAllowedExternalUrl('file:///C:/secret.txt')).toBe(false)
-expect(() => parseChapterRunParams({ chapter_id: '../x', goal: 'write' })).toThrow()
+const externalHosts = new Set(['docs.example'])
+expect(isAllowedExternalUrl('https://docs.example/', externalHosts)).toBe(true)
+expect(isAllowedExternalUrl('file:///C:/secret.txt', externalHosts)).toBe(false)
 expect(() => parseWindowBounds({ x: Number.NaN, y: 1 })).toThrow()
+expect(() => parseRoute('https://evil.example/')).toThrow()
+expect(() => parsePetSettingsPatch({ unexpected: true })).toThrow()
 ```
 
-- [ ] **Step 2: 验证测试失败**
+- [x] **Step 2: 验证测试失败**
 
 Run:
 
@@ -573,23 +578,23 @@ npm run test:electron --prefix web/frontend
 
 Expected: FAIL，`security.ts` 导出尚不存在。
 
-- [ ] **Step 3: 实现安全模块**
+- [x] **Step 3: 实现安全模块**
 
 模块导出：
 
 ```typescript
 export function appOrigins(isDev: boolean, apiPort: number): ReadonlySet<string>
 export function isAllowedAppUrl(rawUrl: string, origins: ReadonlySet<string>): boolean
-export function isAllowedExternalUrl(rawUrl: string): boolean
-export function parseChapterRunParams(value: unknown): ChapterRunParams
+export function isAllowedExternalUrl(rawUrl: string, allowedHosts: ReadonlySet<string>): boolean
 export function parseWindowBounds(value: unknown): WindowBounds
 export function parseMoveDelta(value: unknown): MoveDelta
 export function parseRoute(value: unknown): string
+export function parsePetSettingsPatch(value: unknown): Partial<PetSettings>
 ```
 
 ID 只允许 `/^[A-Za-z0-9_-]{1,64}$/`；route 必须以单个 `/` 开头且不得包含协议；坐标必须是有限数值。
 
-- [ ] **Step 4: 启用窗口 sandbox 与导航策略**
+- [x] **Step 4: 启用窗口 sandbox 与导航策略**
 
 所有窗口使用：
 
@@ -614,7 +619,7 @@ window.webContents.setWindowOpenHandler(({ url }) => {
 })
 ```
 
-- [ ] **Step 5: 校验 IPC sender 和参数**
+- [x] **Step 5: 校验 IPC sender 和参数**
 
 每个 `ipcMain.handle` 的第一步调用：
 
@@ -624,7 +629,7 @@ assertTrustedSender(event, appOrigins(ctx.isDev, ctx.apiPort))
 
 章节、路由、设置 patch、窗口 bounds 和 move delta 使用对应 parser。移除 `chapter:run`、`chapter:abort` 及 preload 的 `runChapter()`、`abortChapter()`，因为 renderer 已通过 FastAPI 任务接口运行章节。
 
-- [ ] **Step 6: 验证**
+- [x] **Step 6: 验证**
 
 Run:
 
@@ -636,7 +641,7 @@ py -3.12 -m pytest tests/test_security_regressions.py -q --tb=short
 
 Expected: 全部 PASS。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```powershell
 git add web/frontend/electron web/frontend/vitest.electron.config.ts web/frontend/package.json web/frontend/tsconfig.electron.json tests/test_security_regressions.py

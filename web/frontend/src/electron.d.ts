@@ -1,11 +1,26 @@
+interface ElectronPetSettings {
+  enabled: boolean;
+  showOnStartup: boolean;
+  alwaysOnTop: boolean;
+  size: number;
+  position: { x: number; y: number } | null;
+  notifyOnTaskComplete: boolean;
+  notifyOnTaskError: boolean;
+  petId: string;
+}
+
+interface ElectronRectangle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface ElectronAPI {
-  getPort: () => Promise<number>;
-  getUserDataPath: () => Promise<string>;
-  runChapter: (params: { chapter_id: string; goal: string; dry_run?: boolean }) => Promise<{ success: boolean; data?: any; error?: string }>;
-  abortChapter: () => Promise<{ success: boolean }>;
-  minimizeToTray: () => Promise<void>;
-  getPetSettings: () => Promise<any>;
-  updatePetSettings: (patch: Record<string, any>) => Promise<any>;
+  getPetSettings: () => Promise<ElectronPetSettings>;
+  updatePetSettings: (
+    patch: Partial<ElectronPetSettings>,
+  ) => Promise<ElectronPetSettings>;
   showPet: () => Promise<void>;
   hidePet: () => Promise<void>;
   togglePetBubble: () => Promise<void>;
@@ -14,14 +29,14 @@ interface ElectronAPI {
   openMainWindow: () => Promise<void>;
   navigateMain: (route: string) => Promise<void>;
   showPetContextMenu: () => Promise<void>;
-  getPetWorkArea: () => Promise<any>;
-  getPetWindowBounds: () => Promise<any>;
+  getPetWorkArea: () => Promise<ElectronRectangle>;
+  getPetWindowBounds: () => Promise<ElectronRectangle | null>;
   setPetWindowBounds: (bounds: { x: number; y: number; width?: number; height?: number }) => Promise<void>;
   onNavigate: (callback: (route: string) => void) => () => void;
-  onProgress: (callback: (data: any) => void) => () => void;
-  onLog: (callback: (data: any) => void) => () => void;
-  onComplete: (callback: (data: any) => void) => () => void;
-  onError: (callback: (data: any) => void) => () => void;
+  onProgress: (callback: (data: unknown) => void) => () => void;
+  onLog: (callback: (data: unknown) => void) => () => void;
+  onComplete: (callback: (data: unknown) => void) => () => void;
+  onError: (callback: (data: unknown) => void) => () => void;
   getBackendStatus: () => Promise<string>;
   onBackendStatus: (callback: (status: string) => void) => () => void;
 }

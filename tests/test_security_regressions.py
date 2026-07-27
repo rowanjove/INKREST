@@ -395,6 +395,43 @@ class SecurityRegressionTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             self.assertNotIn("execSync(", source, str(path.relative_to(root)))
 
+    def test_electron_windows_and_ipc_use_v2_security_boundary(self):
+        root = Path(__file__).resolve().parents[1]
+        electron_root = root / "web/frontend/electron"
+        source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in electron_root.rglob("*.ts")
+            if not path.name.endswith(".test.ts")
+        )
+        self.assertNotIn("sandbox: false", source)
+        self.assertEqual(source.count("sandbox: true"), 3)
+        self.assertIn("setWindowOpenHandler", source)
+        self.assertIn("will-navigate", source)
+        self.assertIn("will-attach-webview", source)
+
+        main_source = (electron_root / "main.ts").read_text(encoding="utf-8")
+        pet_ipc_source = (electron_root / "ipc" / "pet-ipc.ts").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(
+            main_source.count("ipcMain.handle("),
+            main_source.count("assertTrustedIpc(event);"),
+        )
+        self.assertEqual(
+            pet_ipc_source.count("ipcMain.handle("),
+            pet_ipc_source.count("ctx.assertTrustedSender(event);"),
+        )
+
+        preload_source = (electron_root / "preload.ts").read_text(encoding="utf-8")
+        for removed_channel in (
+            "chapter:run",
+            "chapter:abort",
+            "app:getUserDataPath",
+            "window:minimizeToTray",
+        ):
+            self.assertNotIn(removed_channel, main_source)
+            self.assertNotIn(removed_channel, preload_source)
+
     def test_import_zip_slip_traversal_denied(self):
         client = TestClient(web_app)
         payload = io.BytesIO()

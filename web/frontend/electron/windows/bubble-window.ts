@@ -1,5 +1,7 @@
 import { BrowserWindow, screen } from 'electron';
 import path from 'path';
+import { appOrigins } from '../security';
+import { applyWindowSecurity } from '../window-security';
 
 export function createBubbleWindow(options: {
   petWindow: BrowserWindow;
@@ -38,9 +40,10 @@ export function createBubbleWindow(options: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
+  applyWindowSecurity(bubbleWindow, appOrigins(isDev, apiPort));
 
   bubbleWindow.setMenu(null);
   bubbleWindow.setMenuBarVisibility(false);

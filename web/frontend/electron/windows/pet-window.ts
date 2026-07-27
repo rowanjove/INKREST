@@ -1,6 +1,8 @@
 import { BrowserWindow } from 'electron';
 import path from 'path';
 import { PetSettings, clampPetPosition } from '../pet-settings';
+import { appOrigins } from '../security';
+import { applyWindowSecurity } from '../window-security';
 import { showWhenReady } from './window-ready';
 
 export function createPetWindow(options: {
@@ -28,9 +30,10 @@ export function createPetWindow(options: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
+  applyWindowSecurity(petWindow, appOrigins(isDev, apiPort));
 
   petWindow.setMenu(null);
   petWindow.setMenuBarVisibility(false);
