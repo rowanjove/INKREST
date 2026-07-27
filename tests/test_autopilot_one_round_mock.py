@@ -50,9 +50,9 @@ async def test_autopilot_one_round_mock_writes_jsonl(tmp_path: Path) -> None:
         )
         task = tm._running_tasks[tid]
         await asyncio.wait_for(task, timeout=30)
-        row = tm.store.get_task(tid)
+        row = tm.get_task(tid)
         assert row is not None
-        assert row.get("status") == "completed"
+        assert row.get("status") == "succeeded"
         result = row.get("result") or {}
         if isinstance(result, str):
             result = json.loads(result or "{}")

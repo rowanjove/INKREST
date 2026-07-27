@@ -5,6 +5,7 @@ import uuid
 import logging
 from functools import partial
 from typing import Any, Dict, List, Optional
+from novel_agent.domain.tasks import TaskType
 from novel_agent.pipeline import PipelineConfig
 from novel_agent.orchestrator import NovelOrchestrator
 
@@ -16,14 +17,19 @@ from web.tasks import task_id_var
 
 def active_novel_batch_task_id_helper(task_manager) -> Optional[str]:
     for tid, task in task_manager._running_tasks.items():
-        if (tid.startswith("novel-auto") or tid.startswith("novel-cont")) and not task.done():
+        record = task_manager.get_task(tid)
+        if (
+            record
+            and record.get("task_type") in {"novel_autopilot", "novel_continue"}
+            and not task.done()
+        ):
             return tid
     try:
-        for row in task_manager.store.list_tasks():
+        for row in task_manager.list_tasks():
             tid = str(row.get("id") or "")
-            if not (tid.startswith("novel-auto") or tid.startswith("novel-cont")):
+            if row.get("task_type") not in {"novel_autopilot", "novel_continue"}:
                 continue
-            if str(row.get("status") or "") in ("pending", "running"):
+            if str(row.get("status") or "") in ("pending", "claimed", "running"):
                 return tid
     except Exception:
         pass
@@ -53,12 +59,18 @@ async def submit_novel_continue_helper(
     task_id = f"{prefix}-{str(uuid.uuid4())[:8]}"
     await asyncio.get_running_loop().run_in_executor(
         None,
-        task_manager.store.save_task,
+        task_manager._create_task_record,
         task_id,
-        None,
-        label,
-        dry_run,
-        "pending",
+        TaskType.NOVEL_AUTOPILOT if autopilot else TaskType.NOVEL_CONTINUE,
+        {
+            "goal": label,
+            "resume": resume,
+            "max_chapters": max_chapters,
+            "dry_run": dry_run,
+            "full_book": full_book,
+            "chapters_per_round": chapters_per_round,
+            "max_rounds": max_rounds,
+        },
     )
     if autopilot:
         task = task_manager._create_task(
@@ -89,7 +101,8 @@ async def submit_novel_continue_helper(
             ),
         )
     with task_manager._novel_batch_lock:
-        if active_novel_batch_task_id_helper(task_manager):
+        active_after_create = active_novel_batch_task_id_helper(task_manager)
+        if active_after_create and active_after_create != task_id:
             task.cancel()
             raise ValueError(
                 f"Novel batch already running. "
@@ -116,7 +129,7 @@ async def run_novel_autopilot_helper(
     except asyncio.TimeoutError:
         await asyncio.get_running_loop().run_in_executor(
             None,
-            task_manager.store.update_task_status,
+            task_manager._update_task_status,
             task_id,
             "failed",
             None,
@@ -127,7 +140,7 @@ async def run_novel_autopilot_helper(
         return
 
     await asyncio.get_running_loop().run_in_executor(
-        None, task_manager.store.update_task_status, task_id, "running"
+        None, task_manager._update_task_status, task_id, "running"
     )
     try:
         from novel_agent.services.novel_autopilot import run_novel_autopilot
@@ -151,7 +164,7 @@ async def run_novel_autopilot_helper(
             max_rounds=max_rounds,
         )
         if outcome.paused:
-            status = "completed"
+            status = "paused"
             payload = {
                 "autopilot": True,
                 "rounds": outcome.rounds,
@@ -174,7 +187,7 @@ async def run_novel_autopilot_helper(
             }
         await asyncio.get_running_loop().run_in_executor(
             None,
-            task_manager.store.update_task_status,
+            task_manager._update_task_status,
             task_id,
             status,
             payload,
@@ -203,7 +216,7 @@ async def run_novel_continue_helper(
     except asyncio.TimeoutError:
         await asyncio.get_running_loop().run_in_executor(
             None,
-            task_manager.store.update_task_status,
+            task_manager._update_task_status,
             task_id,
             "failed",
             None,
@@ -214,7 +227,7 @@ async def run_novel_continue_helper(
         return
 
     await asyncio.get_running_loop().run_in_executor(
-        None, task_manager.store.update_task_status, task_id, "running"
+        None, task_manager._update_task_status, task_id, "running"
     )
     try:
         await task_manager._ensure_llm_ready(dry_run)
@@ -226,7 +239,7 @@ async def run_novel_continue_helper(
         )
         await asyncio.get_running_loop().run_in_executor(
             None,
-            task_manager.store.update_task_status,
+            task_manager._update_task_status,
             task_id,
             "completed",
             {

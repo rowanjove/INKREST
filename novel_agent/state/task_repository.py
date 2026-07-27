@@ -82,6 +82,40 @@ class TaskRepository:
             ).fetchone()
         return self._row_to_record(row) if row else None
 
+    def list_tasks(
+        self,
+        *,
+        project_id: str | None = None,
+        statuses: set[TaskStatus] | None = None,
+        limit: int = 50,
+    ) -> list[TaskRecord]:
+        self._require_v2()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if project_id:
+            clauses.append("project_id = ?")
+            params.append(project_id)
+        if statuses:
+            ordered = sorted(status.value for status in statuses)
+            clauses.append(f"status in ({','.join('?' for _ in ordered)})")
+            params.extend(ordered)
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(int(limit), 500)))
+        with safe_connection(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""
+                select id, project_id, task_type, status, payload_json, result_json,
+                       attempt, max_attempts, claim_token, lease_expires_at,
+                       heartbeat_at, checkpoint, status_reason, created_at,
+                       started_at, finished_at
+                from tasks {where}
+                order by created_at desc limit ?
+                """,
+                params,
+            ).fetchall()
+        return [self._row_to_record(row) for row in rows]
+
     def create_task(
         self,
         *,
@@ -346,6 +380,80 @@ class TaskRepository:
                 reason=reason,
             )
         return self._required_task(task_id)
+
+    def cancel_task(self, task_id: str, *, reason: str = "user_cancelled") -> TaskRecord:
+        self._require_v2()
+        current = self._required_task(task_id)
+        if current.status in {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED}:
+            raise TaskTransitionError(
+                f"Task status {current.status.value!r} is terminal"
+            )
+        if current.status is TaskStatus.FAILED:
+            raise TaskTransitionError("Failed tasks cannot be cancelled")
+        assert_task_transition(
+            current.status,
+            TaskStatus.CANCELLED,
+            attempt=current.attempt,
+            max_attempts=current.max_attempts,
+        )
+        with safe_connection(self.db_path) as conn:
+            updated = conn.execute(
+                """
+                update tasks set
+                  status = ?, status_reason = ?, claim_token = null,
+                  lease_expires_at = null, finished_at = ?
+                where id = ? and status = ?
+                """,
+                (
+                    TaskStatus.CANCELLED.value,
+                    reason,
+                    _utcnow().isoformat(),
+                    task_id,
+                    current.status.value,
+                ),
+            )
+            if updated.rowcount != 1:
+                raise TaskConflictError("Task changed before cancellation")
+            self._record_event(
+                conn,
+                task_id,
+                current.status,
+                TaskStatus.CANCELLED,
+                reason=reason,
+            )
+        return self._required_task(task_id)
+
+    def delete_old_tasks(self, *, keep: int = 50) -> int:
+        self._require_v2()
+        terminal = (
+            TaskStatus.SUCCEEDED.value,
+            TaskStatus.FAILED.value,
+            TaskStatus.CANCELLED.value,
+        )
+        with safe_connection(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                select id from tasks
+                where status in (?, ?, ?)
+                order by created_at desc
+                """,
+                terminal,
+            ).fetchall()
+            task_ids = [row[0] for row in rows[max(0, int(keep)) :]]
+            if task_ids:
+                conn.executemany(
+                    "delete from task_status_events where task_id = ?",
+                    [(task_id,) for task_id in task_ids],
+                )
+                conn.executemany(
+                    "delete from task_logs where task_id = ?",
+                    [(task_id,) for task_id in task_ids],
+                )
+                conn.executemany(
+                    "delete from tasks where id = ?",
+                    [(task_id,) for task_id in task_ids],
+                )
+        return len(task_ids)
 
     def recover_expired_leases(self, *, now: datetime | None = None) -> list[str]:
         self._require_v2()

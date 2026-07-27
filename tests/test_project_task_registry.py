@@ -49,8 +49,10 @@ class ProjectTaskRegistryTests(unittest.TestCase):
 
         async def emit_for(label, received):
             with progress_handlers(
-                lambda message: received.append(message["data"]["owner"]),
+                received.append,
                 lambda: False,
+                project_id=f"project-{label}",
+                task_id=f"task-{label}",
             ):
                 await asyncio.sleep(0)
                 emit_progress("writer", "running", {"owner": label}, "001")
@@ -63,8 +65,12 @@ class ProjectTaskRegistryTests(unittest.TestCase):
 
         asyncio.run(scenario())
 
-        self.assertEqual(received_a, ["a"])
-        self.assertEqual(received_b, ["b"])
+        self.assertEqual([message["data"]["owner"] for message in received_a], ["a"])
+        self.assertEqual([message["data"]["owner"] for message in received_b], ["b"])
+        self.assertEqual(received_a[0]["project_id"], "project-a")
+        self.assertEqual(received_a[0]["task_id"], "task-a")
+        self.assertEqual(received_b[0]["project_id"], "project-b")
+        self.assertEqual(received_b[0]["task_id"], "task-b")
 
     def test_task_manager_construction_does_not_replace_default_progress_handler(self):
         from novel_agent.progress import emit_progress, register_progress_callback

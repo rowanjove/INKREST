@@ -1,6 +1,8 @@
 from tests.api._base import *  # noqa: F403
 
 import web.context as web_context
+from novel_agent.domain.tasks import TaskType
+from novel_agent.state.sqlite_store import safe_connection
 from web.project_task_registry import ProjectTaskRegistry
 from web.models import TaskStatus
 
@@ -37,16 +39,22 @@ class ApiTasksTests(ApiTestBase):
 
         self.assertTrue(
             _is_auto_resumable_single_chapter_task(
-                {"id": "task-1", "chapter_id": "001", "goal": "draft chapter"}
+                {
+                    "id": "task-1",
+                    "chapter_id": "001",
+                    "task_type": "chapter",
+                    "mode": "standard",
+                    "status": "pending",
+                }
             )
         )
 
         blocked = [
-            {"id": "batch-1", "chapter_id": "", "goal": "batch:2"},
-            {"id": "gate-1", "chapter_id": "001", "goal": "gate_only:001"},
-            {"id": "novel-1", "chapter_id": "", "goal": "Novel: long run"},
-            {"id": "arc-1", "chapter_id": "", "goal": "Arc batch: A"},
-            {"id": "missing-chapter", "chapter_id": "", "goal": "draft chapter"},
+            {"id": "batch-1", "chapter_id": "", "task_type": "chapter_batch", "status": "pending"},
+            {"id": "gate-1", "chapter_id": "001", "task_type": "chapter", "mode": "gate_only", "status": "pending"},
+            {"id": "novel-1", "chapter_id": "", "task_type": "novel_run", "status": "pending"},
+            {"id": "arc-1", "chapter_id": "", "task_type": "arc_run", "status": "pending"},
+            {"id": "missing-chapter", "chapter_id": "", "task_type": "chapter", "status": "pending"},
         ]
         for task in blocked:
             with self.subTest(task=task["id"]):
@@ -125,20 +133,27 @@ class ApiTasksTests(ApiTestBase):
 
         self.assertIsNotNone(task)
         self.assertEqual(task["task_id"], batch_id)
-        self.assertEqual(task["chapter_id"], "")
+        self.assertIsNone(task["chapter_id"])
         self.assertEqual(task["status"], "pending")
         self.assertTrue(abort_result)
         aborted = manager.get_task(batch_id)
-        self.assertEqual(aborted["status"], "failed")
+        self.assertEqual(aborted["status"], "cancelled")
         self.assertEqual(aborted["status_reason"], "user_abort")
-        self.assertEqual(aborted["resumable_from"], "unknown")
 
     def test_batch_failure_uses_structured_task_failure_payload(self):
         import asyncio
 
         manager = TaskManager(self.tmpdir)
         batch_id = "batch-fail-1"
-        manager.store.save_task(batch_id, "", "batch:1", True, "pending")
+        manager._create_task_record(
+            batch_id,
+            TaskType.CHAPTER_BATCH,
+            {
+                "chapters": [{"chapter_id": "001", "goal": "first"}],
+                "goal": "批量生成 1 章",
+                "dry_run": True,
+            },
+        )
 
         async def failing_batch(*_args, **_kwargs):
             raise RuntimeError("batch exploded")
@@ -256,8 +271,27 @@ class ApiTasksTests(ApiTestBase):
         manager = TaskManager(self.tmpdir)
         task_id = "test-task-1"
         
-        # 2. Simulate task running state in DB and save
-        manager.store.save_task(task_id, "001", "Goal 1", True, "running")
+        # 2. Simulate a worker whose lease expired before process restart.
+        manager._create_task_record(
+            task_id,
+            TaskType.CHAPTER,
+            {
+                "chapter_id": "001",
+                "goal": "Goal 1",
+                "dry_run": True,
+                "mode": "standard",
+            },
+        )
+        manager._update_task_status(task_id, "running")
+        with safe_connection(manager.store.db_path) as conn:
+            conn.execute(
+                """
+                update tasks
+                set lease_expires_at = '2000-01-01T00:00:00+00:00'
+                where id = ?
+                """,
+                (task_id,),
+            )
             
         # 3. Instantiate a new TaskManager to reload tasks from disk
         reloaded_manager = TaskManager(self.tmpdir)
@@ -266,12 +300,12 @@ class ApiTasksTests(ApiTestBase):
         self.assertIsNotNone(task)
         # Reloading active tasks should requeue them as pending
         self.assertEqual(task["status"], "pending")
-        self.assertEqual(task["status_reason"], "startup_cleanup")
-        self.assertEqual(task["resumable_from"], "unknown")
+        self.assertEqual(task["status_reason"], "lease_expired")
         
-        # 4. Check that completed tasks are reloaded with original status
-        manager.store.update_task_status(task_id, "completed", None, None)
+        # 4. Check that succeeded tasks remain terminal after reload.
+        reloaded_manager._update_task_status(task_id, "running")
+        reloaded_manager._update_task_status(task_id, "completed")
             
         reloaded_manager2 = TaskManager(self.tmpdir)
         task2 = reloaded_manager2.get_task(task_id)
-        self.assertEqual(task2["status"], "completed")
+        self.assertEqual(task2["status"], "succeeded")

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -178,7 +178,17 @@ class TrialExportRequest(BaseModel):
 
 class TaskStatus(BaseModel):
     task_id: str
-    status: str  # pending, running, completed, failed
+    project_id: Optional[str] = None
+    task_type: Optional[str] = None
+    status: Literal[
+        "pending",
+        "claimed",
+        "running",
+        "paused",
+        "succeeded",
+        "failed",
+        "cancelled",
+    ]
     chapter_id: Optional[str] = None
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None

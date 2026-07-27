@@ -37,7 +37,12 @@ def inspect_schema_state(db_path: Path) -> tuple[SchemaState, int | None]:
         if not tables:
             return SchemaState.FRESH, None
         if "app_metadata" not in tables:
-            return SchemaState.LEGACY, None
+            # A new project may have an auxiliary vector/arc table before the
+            # unified store is opened. The unversioned legacy task table is the
+            # reliable evidence that user data predates V2.
+            if "tasks" in tables:
+                return SchemaState.LEGACY, None
+            return SchemaState.FRESH, None
         row = conn.execute(
             "select value from app_metadata where key = 'schema_version'"
         ).fetchone()

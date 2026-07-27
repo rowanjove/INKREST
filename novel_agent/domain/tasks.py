@@ -25,6 +25,7 @@ class TaskType(str, Enum):
     NOVEL_PLAN = "novel_plan"
     CHAPTER_PLAN = "chapter_plan"
     NOVEL_RUN = "novel_run"
+    ARC_RUN = "arc_run"
     NOVEL_CONTINUE = "novel_continue"
     NOVEL_AUTOPILOT = "novel_autopilot"
     EMBEDDING_SETUP = "embedding_setup"

@@ -13,7 +13,7 @@ export interface Chapter {
 export interface Task {
   task_id: string
   chapter_id?: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'claimed' | 'running' | 'paused' | 'succeeded' | 'failed' | 'cancelled'
   goal?: string
   error?: string
   created_at?: string
@@ -26,8 +26,10 @@ export const useChapterStore = defineStore('chapter', () => {
   const currentChapter = shallowRef<any>(null)
   const loading = ref(false)
 
-  const completedTasks = computed(() => tasks.value.filter(t => t.status === 'completed').length)
-  const runningTasks = computed(() => tasks.value.filter(t => ['pending', 'running'].includes(t.status)).length)
+  const completedTasks = computed(() => tasks.value.filter(t => t.status === 'succeeded').length)
+  const runningTasks = computed(() =>
+    tasks.value.filter(t => ['pending', 'claimed', 'running'].includes(t.status)).length,
+  )
   const totalWords = computed(() => chapters.value.reduce((sum, c) => sum + (c.word_count || 0), 0))
   const latestChapter = computed(() => chapters.value[chapters.value.length - 1])
 

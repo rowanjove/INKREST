@@ -34,7 +34,7 @@ export interface ProgressEntry {
 export interface TaskSummary {
   task_id: string
   chapter_id?: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'claimed' | 'running' | 'paused' | 'succeeded' | 'failed' | 'cancelled'
   goal?: string
   error?: string
   created_at?: string
@@ -382,7 +382,7 @@ export const useTasksStore = defineStore('tasks', () => {
       taskList.value = data.slice()
       let runningFound = false
       for (const task of data) {
-        if (task.status === 'running') {
+        if (task.status === 'running' || task.status === 'claimed') {
           runningFound = true
           currentTaskId.value = task.task_id
           if (task.chapter_id) {
@@ -405,7 +405,7 @@ export const useTasksStore = defineStore('tasks', () => {
             currentChapterId.value = task.chapter_id
           }
           isRunning.value = true
-        } else if (task.status === 'completed') {
+        } else if (task.status === 'succeeded') {
           if (task.task_id === currentTaskId.value) {
             if (task.chapter_id) {
               progress.value.forEach(p => {
@@ -418,7 +418,7 @@ export const useTasksStore = defineStore('tasks', () => {
               markComplete(task.chapter_id)
             }
           }
-        } else if (task.status === 'failed') {
+        } else if (task.status === 'failed' || task.status === 'cancelled') {
           if (task.task_id === currentTaskId.value) {
             if (task.chapter_id) {
               progress.value.forEach(p => {

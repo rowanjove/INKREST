@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict
 
 _PROGRESS_DEBOUNCE_SEC = 0.5
 _PROGRESS_CACHE_MAX = 2000
@@ -41,8 +41,6 @@ def handle_progress_message(
     msg: Dict[str, Any],
     *,
     root_exists: Callable[[], bool],
-    running_chapters: Dict[str, str],
-    running_tasks: Dict[str, Any],
     update_task_progress: Callable[[str, Dict[str, Any]], None],
     update_task_chapter_id: Callable[[str, str], None],
 ) -> None:
@@ -58,20 +56,7 @@ def handle_progress_message(
 
     msg_type = msg.get("type")
     chapter_id = msg.get("chapter_id")
-    task_id: Optional[str] = None
-
-    if chapter_id:
-        task_id = running_chapters.get(chapter_id)
-    if not task_id:
-        for tid in running_tasks:
-            if tid.startswith("novel-"):
-                task_id = tid
-                break
-    if not task_id and msg_type in ("novel_autopilot", "novel_batch", "arc_batch"):
-        for tid in running_tasks:
-            if tid.startswith("novel-auto") or tid.startswith("novel-cont"):
-                task_id = tid
-                break
+    task_id = str(msg.get("task_id") or "")
 
     if not task_id:
         return
@@ -83,7 +68,7 @@ def handle_progress_message(
             if _should_write_progress(task_id, msg):
                 loop.run_in_executor(None, update_task_progress, task_id, msg)
                 wrote = True
-        elif msg_type == "complete" and task_id.startswith("novel-") and chapter_id:
+        elif msg_type == "complete" and chapter_id:
             loop.run_in_executor(None, update_task_chapter_id, task_id, chapter_id)
             wrote = True
     except RuntimeError:
@@ -91,7 +76,7 @@ def handle_progress_message(
             if _should_write_progress(task_id, msg):
                 update_task_progress(task_id, msg)
                 wrote = True
-        elif msg_type == "complete" and task_id.startswith("novel-") and chapter_id:
+        elif msg_type == "complete" and chapter_id:
             update_task_chapter_id(task_id, chapter_id)
             wrote = True
 

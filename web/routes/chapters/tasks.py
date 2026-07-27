@@ -337,4 +337,4 @@ async def abort_task(task_id: str, session: ProjectSession = RequireProjectDep) 
     success = await task_manager.abort_task(task_id)
     if not success:
         return {"status": "ignored", "message": f"Task {task_id} not running or not found"}
-    return {"status": "aborted", "task_id": task_id}
+    return {"status": "cancelled", "task_id": task_id}

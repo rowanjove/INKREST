@@ -61,9 +61,12 @@ const handleTaskClick = (task: any) => {
 const formatStatus = (status: string) => {
   switch (status) {
     case 'pending': return '排队中'
+    case 'claimed': return '已认领'
     case 'running': return '执行中'
-    case 'completed': return '已完成'
+    case 'paused': return '已暂停'
+    case 'succeeded': return '已完成'
     case 'failed': return '已失败'
+    case 'cancelled': return '已取消'
     default: return status
   }
 }
@@ -256,7 +259,7 @@ const recoveryMessage = (task: any) => {
 .status-dot-inner {
   width: 10px; height: 10px; border-radius: 50%; background: #909399; z-index: 2;
 }
-.status-dot-inner.completed { background: #52c41a; box-shadow: 0 0 6px rgba(82, 196, 26, 0.4); }
+.status-dot-inner.succeeded { background: #52c41a; box-shadow: 0 0 6px rgba(82, 196, 26, 0.4); }
 .status-dot-inner.failed { background: #f56c6c; box-shadow: 0 0 6px rgba(245, 108, 108, 0.4); }
 .status-dot-inner.running, .status-dot-inner.pending {
   background: #e6a23c; box-shadow: 0 0 6px rgba(230, 162, 60, 0.4);
@@ -273,7 +276,7 @@ const recoveryMessage = (task: any) => {
 .timeline-meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .chapter-tag { font-size: 13px; font-weight: 700; color: #1a2129; }
 .status-label { font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; }
-.status-label.completed { background: #f0f9eb; color: #52c41a; }
+.status-label.succeeded { background: #f0f9eb; color: #52c41a; }
 .status-label.failed { background: #fef0f0; color: #f56c6c; }
 .status-label.running, .status-label.pending { background: #fdf6ec; color: #e6a23c; }
 .task-message { font-size: 13px; color: var(--text-muted); line-height: 1.5; }

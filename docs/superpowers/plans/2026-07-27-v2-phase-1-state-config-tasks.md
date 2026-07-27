@@ -144,7 +144,7 @@ git commit -m "feat: add leased v2 task repository"
 - Modify: `web/frontend/src/stores/tasks.ts`
 - Modify: `web/frontend/src/components/TaskLog.vue`
 
-- [ ] **Step 1: 写失败的执行器接入测试**
+- [x] **Step 1: 写失败的执行器接入测试**
 
 覆盖：
 
@@ -155,28 +155,31 @@ git commit -m "feat: add leased v2 task repository"
 - abort 转换为 cancelled，不再返回 `aborted`
 - 启动恢复只回收 lease 已过期任务
 
-- [ ] **Step 2: 在进度上下文加入项目与任务身份**
+- [x] **Step 2: 在进度上下文加入项目与任务身份**
 
 扩展现有 ContextVar 包装器，不引入可覆盖的全局回调。所有 emit 函数自动
 补充 `project_id` 和 `task_id`。
 
-- [ ] **Step 3: 迁移所有 TaskManager 与 autopilot 调用**
+- [x] **Step 3: 迁移所有 TaskManager 与 autopilot 调用**
 
 每条提交路径显式指定 `TaskType`；worker 持有 claim token；状态写入只能
 通过仓储转移函数完成。删除从 `goal`、`chapter_id` 或 task id 前缀猜类型的代码。
 
-- [ ] **Step 4: 更新 API 与前端临时消费者**
+- [x] **Step 4: 更新 API 与前端临时消费者**
 
 HTTP 与 TypeScript 状态统一为 V2 枚举。用户界面继续显示中文标签，不暴露
 内部英文值。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```powershell
 py -3.12 -m pytest tests/test_project_task_registry.py tests/api/test_api_tasks.py tests/test_batch_retry_queue.py tests/test_full_chain_chaos.py -q --tb=short
 npm run test:unit --prefix web/frontend
 git commit -m "refactor: run background work through v2 task state machine"
 ```
+
+Actual: 聚焦回归 48 passed、5 subtests passed；后端全量 775 passed、
+4 skipped、10 subtests passed；前端 143 tests 与生产构建通过。
 
 ## Task 4：建立 Pydantic 配置真相源与原子写入
 

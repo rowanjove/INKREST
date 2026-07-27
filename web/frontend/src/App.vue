@@ -341,7 +341,9 @@ const loadEngineStatus = async () => {
     const defaultModel = engine.model
     const nonEmptyPrompts = prompts.filter((item: any) => item.content?.trim()).length
     const failedTasks = tasks.filter((item: any) => item.status === 'failed').length
-    const runningTasks = tasks.filter((item: any) => ['pending', 'running'].includes(item.status)).length
+    const runningTasks = tasks.filter((item: any) =>
+      ['pending', 'claimed', 'running'].includes(item.status),
+    ).length
     const embStage = embeddingStageDetail(emb as Parameters<typeof embeddingStageDetail>[0])
 
     const configuredDefaultId =

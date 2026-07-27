@@ -29,19 +29,28 @@ _abort_check_ctx: ContextVar[Optional[AbortCheck]] = ContextVar(
     "abort_check",
     default=None,
 )
+_project_id_ctx: ContextVar[str] = ContextVar("progress_project_id", default="")
+_task_id_ctx: ContextVar[str] = ContextVar("progress_task_id", default="")
 
 
 @contextmanager
 def progress_handlers(
     progress_callback: Optional[ProgressCallback],
     abort_check: Optional[AbortCheck],
+    *,
+    project_id: str = "",
+    task_id: str = "",
 ) -> Iterator[None]:
     """Bind progress and abort handlers to the current execution context."""
     progress_token = _progress_callback_ctx.set(progress_callback)
     abort_token = _abort_check_ctx.set(abort_check)
+    project_token = _project_id_ctx.set(project_id)
+    task_token = _task_id_ctx.set(task_id)
     try:
         yield
     finally:
+        _task_id_ctx.reset(task_token)
+        _project_id_ctx.reset(project_token)
         _abort_check_ctx.reset(abort_token)
         _progress_callback_ctx.reset(progress_token)
 
@@ -52,6 +61,13 @@ def _progress_callback() -> Optional[ProgressCallback]:
 
 def _abort_check() -> Optional[AbortCheck]:
     return _abort_check_ctx.get() or _default_abort_check
+
+
+def _event_identity() -> Dict[str, str]:
+    return {
+        "project_id": _project_id_ctx.get(),
+        "task_id": _task_id_ctx.get(),
+    }
 
 
 def register_abort_check(callback) -> None:
@@ -105,6 +121,7 @@ def emit_progress(
         "status": status,
         "chapter_id": chapter_id,
         "timestamp": time.time(),
+        **_event_identity(),
     }
     if data:
         msg["data"] = data
@@ -134,6 +151,7 @@ def emit_log(level: str, message: str, step: str = "", chapter_id: str = "") -> 
         "step": step,
         "chapter_id": chapter_id,
         "timestamp": time.time(),
+        **_event_identity(),
     }
     if _json_output_enabled:
         try:
@@ -155,6 +173,7 @@ def emit_complete(chapter_id: str, result: Optional[Dict[str, Any]] = None) -> N
         "type": "complete",
         "chapter_id": chapter_id,
         "timestamp": time.time(),
+        **_event_identity(),
     }
     if result:
         msg["result"] = result
@@ -197,6 +216,7 @@ def emit_error(chapter_id: str, error: str, step: str = "") -> None:
         "step": step,
         "error": error,
         "timestamp": time.time(),
+        **_event_identity(),
     }
     if _json_output_enabled:
         try:

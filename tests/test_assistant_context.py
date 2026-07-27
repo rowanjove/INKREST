@@ -63,14 +63,47 @@ class AssistantContextTests(unittest.TestCase):
             web_server.project_manager.switch_project(project["id"])
             web_server._active_project_id = project["id"]
 
+            from novel_agent.domain.tasks import TaskType
+
             manager = TaskManager(self.tmpdir / "projects" / project["id"])
-            # Save active task to DB
-            manager.store.save_task("task-running", "001", "写第一章", False, "running")
-            manager.store.update_task_progress("task-running", {"step": "writer", "status": "running", "chapter_id": "001", "timestamp": 1})
+            manager._create_task_record(
+                "task-running",
+                TaskType.CHAPTER,
+                {
+                    "chapter_id": "001",
+                    "goal": "写第一章",
+                    "dry_run": False,
+                    "mode": "standard",
+                },
+            )
+            manager._update_task_status("task-running", "running")
+            manager._update_task_progress(
+                "task-running",
+                {
+                    "step": "writer",
+                    "status": "running",
+                    "chapter_id": "001",
+                    "timestamp": 1,
+                },
+            )
             
-            # Save failed task to DB
-            manager.store.save_task("task-failed", "002", "写第二章", False, "failed")
-            manager.store.update_task_status("task-failed", "failed", None, "LLM API 429 rate limit")
+            manager._create_task_record(
+                "task-failed",
+                TaskType.CHAPTER,
+                {
+                    "chapter_id": "002",
+                    "goal": "写第二章",
+                    "dry_run": False,
+                    "mode": "standard",
+                },
+            )
+            manager._update_task_status("task-failed", "running")
+            manager._update_task_status(
+                "task-failed",
+                "failed",
+                None,
+                "LLM API 429 rate limit",
+            )
             
             web_server._task_manager = manager
 
