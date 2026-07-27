@@ -1,6 +1,17 @@
-import { BrowserWindow, shell } from 'electron'
+import { BrowserWindow, shell, type Session } from 'electron'
 
 import { isAllowedAppUrl, isAllowedExternalUrl } from './security'
+
+const hardenedSessions = new WeakSet<Session>()
+
+export function hardenSessionPermissions(targetSession: Session): void {
+  if (hardenedSessions.has(targetSession)) return
+  hardenedSessions.add(targetSession)
+  targetSession.setPermissionCheckHandler(() => false)
+  targetSession.setPermissionRequestHandler(
+    (_webContents, _permission, callback) => callback(false),
+  )
+}
 
 export function applyWindowSecurity(
   window: BrowserWindow,
@@ -8,6 +19,7 @@ export function applyWindowSecurity(
   externalHosts: ReadonlySet<string> = new Set(),
 ): void {
   const { webContents } = window
+  hardenSessionPermissions(webContents.session)
 
   webContents.on('will-navigate', (event, targetUrl) => {
     if (!isAllowedAppUrl(targetUrl, origins)) {
@@ -34,7 +46,4 @@ export function applyWindowSecurity(
     return { action: 'deny' }
   })
 
-  webContents.session.setPermissionRequestHandler(
-    (_webContents, _permission, callback) => callback(false),
-  )
 }

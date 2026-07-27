@@ -16,6 +16,10 @@ interface ElectronRectangle {
   height: number;
 }
 
+interface ElectronBackendStatus {
+  state: 'online' | 'offline' | 'restarting';
+}
+
 interface ElectronAPI {
   getPetSettings: () => Promise<ElectronPetSettings>;
   updatePetSettings: (
@@ -37,8 +41,8 @@ interface ElectronAPI {
   onLog: (callback: (data: unknown) => void) => () => void;
   onComplete: (callback: (data: unknown) => void) => () => void;
   onError: (callback: (data: unknown) => void) => () => void;
-  getBackendStatus: () => Promise<string>;
-  onBackendStatus: (callback: (status: string) => void) => () => void;
+  getBackendStatus: () => Promise<ElectronBackendStatus>;
+  onBackendStatus: (callback: (status: ElectronBackendStatus) => void) => () => void;
 }
 
 interface Window {

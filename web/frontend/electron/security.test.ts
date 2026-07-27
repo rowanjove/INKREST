@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest'
 import {
   appOrigins,
   assertTrustedSenderUrl,
+  backendStatusSnapshot,
   isAllowedAppUrl,
   isAllowedExternalUrl,
   parseMoveDelta,
+  parseBackendStatusSnapshot,
   parsePetSettingsPatch,
   parseRoute,
   parseWindowBounds,
@@ -46,6 +48,18 @@ describe('Electron security boundary', () => {
     expect(() => parseRoute('https://evil.example/')).toThrow()
     expect(() => parseRoute('//evil.example/path')).toThrow()
     expect(() => parseRoute('/ok\r\nbad')).toThrow()
+  })
+
+  it('exposes a minimal validated backend status DTO', () => {
+    expect(backendStatusSnapshot('online')).toEqual({ state: 'online' })
+    expect(parseBackendStatusSnapshot({ state: 'restarting' })).toEqual({
+      state: 'restarting',
+    })
+    expect(() => parseBackendStatusSnapshot('online')).toThrow()
+    expect(() => parseBackendStatusSnapshot({ state: 'broken' })).toThrow()
+    expect(() =>
+      parseBackendStatusSnapshot({ state: 'online', command: 'python secret.py' }),
+    ).toThrow()
   })
 
   it('validates window bounds and movement deltas', () => {

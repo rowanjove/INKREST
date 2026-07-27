@@ -3,6 +3,12 @@ import { EventEmitter } from 'events';
 import path from 'path';
 import fs from 'fs';
 
+export interface PythonBridgeDependencies {
+  spawnProcess?: typeof spawn;
+  fetchHealth?: typeof fetch;
+  pythonCommand?: string;
+}
+
 function inferStreamLogLevel(text: string): 'info' | 'warn' | 'error' {
   const line = text.trim();
   if (!line) return 'info';
@@ -23,14 +29,21 @@ export class PythonBridge extends EventEmitter {
   private templatesDir: string;
   private pythonCmd: string;
   private backendExe: string | null;
+  private readonly spawnProcess: typeof spawn;
+  private readonly fetchHealth: typeof fetch;
+  private startPromise: Promise<void> | null = null;
+  private stopPromise: Promise<void> | null = null;
+  private serverPort: number | null = null;
 
-  constructor(dataDir?: string) {
+  constructor(dataDir?: string, dependencies: PythonBridgeDependencies = {}) {
     super();
+    this.spawnProcess = dependencies.spawnProcess || spawn;
+    this.fetchHealth = dependencies.fetchHealth || fetch;
     this.codeDir = this.resolveCodeDir();
     this.dataDir = dataDir || process.env.NOVEL_AGENT_ROOT || this.codeDir;
     this.templatesDir = this.resolveTemplatesDir();
     this.backendExe = this.resolveBackendExe();
-    this.pythonCmd = this.resolvePython();
+    this.pythonCmd = dependencies.pythonCommand || this.resolvePython();
   }
 
   private resolveCodeDir(): string {
@@ -87,8 +100,33 @@ export class PythonBridge extends EventEmitter {
   }
 
   async startServer(port: number = 8000): Promise<void> {
-    if (this.serverProcess && !this.serverProcess.killed) return;
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new RangeError('port must be a valid TCP port');
+    }
+    if (this.stopPromise) await this.stopPromise;
+    if (
+      this.serverProcess
+      && this.serverProcess.exitCode === null
+      && !this.serverProcess.killed
+    ) {
+      if (this.serverPort !== port) {
+        throw new Error(`Python server is already running on port ${this.serverPort}`);
+      }
+      if (this.startPromise) await this.startPromise;
+      return;
+    }
+    if (this.startPromise) return this.startPromise;
 
+    const operation = this.launchServer(port);
+    this.startPromise = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.startPromise === operation) this.startPromise = null;
+    }
+  }
+
+  private async launchServer(port: number): Promise<void> {
     const command = this.commandArgs([
       'serve',
       '--host', '127.0.0.1',
@@ -97,7 +135,7 @@ export class PythonBridge extends EventEmitter {
       '--root-dir', this.dataDir,
     ]);
 
-    this.serverProcess = spawn(command.command, command.args, {
+    const child = this.spawnProcess(command.command, command.args, {
       cwd: command.cwd,
       env: {
         ...process.env,
@@ -108,27 +146,49 @@ export class PythonBridge extends EventEmitter {
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    this.serverProcess = child;
+    this.serverPort = port;
 
-    this.serverProcess.stdout?.on('data', (data: Buffer) => {
+    child.stdout?.on('data', (data: Buffer) => {
       this.emit('log', { type: 'log', message: data.toString('utf-8').trim(), level: 'info' });
     });
-    this.serverProcess.stderr?.on('data', (data: Buffer) => {
+    child.stderr?.on('data', (data: Buffer) => {
       const message = data.toString('utf-8').trim();
       if (!message) return;
       this.emit('log', { type: 'log', message, level: inferStreamLogLevel(message) });
     });
-    this.serverProcess.on('error', (err) => {
+    child.on('error', (err) => {
       this.emit('error', { type: 'error', error: err.message });
     });
+    child.once('exit', () => {
+      if (this.serverProcess === child) {
+        this.serverProcess = null;
+        this.serverPort = null;
+      }
+    });
 
-    await this.waitForServer(port);
+    try {
+      await this.waitForServer(port, child);
+    } catch (error) {
+      if (!child.killed && child.exitCode === null) {
+        await this.terminateChild(child);
+      }
+      throw error;
+    }
   }
 
-  private async waitForServer(port: number): Promise<void> {
+  private async waitForServer(port: number, child: ChildProcess): Promise<void> {
     const deadline = Date.now() + 60000;
     while (Date.now() < deadline) {
+      if (
+        this.serverProcess !== child
+        || child.killed
+        || child.exitCode !== null
+      ) {
+        throw new Error('Python server stopped before becoming healthy');
+      }
       try {
-        const response = await fetch(`http://127.0.0.1:${port}/api/health`);
+        const response = await this.fetchHealth(`http://127.0.0.1:${port}/api/health`);
         if (response.ok) return;
       } catch {
         // Server is still starting.
@@ -155,11 +215,80 @@ export class PythonBridge extends EventEmitter {
     }
   }
 
-  stopServer(): void {
-    if (this.serverProcess) {
-      this.serverProcess.kill('SIGTERM');
-      this.serverProcess = null;
+  async stopServer(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise;
+    const operation = this.stopServerProcess();
+    this.stopPromise = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.stopPromise === operation) this.stopPromise = null;
     }
+  }
+
+  private async stopServerProcess(): Promise<void> {
+    const pendingStart = this.startPromise;
+    const child = this.serverProcess;
+    if (child) {
+      await this.terminateChild(child);
+      if (this.serverProcess === child) {
+        this.serverProcess = null;
+        this.serverPort = null;
+      }
+    }
+    if (pendingStart) {
+      try {
+        await pendingStart;
+      } catch {
+        // Stopping an in-flight start intentionally rejects readiness.
+      }
+    }
+  }
+
+  private async terminateChild(child: ChildProcess): Promise<void> {
+    if (child.exitCode !== null) return;
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      let forceTimer: NodeJS.Timeout | null = null;
+      let finalTimer: NodeJS.Timeout | null = null;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (forceTimer) clearTimeout(forceTimer);
+        if (finalTimer) clearTimeout(finalTimer);
+        resolve();
+      };
+      child.once('exit', finish);
+      child.once('error', finish);
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        finish();
+        return;
+      }
+      if (child.exitCode !== null) {
+        finish();
+        return;
+      }
+      forceTimer = setTimeout(() => {
+        if (settled) return;
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          finish();
+          return;
+        }
+        finalTimer = setTimeout(finish, 2000);
+      }, 5000);
+    });
+  }
+
+  isServerRunning(): boolean {
+    return Boolean(
+      this.serverProcess
+      && this.serverProcess.exitCode === null
+      && !this.serverProcess.killed,
+    );
   }
 
   isRunning(): boolean {

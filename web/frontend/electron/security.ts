@@ -12,6 +12,12 @@ export interface MoveDelta {
   y: number
 }
 
+export type BackendState = 'online' | 'offline' | 'restarting'
+
+export interface BackendStatusSnapshot {
+  state: BackendState
+}
+
 const BOOLEAN_SETTING_KEYS = [
   'enabled',
   'showOnStartup',
@@ -122,6 +128,19 @@ export function parseRoute(value: unknown): string {
     throw new TypeError('route must be a safe application-relative path')
   }
   return value
+}
+
+export function backendStatusSnapshot(state: BackendState): BackendStatusSnapshot {
+  return { state }
+}
+
+export function parseBackendStatusSnapshot(value: unknown): BackendStatusSnapshot {
+  const input = recordValue(value, 'backend status')
+  assertKnownKeys(input, new Set(['state']), 'backend status')
+  if (!['online', 'offline', 'restarting'].includes(String(input.state))) {
+    throw new TypeError('backend status state is invalid')
+  }
+  return { state: input.state as BackendState }
 }
 
 export function parseWindowBounds(value: unknown): WindowBounds {

@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type { PetSettings } from './pet-settings';
+import {
+  parseBackendStatusSnapshot,
+  type BackendStatusSnapshot,
+} from './security';
 
 export interface ElectronAPI {
   // Pet assistant
@@ -23,8 +27,8 @@ export interface ElectronAPI {
   onLog: (callback: (data: unknown) => void) => () => void;
   onComplete: (callback: (data: unknown) => void) => () => void;
   onError: (callback: (data: unknown) => void) => () => void;
-  getBackendStatus: () => Promise<string>;
-  onBackendStatus: (callback: (status: string) => void) => () => void;
+  getBackendStatus: () => Promise<BackendStatusSnapshot>;
+  onBackendStatus: (callback: (status: BackendStatusSnapshot) => void) => () => void;
 }
 
 const electronAPI: ElectronAPI = {
@@ -71,9 +75,11 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('agent:error', handler);
   },
 
-  getBackendStatus: () => ipcRenderer.invoke('app:getBackendStatus'),
+  getBackendStatus: async () =>
+    parseBackendStatusSnapshot(await ipcRenderer.invoke('app:getBackendStatus')),
   onBackendStatus: (callback) => {
-    const handler = (_event: IpcRendererEvent, status: string) => callback(status);
+    const handler = (_event: IpcRendererEvent, status: unknown) =>
+      callback(parseBackendStatusSnapshot(status));
     ipcRenderer.on('backend:status', handler);
     return () => ipcRenderer.removeListener('backend:status', handler);
   },

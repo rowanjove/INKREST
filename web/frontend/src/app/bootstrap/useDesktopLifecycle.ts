@@ -60,12 +60,12 @@ export function useDesktopLifecycle(router: Router, isPetRoute: Ref<boolean>) {
     }
     if (window.electronAPI?.onBackendStatus) {
       unlistenBackendStatus = window.electronAPI.onBackendStatus((status) => {
-        backendStatus.value = status as BackendStatus
-        backendUnreachable.value = status === 'offline'
+        backendStatus.value = status.state
+        backendUnreachable.value = status.state === 'offline'
       })
       void window.electronAPI.getBackendStatus().then((status) => {
-        backendStatus.value = status as BackendStatus
-        backendUnreachable.value = status === 'offline'
+        backendStatus.value = status.state
+        backendUnreachable.value = status.state === 'offline'
       })
     } else {
       void checkHealth()

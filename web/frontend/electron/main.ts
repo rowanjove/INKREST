@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   ipcMain,
   Menu,
+  session,
   Tray,
   type IpcMainInvokeEvent,
 } from 'electron';
@@ -13,14 +14,21 @@ import { ensurePetWindow, registerPetIpc } from './ipc/pet-ipc';
 import { readPetSettings } from './pet-settings';
 import { createTray } from './tray/tray-manager';
 import { initAutoUpdater } from './updater/auto-updater';
-import { appOrigins, assertTrustedSenderUrl } from './security';
-import { applyWindowSecurity } from './window-security';
+import {
+  appOrigins,
+  assertTrustedSenderUrl,
+  backendStatusSnapshot,
+  type BackendState,
+} from './security';
+import { applyWindowSecurity, hardenSessionPermissions } from './window-security';
+
+app.enableSandbox();
 
 let mainWindow: BrowserWindow | null = null;
 let petWindow: BrowserWindow | null = null;
 let bubbleWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-let pythonBridge: PythonBridge;
+let pythonBridge: PythonBridge | null = null;
 
 const isDev = !app.isPackaged;
 let apiPort = 8000;
@@ -122,7 +130,7 @@ function assertTrustedIpc(event: IpcMainInvokeEvent): void {
 function registerIpcHandlers() {
   ipcMain.handle('app:getBackendStatus', (event) => {
     assertTrustedIpc(event);
-    return isRestarting ? 'restarting' : 'online';
+    return backendStatusSnapshot(isRestarting ? 'restarting' : 'online');
   });
 
   registerPetIpc({
@@ -145,6 +153,10 @@ function registerIpcHandlers() {
 let watchdogTimer: NodeJS.Timeout | null = null;
 let consecutiveFailures = 0;
 let isRestarting = false;
+
+function sendBackendStatus(state: BackendState): void {
+  mainWindow?.webContents.send('backend:status', backendStatusSnapshot(state));
+}
 
 function startWatchdog() {
   if (watchdogTimer) clearInterval(watchdogTimer);
@@ -170,18 +182,17 @@ function startWatchdog() {
       isRestarting = true;
       consecutiveFailures = 0;
       
-      mainWindow?.webContents.send('backend:status', 'restarting');
+      sendBackendStatus('restarting');
       
       try {
-        pythonBridge.stopServer();
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        await pythonBridge.startServer(apiPort);
+        await pythonBridge?.stopServer();
+        await pythonBridge?.startServer(apiPort);
         isRestarting = false;
-        mainWindow?.webContents.send('backend:status', 'online');
+        sendBackendStatus('online');
         console.log(`[Watchdog] Backend successfully restarted.`);
       } catch (restartErr: any) {
         isRestarting = false;
-        mainWindow?.webContents.send('backend:status', 'offline');
+        sendBackendStatus('offline');
         console.error(`[Watchdog] Failed to restart backend: ${restartErr.message}`);
       }
     }
@@ -207,15 +218,18 @@ function findAvailablePort(): Promise<number> {
   });
 }
 
+if (gotSingleInstanceLock) {
 app.whenReady().then(async () => {
   app.setName('栖墨');
   Menu.setApplicationMenu(null);
-  pythonBridge = new PythonBridge(isDev ? undefined : app.getPath('userData'));
+  hardenSessionPermissions(session.defaultSession);
+  const bridge = new PythonBridge(isDev ? undefined : app.getPath('userData'));
+  pythonBridge = bridge;
   apiPort = isDev ? 8000 : await findAvailablePort();
 
   // 1. Start Python/FastAPI server. In dev this also makes the Vite proxy usable.
   try {
-    await pythonBridge.startServer(apiPort);
+    await bridge.startServer(apiPort);
     startWatchdog();
   } catch (err: any) {
     const { dialog } = require('electron');
@@ -264,22 +278,23 @@ app.whenReady().then(async () => {
   }
 
   // 7. Forward Python bridge events to renderer
-  pythonBridge.on('progress', (data) => {
+  bridge.on('progress', (data) => {
     mainWindow?.webContents.send('agent:progress', data);
   });
 
-  pythonBridge.on('log', (data) => {
+  bridge.on('log', (data) => {
     mainWindow?.webContents.send('agent:log', data);
   });
 
-  pythonBridge.on('complete', (data) => {
+  bridge.on('complete', (data) => {
     mainWindow?.webContents.send('agent:complete', data);
   });
 
-  pythonBridge.on('error', (data) => {
+  bridge.on('error', (data) => {
     mainWindow?.webContents.send('agent:error', data);
   });
 });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -293,14 +308,29 @@ app.on('activate', () => {
   }
 });
 
-app.on('before-quit', () => {
+let shutdownInProgress = false;
+let shutdownComplete = false;
+
+app.on('before-quit', (event) => {
   (app as any).isQuitting = true;
+  if (shutdownComplete) return;
+  event.preventDefault();
+  if (shutdownInProgress) return;
+  shutdownInProgress = true;
   if (watchdogTimer) {
     clearInterval(watchdogTimer);
     watchdogTimer = null;
   }
   bubbleWindow?.destroy();
   petWindow?.destroy();
-  pythonBridge?.abort();
-  pythonBridge?.stopServer();
+  const bridge = pythonBridge;
+  bridge?.abort();
+  void (async () => {
+    try {
+      await bridge?.stopServer();
+    } finally {
+      shutdownComplete = true;
+      app.quit();
+    }
+  })();
 });
