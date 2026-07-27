@@ -62,7 +62,7 @@ PET_WINDOW_INTERACTION = (
 )
 
 OUTLINE_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "OutlineView.vue"
-OUTLINE_LEGACY = ROOT / "web" / "frontend" / "src" / "views" / "OutlineEditorLegacy.vue"
+OUTLINE_EDITOR = ROOT / "web" / "frontend" / "src" / "views" / "OutlineEditor.vue"
 PLANNING_TREE = (
     ROOT / "web" / "frontend" / "src" / "components" / "planning" / "PlanningEntityTree.vue"
 )
@@ -580,7 +580,7 @@ def test_llm_log_viewer_fills_remaining_height() -> None:
 
 
 def test_outline_page_places_progress_help_above_queue_status() -> None:
-    source = OUTLINE_LEGACY.read_text(encoding="utf-8")
+    source = OUTLINE_EDITOR.read_text(encoding="utf-8")
     template = source.split("<template>", 1)[1]
     help_idx = template.index("<NovelProgressHelp")
     queue_idx = template.index("<OutlineQueueStatus")
@@ -730,7 +730,8 @@ def test_outline_shell_delegates_to_pane_components() -> None:
     assert "PlanningEntityTree" in source
     assert "PlanningCanvas" in source
     assert "PlanningInspector" in source
-    assert "OutlineEditorLegacy" in source
+    assert "OutlineEditor" in source
+    assert "OutlineEditorLegacy" not in source
     inspector = PLANNING_INSPECTOR.read_text(encoding="utf-8")
     assert "设定" in inspector
     assert "当前状态" in inspector
