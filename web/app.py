@@ -32,6 +32,7 @@ from web.security import (
 )
 from web.routes.system import router as system_router
 from web.routes.auth import router as auth_router
+from web.routes.planning import router as planning_router
 
 app = FastAPI(title="Novel Agent API", version="1.0.0", lifespan=lifespan)
 app.add_middleware(AccessTokenMiddleware)
@@ -122,6 +123,7 @@ app.include_router(agent_api_router)
 app.include_router(factory_router)
 app.include_router(system_router)
 app.include_router(auth_router)
+app.include_router(planning_router)
 
 if os.environ.get("E2E_FIXTURES", "").strip() in ("1", "true", "yes"):
     from web.routes.e2e_fixtures import router as e2e_fixtures_router
