@@ -367,7 +367,7 @@ git commit -m "fix: preserve chapter text before version activation"
 - Modify: `web/tasks.py`
 - Modify: `web/tasks_autopilot.py`
 
-- [ ] **Step 1: 写并发隔离失败测试**
+- [x] **Step 1: 写并发隔离失败测试**
 
 加入两个协程同时绑定不同处理器的测试：
 
@@ -394,7 +394,7 @@ self.assertEqual(received_b, ["b"])
 
 实际测试使用一个内部 `async scenario()` 后传给 `asyncio.run()`，避免把 `gather()` 建在事件循环外。
 
-- [ ] **Step 2: 验证旧全局回调发生覆盖**
+- [x] **Step 2: 验证旧全局回调发生覆盖**
 
 Run:
 
@@ -404,7 +404,7 @@ py -3.12 -m pytest tests/test_project_task_registry.py -q
 
 Expected: FAIL，一个接收列表为空或收到另一个项目的 owner。
 
-- [ ] **Step 3: 在 progress 模块增加上下文处理器**
+- [x] **Step 3: 在 progress 模块增加上下文处理器**
 
 实现：
 
@@ -439,7 +439,7 @@ def progress_handlers(
 
 `emit_*` 和 `check_aborted()` 优先读取 ContextVar；原 `register_*` 只保留为 CLI 默认处理器，不能覆盖任务上下文。
 
-- [ ] **Step 4: 统一后台任务包装器**
+- [x] **Step 4: 统一后台任务包装器**
 
 在 `TaskManager` 中加入：
 
@@ -460,7 +460,7 @@ def _create_task(self, task_id: str, awaitable) -> asyncio.Task:
 
 所有章节、批量、卷、全书和 autopilot 的 `create_task()` 都改为调用 `_create_task()`；构造函数删除 `register_progress_callback()` 和 `register_abort_check()`。
 
-- [ ] **Step 5: 验证任务隔离**
+- [x] **Step 5: 验证任务隔离**
 
 Run:
 
@@ -470,7 +470,7 @@ py -3.12 -m pytest tests/test_project_task_registry.py tests/api/test_api_tasks.
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```powershell
 git add tests/test_project_task_registry.py novel_agent/progress.py web/tasks.py web/tasks_autopilot.py

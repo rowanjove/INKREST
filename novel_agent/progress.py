@@ -7,26 +7,63 @@ to stdout so the Electron main process can parse and forward to the UI.
 import json
 import sys
 import time
-from typing import Any, Dict, Optional
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Callable, Dict, Iterator, Optional
 
 from novel_agent.logging_config import get_logger
 
 logger = get_logger("progress")
 
 _json_output_enabled = False
-_progress_callback = None
-_abort_check_callback = None
+ProgressCallback = Callable[[Dict[str, Any]], None]
+AbortCheck = Callable[[], bool]
+
+_default_progress_callback: Optional[ProgressCallback] = None
+_default_abort_check: Optional[AbortCheck] = None
+_progress_callback_ctx: ContextVar[Optional[ProgressCallback]] = ContextVar(
+    "progress_callback",
+    default=None,
+)
+_abort_check_ctx: ContextVar[Optional[AbortCheck]] = ContextVar(
+    "abort_check",
+    default=None,
+)
+
+
+@contextmanager
+def progress_handlers(
+    progress_callback: Optional[ProgressCallback],
+    abort_check: Optional[AbortCheck],
+) -> Iterator[None]:
+    """Bind progress and abort handlers to the current execution context."""
+    progress_token = _progress_callback_ctx.set(progress_callback)
+    abort_token = _abort_check_ctx.set(abort_check)
+    try:
+        yield
+    finally:
+        _abort_check_ctx.reset(abort_token)
+        _progress_callback_ctx.reset(progress_token)
+
+
+def _progress_callback() -> Optional[ProgressCallback]:
+    return _progress_callback_ctx.get() or _default_progress_callback
+
+
+def _abort_check() -> Optional[AbortCheck]:
+    return _abort_check_ctx.get() or _default_abort_check
 
 
 def register_abort_check(callback) -> None:
-    """Register a callback to check if the current task has been aborted."""
-    global _abort_check_callback
-    _abort_check_callback = callback
+    """Register the default abort handler used outside a task context."""
+    global _default_abort_check
+    _default_abort_check = callback
 
 
 def check_aborted() -> None:
     """Check if the task has been aborted, and raise TaskAbortedError if so."""
-    if _abort_check_callback and _abort_check_callback():
+    callback = _abort_check()
+    if callback and callback():
         from novel_agent.exceptions import TaskAbortedError
         raise TaskAbortedError("任务已被用户中止。")
 
@@ -42,9 +79,9 @@ def is_json_output_enabled() -> bool:
 
 
 def register_progress_callback(callback) -> None:
-    """Register a global callback to receive progress updates."""
-    global _progress_callback
-    _progress_callback = callback
+    """Register the default progress handler used outside a task context."""
+    global _default_progress_callback
+    _default_progress_callback = callback
 
 
 def emit_progress(
@@ -78,9 +115,10 @@ def emit_progress(
         except Exception as exc:
             logger.warning("Failed to print progress to stdout: %s", exc)
 
-    if _progress_callback:
+    callback = _progress_callback()
+    if callback:
         try:
-            _progress_callback(msg)
+            callback(msg)
         except Exception as exc:
             logger.warning("Progress callback failed: %s", exc)
 
@@ -103,9 +141,10 @@ def emit_log(level: str, message: str, step: str = "", chapter_id: str = "") -> 
         except Exception as exc:
             logger.warning("Failed to print log to stdout: %s", exc)
 
-    if _progress_callback:
+    callback = _progress_callback()
+    if callback:
         try:
-            _progress_callback(msg)
+            callback(msg)
         except Exception as exc:
             logger.warning("Log callback failed: %s", exc)
 
@@ -126,9 +165,10 @@ def emit_complete(chapter_id: str, result: Optional[Dict[str, Any]] = None) -> N
         except Exception as exc:
             logger.warning("Failed to print completion to stdout: %s", exc)
 
-    if _progress_callback:
+    callback = _progress_callback()
+    if callback:
         try:
-            _progress_callback(msg)
+            callback(msg)
         except Exception as exc:
             logger.warning("Completion callback failed: %s", exc)
 
@@ -164,9 +204,10 @@ def emit_error(chapter_id: str, error: str, step: str = "") -> None:
         except Exception as exc:
             logger.warning("Failed to print error to stdout: %s", exc)
 
-    if _progress_callback:
+    callback = _progress_callback()
+    if callback:
         try:
-            _progress_callback(msg)
+            callback(msg)
         except Exception as exc:
             logger.warning("Error callback failed: %s", exc)
 

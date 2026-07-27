@@ -1,5 +1,6 @@
 """Per-project TaskManager registry."""
 
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -39,6 +40,46 @@ class ProjectTaskRegistryTests(unittest.TestCase):
         manager_a = self.registry.get(self.project_a)
         self.registry.drop(self.project_a)
         self.assertIsNot(self.registry.get(self.project_a), manager_a)
+
+    def test_progress_handlers_are_isolated_between_concurrent_tasks(self):
+        from novel_agent.progress import emit_progress, progress_handlers
+
+        received_a = []
+        received_b = []
+
+        async def emit_for(label, received):
+            with progress_handlers(
+                lambda message: received.append(message["data"]["owner"]),
+                lambda: False,
+            ):
+                await asyncio.sleep(0)
+                emit_progress("writer", "running", {"owner": label}, "001")
+
+        async def scenario():
+            await asyncio.gather(
+                emit_for("a", received_a),
+                emit_for("b", received_b),
+            )
+
+        asyncio.run(scenario())
+
+        self.assertEqual(received_a, ["a"])
+        self.assertEqual(received_b, ["b"])
+
+    def test_task_manager_construction_does_not_replace_default_progress_handler(self):
+        from novel_agent.progress import emit_progress, register_progress_callback
+
+        received = []
+        register_progress_callback(received.append)
+        try:
+            self.registry.get(self.project_a)
+            self.registry.get(self.project_b)
+
+            emit_progress("writer", "running", {"owner": "cli"}, "001")
+        finally:
+            register_progress_callback(None)
+
+        self.assertEqual([message["data"]["owner"] for message in received], ["cli"])
 
 
 if __name__ == "__main__":

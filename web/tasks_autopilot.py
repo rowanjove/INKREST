@@ -3,6 +3,7 @@
 import asyncio
 import uuid
 import logging
+from functools import partial
 from typing import Any, Dict, List, Optional
 from novel_agent.pipeline import PipelineConfig
 from novel_agent.orchestrator import NovelOrchestrator
@@ -59,10 +60,11 @@ async def submit_novel_continue_helper(
         dry_run,
         "pending",
     )
-    loop = asyncio.get_running_loop()
     if autopilot:
-        task = loop.create_task(
-            run_novel_autopilot_helper(
+        task = task_manager._create_task(
+            task_id,
+            partial(
+                run_novel_autopilot_helper,
                 task_manager,
                 task_id,
                 resume,
@@ -74,10 +76,17 @@ async def submit_novel_continue_helper(
             )
         )
     else:
-        task = loop.create_task(
-            run_novel_continue_helper(
-                task_manager, task_id, resume, max_chapters, dry_run, full_book=full_book
-            )
+        task = task_manager._create_task(
+            task_id,
+            partial(
+                run_novel_continue_helper,
+                task_manager,
+                task_id,
+                resume,
+                max_chapters,
+                dry_run,
+                full_book=full_book,
+            ),
         )
     with task_manager._novel_batch_lock:
         if active_novel_batch_task_id_helper(task_manager):

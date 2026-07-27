@@ -5,15 +5,16 @@ import threading
 import uuid
 import contextvars
 import json
+from functools import partial
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from novel_agent.logging_config import get_logger
 from novel_agent.orchestrator import NovelOrchestrator
 from novel_agent.pipeline import PipelineConfig, assert_llm_ready
 from web.task_batch import run_chapter_batch
 from web.task_progress import handle_progress_message
-from novel_agent.progress import register_progress_callback, register_abort_check
+from novel_agent.progress import progress_handlers
 from novel_agent.state.sqlite_store import SQLiteStateStore, safe_connection
 
 task_id_var = contextvars.ContextVar("task_id", default=None)
@@ -60,20 +61,32 @@ class TaskManager:
         
         self._startup_cleanup()
         self._wrap_store_ws_notify()
-        register_progress_callback(self._on_progress_emitted)
-
-        def abort_checker() -> bool:
-            tid = task_id_var.get()
-            if not tid:
-                return False
-            return self.is_aborted(tid)
-        register_abort_check(abort_checker)
 
         try:
             loop = asyncio.get_running_loop()
             self._queue_loop_task = loop.create_task(self._run_pending_tasks_loop())
         except RuntimeError:
             self._queue_loop_task = None
+
+    async def _run_with_progress_context(
+        self,
+        task_id: str,
+        awaitable_factory: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        with progress_handlers(
+            self._on_progress_emitted,
+            lambda: self.is_aborted(task_id),
+        ):
+            return await awaitable_factory()
+
+    def _create_task(
+        self,
+        task_id: str,
+        awaitable_factory: Callable[[], Awaitable[Any]],
+    ) -> asyncio.Task:
+        return asyncio.get_running_loop().create_task(
+            self._run_with_progress_context(task_id, awaitable_factory)
+        )
 
     def _semaphore_for_loop(self) -> asyncio.Semaphore:
         """One semaphore per running event loop (TestClient / worker threads)."""
@@ -143,8 +156,16 @@ class TaskManager:
 
                     self._running_chapters[chapter_id] = task_id
                     logger.info("Resuming pending chapter task %s for chapter %s", task_id, chapter_id)
-                    loop = asyncio.get_running_loop()
-                    t = loop.create_task(self._run_chapter(task_id, chapter_id, goal, dry_run))
+                    t = self._create_task(
+                        task_id,
+                        partial(
+                            self._run_chapter,
+                            task_id,
+                            chapter_id,
+                            goal,
+                            dry_run,
+                        ),
+                    )
                     self._running_tasks[task_id] = t
 
             except asyncio.CancelledError:
@@ -241,8 +262,10 @@ class TaskManager:
             )
             self._running_chapters[chapter_id] = task_id
         
-        loop = asyncio.get_running_loop()
-        task = loop.create_task(self._run_chapter(task_id, chapter_id, goal, dry_run))
+        task = self._create_task(
+            task_id,
+            partial(self._run_chapter, task_id, chapter_id, goal, dry_run),
+        )
         self._running_tasks[task_id] = task
         return task_id
 
@@ -270,8 +293,10 @@ class TaskManager:
             )
             self._running_chapters[chapter_id] = task_id
 
-        loop = asyncio.get_running_loop()
-        task = loop.create_task(self._run_chapter_gate_only(task_id, chapter_id))
+        task = self._create_task(
+            task_id,
+            partial(self._run_chapter_gate_only, task_id, chapter_id),
+        )
         self._running_tasks[task_id] = task
         return task_id
 
@@ -472,8 +497,10 @@ class TaskManager:
             dry_run,
             "pending",
         )
-        loop = asyncio.get_running_loop()
-        task = loop.create_task(self._run_batch(batch_id, chapters, dry_run))
+        task = self._create_task(
+            batch_id,
+            partial(self._run_batch, batch_id, chapters, dry_run),
+        )
         self._running_tasks[batch_id] = task
         return batch_id
 
@@ -656,9 +683,17 @@ class TaskManager:
             50
         )
         
-        loop = asyncio.get_running_loop()
-        task = loop.create_task(
-            self._run_novel(task_id, theme, genre, target_chapters, special_requirements, dry_run)
+        task = self._create_task(
+            task_id,
+            partial(
+                self._run_novel,
+                task_id,
+                theme,
+                genre,
+                target_chapters,
+                special_requirements,
+                dry_run,
+            ),
         )
         self._running_tasks[task_id] = task
         return task_id
@@ -683,11 +718,12 @@ class TaskManager:
             dry_run,
             "pending",
         )
-        loop = asyncio.get_running_loop()
-        task = loop.create_task(
-            self._run_arc_batch(
+        task = self._create_task(
+            task_id,
+            partial(
+                self._run_arc_batch,
                 task_id, arc_id, arc_ids or [], start_arc_id, resume, max_chapters, dry_run
-            )
+            ),
         )
         self._running_tasks[task_id] = task
         return task_id
