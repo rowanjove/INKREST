@@ -13,6 +13,8 @@ novel_agent.db
 *.db
 projects.json
 workspace/
+!assets/demo_projects/demo-factory-novel/workspace/
+!assets/demo_projects/demo-factory-novel/workspace/**
 projects/
 logs/
 backups/

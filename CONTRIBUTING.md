@@ -25,6 +25,7 @@ npm run test:e2e
 ### 只改后端（`novel_agent/`、`web/` Python）
 
 ```powershell
+python -m ruff check novel_agent web tests
 python -m pytest tests/ --ignore=tests/smoke -q
 ```
 
@@ -36,6 +37,7 @@ npm run test:unit
 npm run build
 npm run check:bundle
 cd ../..
+python -m ruff check novel_agent web tests
 python -m pytest tests/ --ignore=tests/smoke -q --tb=short
 python -m pytest tests/test_full_chain_chaos.py tests/api/test_novel_smoke_chain.py -q --tb=short
 python scripts/perf_api_baseline.py --check

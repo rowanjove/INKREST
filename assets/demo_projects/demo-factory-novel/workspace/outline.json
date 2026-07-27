@@ -1,0 +1,21 @@
+{
+  "chosen_title": "星河试炼：工厂示例书",
+  "title_options": ["星河试炼：工厂示例书"],
+  "core_theme": "废柴逆袭与星际学院成长",
+  "genre_positioning": "玄幻",
+  "selling_points": ["废柴逆袭", "星际学院", "系统流爽点"],
+  "target_chapters": 80,
+  "scale_profile": {
+    "scale": "medium",
+    "label": "中篇",
+    "target_chapters": 80,
+    "max_chapters": 120
+  },
+  "chapters": [
+    {"chapter_id": "001", "goal": "入学测试", "chapter_title": "第1章 入学测试"},
+    {"chapter_id": "002", "goal": "首战告捷", "chapter_title": "第2章 首战告捷"},
+    {"chapter_id": "003", "goal": "结识同伴", "chapter_title": "第3章 结识同伴"},
+    {"chapter_id": "004", "goal": "秘境试炼", "chapter_title": "第4章 秘境试炼"},
+    {"chapter_id": "005", "goal": "突破瓶颈", "chapter_title": "第5章 突破瓶颈"}
+  ]
+}
