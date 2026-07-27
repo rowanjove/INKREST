@@ -10,6 +10,7 @@ from typing import Any, Dict
 from novel_agent.services.arc_queue import record_novel_batch_paused
 from novel_agent.services.batch_retry_queue import record_batch_retry
 from novel_agent.services.outline_sync import mark_arcs_synced_with_outline
+from novel_agent.state.sqlite_store import SQLiteStateStore, safe_connection
 from tests.helpers.seed_engine import seed_usable_daily_model
 
 E2E_PROJECT_NAME = "E2E维护场景"
@@ -51,6 +52,53 @@ def _seed_ready_project(root: Path) -> None:
         encoding="utf-8",
     )
     mark_arcs_synced_with_outline(root)
+
+
+def _seed_manuscript_chapters(root: Path) -> None:
+    chapters = {
+        "001": ("第一章 雨夜来信", "雨落在旧城的青石路上。\n\n林越推开门，发现桌上多了一封没有署名的信。"),
+        "002": ("第二章 失踪的钟声", "午夜钟声响起时，城北的灯一盏接一盏熄灭。"),
+        "003": ("第三章 门后的影子", "门缝里没有光，只有一阵很轻的呼吸声。"),
+    }
+    for chapter_id, (title, text) in chapters.items():
+        chapter_dir = root / "workspace" / "chapters" / f"chapter_{chapter_id}"
+        chapter_dir.mkdir(parents=True, exist_ok=True)
+        (chapter_dir / "plan.json").write_text(
+            json.dumps(
+                {
+                    "chapter_id": chapter_id,
+                    "chapter_title": title,
+                    "chapter_goal": "推进调查并留下下一章悬念",
+                    "detailed_synopsis": "主角沿着新线索继续调查旧城异象。",
+                    "target_chars": [1800, 2600],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        (chapter_dir / "chapter_final.txt").write_text(text, encoding="utf-8")
+
+    store = SQLiteStateStore(root)
+    for chapter_id, (title, text) in chapters.items():
+        chapter_dir = root / "workspace" / "chapters" / f"chapter_{chapter_id}"
+        store.index_chapter(
+            chapter_id,
+            title,
+            chapter_dir / "chapter_final.txt",
+            len(text.replace("\n", "")),
+            "high" if chapter_id == "003" else "",
+            has_final=1,
+            gate_status="failed" if chapter_id == "003" else "ready",
+            indexed_at=time.time(),
+        )
+    with safe_connection(store.db_path) as conn:
+        with conn:
+            conn.execute(
+                "delete from document_revisions where chapter_id in ('001', '002', '003')"
+            )
+            conn.execute(
+                "delete from documents where chapter_id in ('001', '002', '003')"
+            )
 
 
 def _seed_quality_blocked_chapter(root: Path, chapter_id: str = "003") -> None:
@@ -98,6 +146,7 @@ def seed_maintenance_scenario(project_manager) -> Dict[str, Any]:
         root = project_manager.base_dir / "projects" / project_id
 
     _seed_ready_project(root)
+    _seed_manuscript_chapters(root)
     record_batch_retry(
         root,
         chapter_id="002",

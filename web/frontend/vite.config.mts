@@ -39,6 +39,9 @@ export default defineConfig(async () => {
             if (id.includes('node_modules/element-plus')) return 'element-plus'
             if (id.includes('node_modules/axios')) return 'axios'
             if (id.includes('node_modules/@vue-flow')) return 'vue-flow'
+            if (id.includes('node_modules/@tiptap')) return 'tiptap'
+            if (id.includes('node_modules/prosemirror-')) return 'prosemirror'
+            if (id.includes('node_modules/@tanstack')) return 'tanstack-virtual'
             if (
               id.includes('node_modules/vue') ||
               id.includes('node_modules/vue-router') ||

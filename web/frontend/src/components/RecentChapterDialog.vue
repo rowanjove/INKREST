@@ -12,12 +12,12 @@ const { latestChapter } = storeToRefs(store)
 
 function goChapter(chapterId: string) {
   visible.value = false
-  router.push(`/chapters/${chapterId}`)
+  router.push({ path: '/writer', query: { chapter: chapterId } })
 }
 
 function goChapterList() {
   visible.value = false
-  router.push('/chapters/list')
+  router.push('/writer')
 }
 </script>
 

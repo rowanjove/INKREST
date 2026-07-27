@@ -4,13 +4,14 @@ import { openWithActiveProject } from './helpers/fixtures'
 test.describe('writer and state views', () => {
   test.skip(!process.env.E2E_RUN, 'Set E2E_RUN=1 with backend running to execute')
 
-  test('writer page shows chapter sidebar and editor toolbar', async ({ page, request }) => {
+  test('writer page shows virtual chapter tree and Tiptap toolbar', async ({ page, request }) => {
     await openWithActiveProject(page, request, '/writer')
-    await expect(page.locator('.chapter-sidebar .sidebar-title')).toContainText('章节目录', {
+    await expect(page.getByRole('complementary', { name: '章节目录' })).toBeVisible({
       timeout: 15_000,
     })
-    await expect(page.locator('.editor-workspace .btn-save')).toBeVisible()
-    await expect(page.locator('.editor-workspace .btn-ai')).toBeVisible()
+    await expect(page.getByRole('navigation', { name: '正文格式' })).toBeVisible()
+    await expect(page.getByLabel('正文编辑器')).toBeVisible()
+    await expect(page.getByText('已自动保存', { exact: true })).toBeVisible()
   })
 
   test('state page shows outer tabs and settings sub-tabs', async ({ page, request }) => {

@@ -19,7 +19,7 @@ test.describe('chapter maintenance', () => {
       timeout: 15_000,
     })
     await expect(page.locator('#pipeline-alerts-section .pipeline-panel__body')).toBeVisible()
-    await expect(page.getByText('内部门禁（栖墨统一门禁）')).toBeVisible()
+    await expect(page.getByRole('button', { name: '统一门禁', exact: true })).toBeVisible()
     await expect(page.getByRole('radio', { name: '门禁阻断' })).toBeVisible()
     await expect(page.getByRole('radio', { name: '批量跳过' })).toBeVisible()
     for (const chapterId of seed.pending_chapter_ids) {

@@ -10,26 +10,28 @@ function read(rel: string): string {
 }
 
 describe('refactored view subcomponents', () => {
-  it('WritingWorkspace shell wires four writing child components', () => {
+  it('WritingWorkspace shell wires the unified manuscript center', () => {
     const source = read('views/WritingWorkspace.vue')
-    expect(source).toContain('WritingChapterSidebar')
-    expect(source).toContain('WritingEditorMain')
-    expect(source).toContain('WritingRightSidebar')
-    expect(source).toContain('WritingWorkspaceDialogs')
+    expect(source).toContain('ManuscriptChapterTree')
+    expect(source).toContain('ManuscriptEditor')
+    expect(source).toContain('ManuscriptInspector')
+    expect(source).toContain('useManuscriptWorkspace')
+    expect(source).toContain('Splitpanes')
   })
 
-  it('WritingEditorMain keeps toolbar grid contract', () => {
-    const source = read('components/writing/WritingEditorMain.vue')
-    expect(source).toContain('grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));')
-    expect(source).toContain('btn-save')
-    expect(source).toContain('btn-ai')
+  it('ManuscriptEditor persists Tiptap JSON without a textarea', () => {
+    const source = read('components/manuscript/ManuscriptEditor.vue')
+    expect(source).toContain('@tiptap/vue-3')
+    expect(source).toContain('instance.getJSON()')
+    expect(source).not.toContain('<textarea')
   })
 
-  it('WritingChapterSidebar exposes chapter list actions', () => {
-    const source = read('components/writing/WritingChapterSidebar.vue')
+  it('ManuscriptChapterTree virtualizes and filters the chapter list', () => {
+    const source = read('components/manuscript/ManuscriptChapterTree.vue')
     expect(source).toContain('章节目录')
-    expect(source).toContain('onDeleteChapter')
-    expect(source).toContain('defineModel<boolean>(\'collapsed\'')
+    expect(source).toContain('useVirtualizer')
+    expect(source).toContain('搜索章节')
+    expect(source).toContain("emit('select'")
   })
 
   it('StateView shell wires settings and chronicle tabs', () => {
@@ -154,28 +156,12 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('msg-bubble.welcome')
   })
 
-  it('ChapterList shell wires table, repair dialog, and composable', () => {
-    const source = read('views/ChapterList.vue')
-    expect(source).toContain('ChapterListTable')
-    expect(source).toContain('ChapterRepairDialog')
-    expect(source).toContain('useChapterList')
-  })
-
-  it('ChapterListTable keeps gate rerun and edit action contract', () => {
-    const source = read('components/chapter/ChapterListTable.vue')
-    expect(source).toContain('只重跑门禁')
-    expect(source).toContain('onRerunGateOnly')
-    expect(source).toContain('class="chapter-edit-btn"')
-    expect(source.replace(/\s/g, '')).toContain('>编辑<')
-    expect(source).toContain('v-if="!row.is_missing"')
-  })
-
-  it('ChapterRepairDialog keeps goal suggest and submit actions', () => {
-    const source = read('components/chapter/ChapterRepairDialog.vue')
-    expect(source).toContain('AI 读入大纲')
-    expect(source).toContain('运行章节流水线')
-    expect(source).toContain('onSuggestGoal')
-    expect(source).toContain('onSubmitRepair')
+  it('ManuscriptInspector keeps context, AI, review, history, and settings together', () => {
+    const source = read('components/manuscript/ManuscriptInspector.vue')
+    expect(source).toContain('上下文')
+    expect(source).toContain('采纳前不会修改正文')
+    expect(source).toContain('修订历史')
+    expect(source).toContain('阅读与排版')
   })
 
   it('PluginManager shell wires metrics, filter, grid, and dialogs', () => {
@@ -224,20 +210,10 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('novel-content-sheet')
   })
 
-  it('ChapterDetail shell wires alerts, header, tabs, and edit dialog', () => {
-    const source = read('views/ChapterDetail.vue')
-    expect(source).toContain('ChapterDetailAlerts')
-    expect(source).toContain('ChapterDetailHeader')
-    expect(source).toContain('ChapterDetailTabs')
-    expect(source).toContain('ChapterDetailEditDialog')
-    expect(source).toContain('useChapterDetail')
-  })
-
-  it('ChapterDetailHeader hides rewrite actions without final text', () => {
-    const source = read('components/chapter/ChapterDetailHeader.vue')
-    expect(source).toContain('v-if="hasFinalText"')
-    expect(source).toContain('整章重写')
-    expect(source).toContain('编辑本章')
+  it('legacy chapter routes redirect into the manuscript center', () => {
+    const source = read('router.ts')
+    expect(source).toContain("{ path: '/chapters', redirect: '/writer'")
+    expect(source).toContain("query: { chapter: String(to.params.id) }")
   })
 
   it('CreateWizard wires the four-step flow and three data-entry panes', () => {
@@ -294,12 +270,10 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('pet-hit-area')
   })
 
-  it('ChaptersLayout delegates subnav to ChapterSubnav', () => {
-    const source = read('views/ChaptersLayout.vue')
-    expect(source).toContain('ChapterSubnav')
-    const subnav = read('components/chapter/ChapterSubnav.vue')
-    expect(subnav).toContain('to="/chapters/list"')
-    expect(subnav).toContain('chapter-subnav__badge')
+  it('chapter maintenance stays in the production route', () => {
+    const source = read('router.ts')
+    expect(source).toContain("path: '/chapters/maintenance'")
+    expect(source).toContain("navId: 'production'")
   })
 
   it('ChapterMaintenance shell wires repair queue and expand composable', () => {

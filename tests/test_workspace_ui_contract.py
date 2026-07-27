@@ -3,13 +3,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WRITER = ROOT / "web" / "frontend" / "src" / "views" / "WritingWorkspace.vue"
-WRITER_EDITOR_MAIN = (
-    ROOT / "web" / "frontend" / "src" / "components" / "writing" / "WritingEditorMain.vue"
+MANUSCRIPT_EDITOR = (
+    ROOT / "web" / "frontend" / "src" / "components" / "manuscript" / "ManuscriptEditor.vue"
 )
-WRITER_CHAPTER = (
-    ROOT / "web" / "frontend" / "src" / "composables" / "useWritingChapterEditor.ts"
+MANUSCRIPT_TREE = (
+    ROOT / "web" / "frontend" / "src" / "components" / "manuscript" / "ManuscriptChapterTree.vue"
 )
-WRITER_AI_WRITE = ROOT / "web" / "frontend" / "src" / "composables" / "useWritingAiWrite.ts"
+MANUSCRIPT_INSPECTOR = (
+    ROOT / "web" / "frontend" / "src" / "components" / "manuscript" / "ManuscriptInspector.vue"
+)
+MANUSCRIPT_COMPOSABLE = (
+    ROOT / "web" / "frontend" / "src" / "composables" / "useManuscriptWorkspace.ts"
+)
 ASSET_EDITOR = ROOT / "web" / "frontend" / "src" / "views" / "AssetEditor.vue"
 ASSET_EDITOR_PANEL = (
     ROOT / "web" / "frontend" / "src" / "components" / "asset" / "AssetEditorPanel.vue"
@@ -43,10 +48,6 @@ MONITOR_TABS = (
     ROOT / "web" / "frontend" / "src" / "components" / "monitor" / "MonitorTabsPane.vue"
 )
 MONITOR_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "useMonitorView.ts"
-CHAPTERS_LAYOUT = ROOT / "web" / "frontend" / "src" / "views" / "ChaptersLayout.vue"
-CHAPTER_SUBNAV = (
-    ROOT / "web" / "frontend" / "src" / "components" / "chapter" / "ChapterSubnav.vue"
-)
 CONFIG_SECTIONS_STACK = (
     ROOT / "web" / "frontend" / "src" / "components" / "config" / "ConfigSectionsStack.vue"
 )
@@ -85,12 +86,6 @@ STATE_SETTINGS_TAB = (
 STATE_CHRONICLE_TAB = (
     ROOT / "web" / "frontend" / "src" / "components" / "state" / "StateChronicleTab.vue"
 )
-WRITER_CHAPTER_SIDEBAR = (
-    ROOT / "web" / "frontend" / "src" / "components" / "writing" / "WritingChapterSidebar.vue"
-)
-WRITER_RIGHT_SIDEBAR = (
-    ROOT / "web" / "frontend" / "src" / "components" / "writing" / "WritingRightSidebar.vue"
-)
 OUTLINE_GENES = (
     ROOT / "web" / "frontend" / "src" / "components" / "outline" / "OutlineGenesPanel.vue"
 )
@@ -103,18 +98,8 @@ PLUGIN_MANAGER_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / 
 EMPTY_STATE = ROOT / "web" / "frontend" / "src" / "components" / "EmptyStatePanel.vue"
 SHARED_EMPTY_STATE = ROOT / "web" / "frontend" / "src" / "shared" / "ui" / "EmptyState.vue"
 COST_PANEL = ROOT / "web" / "frontend" / "src" / "components" / "CostSummaryPanel.vue"
-CHAPTER_LIST = ROOT / "web" / "frontend" / "src" / "views" / "ChapterList.vue"
-CHAPTER_LIST_TABLE = (
-    ROOT / "web" / "frontend" / "src" / "components" / "chapter" / "ChapterListTable.vue"
-)
-CHAPTER_LIST_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "useChapterList.ts"
 NOVEL_PROGRESS_HELP = ROOT / "web" / "frontend" / "src" / "components" / "NovelProgressHelp.vue"
 BATCH_BANNER = ROOT / "web" / "frontend" / "src" / "components" / "BatchRunStatusBanner.vue"
-CHAPTER_DETAIL = ROOT / "web" / "frontend" / "src" / "views" / "ChapterDetail.vue"
-CHAPTER_DETAIL_HEADER = (
-    ROOT / "web" / "frontend" / "src" / "components" / "chapter" / "ChapterDetailHeader.vue"
-)
-CHAPTER_DETAIL_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "useChapterDetail.ts"
 EMBEDDING_CONFIG = ROOT / "web" / "frontend" / "src" / "components" / "EmbeddingConfig.vue"
 PIPELINE_RUNTIME = ROOT / "web" / "frontend" / "src" / "components" / "PipelineRuntimeConfig.vue"
 SHANSHAN_COPY = ROOT / "web" / "frontend" / "src" / "constants" / "shanshanCopy.ts"
@@ -123,16 +108,18 @@ FRONTEND_API_CLIENT = ROOT / "web" / "frontend" / "src" / "api" / "client.ts"
 BUBBLE_WINDOW = ROOT / "web" / "frontend" / "electron" / "windows" / "bubble-window.ts"
 
 
-def test_writer_supports_chapter_delete_right_sidebar_collapse_and_ai_reload() -> None:
+def test_writer_uses_revisioned_autosave_and_confirmed_ai_suggestions() -> None:
     writer_source = WRITER.read_text(encoding="utf-8")
-    chapter_source = WRITER_CHAPTER.read_text(encoding="utf-8")
-    ai_write_source = WRITER_AI_WRITE.read_text(encoding="utf-8")
+    composable_source = MANUSCRIPT_COMPOSABLE.read_text(encoding="utf-8")
 
-    assert "deleteChapter" in chapter_source
-    assert "handleDeleteChapter" in writer_source
-    assert "rightSidebarCollapsed" in writer_source
-    assert "pollAiWriteResult" in ai_write_source
-    assert "await loadChapter(chapterId)" in ai_write_source
+    assert "useManuscriptWorkspace" in writer_source
+    assert "confirmAiIntent" in writer_source
+    assert "采纳建议" in MANUSCRIPT_INSPECTOR.read_text(encoding="utf-8")
+    assert "expected_revision" in (
+        ROOT / "web" / "frontend" / "src" / "api" / "manuscript.ts"
+    ).read_text(encoding="utf-8")
+    assert "conflictDocument" in composable_source
+    assert "window.setTimeout" in composable_source
 
 
 def test_writer_save_button_uses_toolbar_style_instead_of_green_block() -> None:
@@ -141,12 +128,13 @@ def test_writer_save_button_uses_toolbar_style_instead_of_green_block() -> None:
     assert "linear-gradient(135deg, #16a34a, #65a30d)" not in source
 
 
-def test_writer_toolbar_actions_use_even_grid_distribution() -> None:
-    source = WRITER_EDITOR_MAIN.read_text(encoding="utf-8")
+def test_writer_uses_tiptap_json_instead_of_a_textarea() -> None:
+    source = MANUSCRIPT_EDITOR.read_text(encoding="utf-8")
 
-    assert "grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));" in source
-    assert ".action-buttons .premium-btn" in source
-    assert "width: 100%;" in source
+    assert "@tiptap/vue-3" in source
+    assert "StarterKit" in source
+    assert "instance.getJSON()" in source
+    assert "<textarea" not in source
 
 
 def test_asset_source_panels_are_hidden_until_toolbar_toggle() -> None:
@@ -283,11 +271,12 @@ def test_dashboard_exposes_authoritative_progress_bar() -> None:
     assert "<el-progress" in source
 
 
-def test_chapter_list_exposes_gate_only_rerun() -> None:
-    table_source = CHAPTER_LIST_TABLE.read_text(encoding="utf-8")
-    composable_source = CHAPTER_LIST_COMPOSABLE.read_text(encoding="utf-8")
-    assert "只重跑门禁" in table_source
-    assert "rerunGateOnly" in composable_source
+def test_manuscript_tree_virtualizes_and_filters_chapters() -> None:
+    source = MANUSCRIPT_TREE.read_text(encoding="utf-8")
+    assert "useVirtualizer" in source
+    assert "搜索章节" in source
+    assert "需处理" in source
+    assert "getItemKey" in source
 
 
 def test_monitor_includes_cost_summary_panel() -> None:
@@ -349,16 +338,13 @@ def test_cost_summary_panel_handles_load_error() -> None:
     assert "loadError" in source
 
 
-def test_chapter_pages_hide_rewrite_actions_without_final_text() -> None:
-    list_source = CHAPTER_LIST_TABLE.read_text(encoding="utf-8")
-    detail_header_source = CHAPTER_DETAIL_HEADER.read_text(encoding="utf-8")
-    detail_composable_source = CHAPTER_DETAIL_COMPOSABLE.read_text(encoding="utf-8")
-
-    assert 'v-if="!row.is_missing"' in list_source
-    assert 'class="chapter-edit-btn"' in list_source
-    assert ">编辑<" in list_source.replace("\n", "").replace(" ", "")
-    assert 'v-if="hasFinalText"' in detail_header_source
-    assert "const hasFinalText = computed" in detail_composable_source
+def test_legacy_chapter_routes_converge_on_manuscript_center() -> None:
+    source = ROUTER.read_text(encoding="utf-8")
+    assert "{ path: '/chapters', redirect: '/writer'" in source
+    assert "{ path: '/chapters/list', redirect: '/writer'" in source
+    assert "query: { chapter: String(to.params.id) }" in source
+    assert "ChapterList.vue" not in source
+    assert "ChapterDetail.vue" not in source
 
 
 def test_embedding_config_stays_collapsed_by_default() -> None:
@@ -372,8 +358,7 @@ def test_api_errors_prefer_backend_detail_over_status_text() -> None:
     if FRONTEND_API_CLIENT.is_file():
         api_source = FRONTEND_API_CLIENT.read_text(encoding="utf-8") + "\n" + api_source
     library_source = LIBRARY_PROJECTS.read_text(encoding="utf-8")
-    chapter_list_source = CHAPTER_LIST_COMPOSABLE.read_text(encoding="utf-8")
-    writer_chapter_source = WRITER_CHAPTER.read_text(encoding="utf-8")
+    manuscript_source = MANUSCRIPT_COMPOSABLE.read_text(encoding="utf-8")
 
     assert "export const apiErrorMessage" in api_source
     assert "error?.response?.data?.detail" in api_source
@@ -381,8 +366,7 @@ def test_api_errors_prefer_backend_detail_over_status_text() -> None:
     assert "Request failed with status code" in api_source
     assert "error.message = message" in api_source
     assert "apiErrorMessage(error" in library_source
-    assert "apiErrorMessage(error" in chapter_list_source
-    assert "apiErrorMessage(e" in writer_chapter_source
+    assert "error instanceof Error ? error.message" in manuscript_source
 
 
 def test_electron_api_auth_does_not_use_native_prompt() -> None:
@@ -486,17 +470,12 @@ def test_chapter_maintenance_exposes_repair_queue_grouping() -> None:
     assert "SHANSHAN_REPAIR_STEPS_HINT" in shanshan
 
 
-def test_chapters_layout_exposes_list_and_maintenance_subnav() -> None:
-    layout_source = CHAPTERS_LAYOUT.read_text(encoding="utf-8")
-    subnav_source = CHAPTER_SUBNAV.read_text(encoding="utf-8")
-    list_source = CHAPTER_LIST.read_text(encoding="utf-8")
+def test_chapter_maintenance_remains_a_separate_production_route() -> None:
+    router_source = ROUTER.read_text(encoding="utf-8")
     maintenance_source = CHAPTER_MAINTENANCE.read_text(encoding="utf-8")
 
-    assert "ChapterSubnav" in layout_source
-    assert 'to="/chapters/list"' in subnav_source
-    assert 'to="/chapters/maintenance"' in subnav_source
-    assert "chapter-subnav__badge" in subnav_source
-    assert "复制全书已有正文" not in list_source
+    assert "path: '/chapters/maintenance'" in router_source
+    assert "navId: 'production'" in router_source
     assert ":link-focus=\"true\"" in maintenance_source
     assert "SemiAutoRepairHint" in maintenance_source
     assert "PendingChaptersPanel" in maintenance_source
@@ -537,15 +516,13 @@ def test_tasks_store_exposes_failure_action_contract() -> None:
     assert "formatFailureDetail" in client_source
 
 
-def test_writing_chapter_editor_guards_save_and_load_races() -> None:
-    editor_source = (
-        ROOT / "web" / "frontend" / "src" / "composables" / "useWritingChapterEditor.ts"
-    ).read_text(encoding="utf-8")
+def test_manuscript_composable_guards_save_and_conflict_races() -> None:
+    source = MANUSCRIPT_COMPOSABLE.read_text(encoding="utf-8")
 
-    assert "let loadSeq = 0" in editor_source
-    assert "loadingEditor.value" in editor_source
-    assert "seq !== loadSeq" in editor_source
-    assert "escapeHtml" in editor_source
+    assert "expected_revision: current.revision" in source
+    assert "snapshot === JSON.stringify(content.value)" in source
+    assert "conflictDocument.value" in source
+    assert "keepLocalAsNewRevision" in source
 
 
 def test_monitor_llm_logs_tab_wires_viewer() -> None:
@@ -599,12 +576,11 @@ def test_dual_audit_copy_splits_internal_and_external() -> None:
     source = (
         ROOT / "web" / "frontend" / "src" / "constants" / "repairWorkflow.ts"
     ).read_text(encoding="utf-8")
-    gate = (
-        ROOT / "web" / "frontend" / "src" / "components" / "ChapterUnifiedGate.vue"
-    ).read_text(encoding="utf-8")
+    inspector = MANUSCRIPT_INSPECTOR.read_text(encoding="utf-8")
     assert "INTERNAL_GATE_HINT" in source
     assert "EXTERNAL_AUDIT_HINT" in source
-    assert "INTERNAL_GATE_HINT" in gate
+    assert "流水线门禁" in inspector
+    assert "Phase 5 审校中心" in inspector
 
 
 def test_task_log_and_pet_share_task_step_labels() -> None:
@@ -739,17 +715,18 @@ def test_shanshan_chat_opens_with_compact_editor_welcome_card() -> None:
 
 def test_writer_shell_delegates_to_subcomponents() -> None:
     source = WRITER.read_text(encoding="utf-8")
-    assert "WritingChapterSidebar" in source
-    assert "WritingEditorMain" in source
-    assert "WritingRightSidebar" in source
-    assert "WritingWorkspaceDialogs" in source
+    assert "ManuscriptChapterTree" in source
+    assert "ManuscriptEditor" in source
+    assert "ManuscriptInspector" in source
+    assert "Splitpanes" in source
 
 
-def test_writer_chapter_sidebar_supports_collapse_and_delete() -> None:
-    source = WRITER_CHAPTER_SIDEBAR.read_text(encoding="utf-8")
+def test_writer_chapter_tree_supports_search_status_and_selection() -> None:
+    source = MANUSCRIPT_TREE.read_text(encoding="utf-8")
     assert "章节目录" in source
-    assert "onDeleteChapter" in source
-    assert "defineModel<boolean>('collapsed'" in source.replace(" ", "")
+    assert "搜索章节" in source
+    assert "status.value" in source
+    assert "emit('select'" in source
 
 
 def test_state_view_shell_delegates_to_tab_components() -> None:

@@ -37,7 +37,7 @@ test.describe('V2 application shell', () => {
       'aria-current',
       'page',
     )
-    await expect(page.locator('.chapter-sidebar .sidebar-title')).toContainText('章节目录', {
+    await expect(page.getByRole('complementary', { name: '章节目录' })).toBeVisible({
       timeout: 15_000,
     })
   })

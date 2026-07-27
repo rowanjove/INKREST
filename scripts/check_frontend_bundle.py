@@ -42,7 +42,15 @@ def check_bundle(dist_dir: Path, budget_path: Path) -> list[str]:
         (size for name, size in sizes.items() if name.startswith("index-")),
         default=0,
     )
-    vendor_markers = ("element-plus", "vue-", "axios-", "rolldown-runtime")
+    vendor_markers = (
+        "element-plus",
+        "vue-",
+        "axios-",
+        "rolldown-runtime",
+        "tiptap-",
+        "prosemirror-",
+        "tanstack-virtual",
+    )
     route_sizes = [
         size
         for name, size in sizes.items()

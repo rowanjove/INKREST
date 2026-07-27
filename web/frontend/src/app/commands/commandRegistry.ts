@@ -95,7 +95,7 @@ export function commandsFromChapters(
     label: chapter.title?.trim() || `第 ${chapter.chapter_id} 章`,
     description: `章节 ${chapter.chapter_id}`,
     group: '章节',
-    path: `/chapters/${encodeURIComponent(chapter.chapter_id)}`,
+    path: `/writer?chapter=${encodeURIComponent(chapter.chapter_id)}`,
     keywords: ['章节', chapter.chapter_id, chapter.title || ''],
     executeMode: 'navigate',
   }))
