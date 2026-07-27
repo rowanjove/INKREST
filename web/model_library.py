@@ -4,12 +4,16 @@ import copy
 import json
 from pathlib import Path
 from typing import Any, Dict, List
-import yaml
 from fastapi import HTTPException
 
-from web.helpers import SECRET_MASK, SECRET_KEYS, _write_yaml
+from web.helpers import SECRET_MASK, SECRET_KEYS
 from web.security import validate_outbound_model_base_url
-from novel_agent.pipeline import resolve_global_config_dir, load_global_pipeline_file, write_pipeline_file
+from novel_agent.pipeline import (
+    load_global_pipeline_file,
+    load_project_pipeline_file,
+    resolve_global_config_dir,
+    write_pipeline_file,
+)
 
 
 SLOT_EMPTY = ""
@@ -134,11 +138,7 @@ class ModelLibrary:
             llm = load_global_pipeline_file(global_dir).get("llm") or {}
         else:
             path = self.root_dir / "config" / "pipeline.yaml"
-            llm = (
-                yaml.safe_load(path.read_text(encoding="utf-8")).get("llm", {})
-                if path.is_file()
-                else {}
-            )
+            llm = load_project_pipeline_file(self.root_dir).get("llm", {})
         if isinstance(llm, dict):
             daily = str(llm.get("daily_model_id") or llm.get("default_model_id") or "").strip()
             if daily and not slots.get("daily"):
@@ -208,10 +208,7 @@ class ModelLibrary:
             write_pipeline_file(path, on_disk)
             return
         path = self.root_dir / "config" / "pipeline.yaml"
-        if path.is_file():
-            on_disk = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        else:
-            on_disk = {}
+        on_disk = load_project_pipeline_file(self.root_dir)
         _apply_llm_patch(on_disk)
         write_pipeline_file(path, on_disk)
 
@@ -319,7 +316,7 @@ class ModelLibrary:
             config_path = self.root_dir / "config" / "pipeline.yaml"
             if not config_path.exists():
                 return
-            config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            config = load_project_pipeline_file(self.root_dir)
         llm = config.get("llm", {})
         if isinstance(llm, dict):
             if llm.get("assistant", {}).get("model_ref") == model_id:

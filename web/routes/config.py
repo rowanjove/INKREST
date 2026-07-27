@@ -28,13 +28,12 @@ from novel_agent.pipeline import (
     resolve_global_config_dir,
     write_pipeline_file,
 )
+from novel_agent.config.io import ConfigValidationError
+from novel_agent.config.schema import CONFIG_SCHEMA_VERSION, pipeline_json_schema
 
 router = APIRouter()
 
 CONFIG_SCHEMA_NAME = "pipeline_config"
-CONFIG_SCHEMA_VERSION = 1
-
-
 def _validated_model_base_url(raw_url: str) -> str:
     try:
         return validate_outbound_model_base_url(raw_url)
@@ -90,12 +89,31 @@ def _save_project_scoped_sections(
 
 # ---- Config ----
 
+@router.get("/api/config/schema")
+def get_config_schema() -> Dict[str, Any]:
+    return {
+        "schema_name": CONFIG_SCHEMA_NAME,
+        "schema_version": CONFIG_SCHEMA_VERSION,
+        "schema": pipeline_json_schema(),
+    }
+
+
 @router.get("/api/config")
 def get_config(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
-    config = ws_server._mask_config_secrets(
-        ws_server._effective_pipeline_settings(session.root_dir)
-    )
+    try:
+        config = ws_server._mask_config_secrets(
+            ws_server._effective_pipeline_settings(session.root_dir)
+        )
+    except ConfigValidationError as exc:
+        raise HTTPException(
+            422,
+            {
+                "code": "CONFIG_INVALID",
+                "message": "配置文件无效，请修复后重试。",
+                "errors": exc.errors,
+            },
+        ) from exc
     config["schema_name"] = CONFIG_SCHEMA_NAME
     config["schema_version"] = CONFIG_SCHEMA_VERSION
     return config

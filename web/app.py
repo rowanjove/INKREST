@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from novel_agent.config.io import ConfigValidationError
 from web.lifespan import lifespan
 from web.websocket_manager import handle_websocket_tasks
 from web.routes.projects import router as projects_router
@@ -46,6 +47,20 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     if not isinstance(detail, str):
         detail = str(detail)
     return JSONResponse(status_code=exc.status_code, content={"detail": detail})
+
+
+@app.exception_handler(ConfigValidationError)
+async def config_validation_exception_handler(
+    request: Request, exc: ConfigValidationError
+):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": "CONFIG_INVALID",
+            "message": "Pipeline configuration is invalid",
+            "errors": exc.errors,
+        },
+    )
 
 
 @app.exception_handler(Exception)

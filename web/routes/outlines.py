@@ -27,6 +27,7 @@ from novel_agent.control.genre_genes import ensure_genre_genes
 from novel_agent.control.outline_structure import normalize_macro_outline
 from novel_agent.control.outline_validation import finalize_outline_for_save, validate_outline_document
 from novel_agent.control.runtime_policy import format_scale_profile_for_chief_editor
+from novel_agent.pipeline import load_project_pipeline_file, write_pipeline_file
 
 router = APIRouter()
 
@@ -129,10 +130,9 @@ def update_outline(body: Dict[str, Any], session: ProjectSession = RequireProjec
         config_path = root / "config" / "pipeline.yaml"
         if config_path.exists():
             try:
-                import yaml
-                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                cfg = load_project_pipeline_file(root)
                 cfg.setdefault("chapter", {})["default_target_chars"] = [int(chars_range[0]), int(chars_range[1])]
-                ws_helpers._write_yaml(config_path, cfg)
+                write_pipeline_file(config_path, cfg)
             except Exception as exc:
                 ws_server.logger.warning("Failed to sync pipeline.yaml target chars: %s", exc)
 

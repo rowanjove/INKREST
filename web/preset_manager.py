@@ -5,8 +5,8 @@ import shutil
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import yaml
 from fastapi import HTTPException
+from novel_agent.pipeline import load_project_pipeline_file, write_pipeline_file
 
 from web.helpers import (
     ASSET_FILES,
@@ -22,7 +22,6 @@ from web.helpers import (
     _template_presets_dir,
     _template_prompts_dir,
     _validate_id,
-    _write_yaml,
 )
 
 
@@ -147,12 +146,9 @@ class PresetManager:
             for role, content in overrides.items():
                 (prompts_dir / f"{role}.md").write_text(content, encoding="utf-8")
         config_path = project_dir / "config" / "pipeline.yaml"
-        if config_path.exists():
-            config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        else:
-            config = {}
+        config = load_project_pipeline_file(project_dir)
         config["preset_id"] = preset_id
-        _write_yaml(config_path, config)
+        write_pipeline_file(config_path, config)
 
     def _components_base_dir(self) -> Path:
         template = _template_presets_dir()
@@ -229,17 +225,14 @@ class PresetManager:
             assets_dir.mkdir(parents=True, exist_ok=True)
             (assets_dir / "writing_guide.md").write_text(guide, encoding="utf-8")
             config_path = project_dir / "config" / "pipeline.yaml"
-            if config_path.exists():
-                config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-            else:
-                config = {}
+            config = load_project_pipeline_file(project_dir)
             config["preset_composition"] = {
                 "channel": channel,
                 "theme": theme,
                 "mechanisms": mechanisms or [],
                 "cool_points": cool_points or [],
             }
-            _write_yaml(config_path, config)
+            write_pipeline_file(config_path, config)
         return {
             "channel": channel,
             "theme": theme,

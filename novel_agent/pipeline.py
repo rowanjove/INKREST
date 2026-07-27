@@ -1,14 +1,15 @@
 import json
 import logging
-import os
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import yaml
-
 from novel_agent.agents.base import LLMClient, StaticLLM, create_llm, create_llm_registry
+from novel_agent.config.io import (
+    load_pipeline_document,
+    resolve_environment_values,
+    write_pipeline_document,
+)
 
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
@@ -74,26 +75,7 @@ GLOBAL_SHARED_SECTIONS = frozenset({"llm", "embedding"})
 PROJECT_SCOPED_SECTIONS = frozenset({"chapter", "runtime", "quality"})
 
 
-_ENV_VAR_RE = re.compile(r"\$\{([^}]+)\}")
-
 logger = logging.getLogger("novel_agent.pipeline")
-
-
-def _substitute_env_vars(obj: Any) -> Any:
-    """Recursively replace ${VAR_NAME} patterns with os.environ values."""
-    if isinstance(obj, str):
-        def _replace(m: re.Match) -> str:
-            var_name = m.group(1)
-            value = os.environ.get(var_name)
-            if value is None:
-                logger.warning("Environment variable %s is not set, using empty string", var_name)
-            return value or ""
-        return _ENV_VAR_RE.sub(_replace, obj)
-    if isinstance(obj, dict):
-        return {k: _substitute_env_vars(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_substitute_env_vars(item) for item in obj]
-    return obj
 
 
 def resolve_global_config_dir(root_dir: Path) -> Optional[Path]:
@@ -106,13 +88,7 @@ def resolve_global_config_dir(root_dir: Path) -> Optional[Path]:
 
 
 def _load_yaml_pipeline(path: Path) -> Dict[str, Any]:
-    if not path.is_file():
-        return {}
-    try:
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except (yaml.YAMLError, OSError):
-        return {}
-    return _substitute_env_vars(loaded) if isinstance(loaded, dict) else {}
+    return load_pipeline_document(path)
 
 
 def _merge_pipeline_section(settings: Dict[str, Any], section: str, values: Any) -> None:
@@ -169,12 +145,7 @@ def load_global_pipeline_file(global_dir: Path) -> Dict[str, Any]:
 
 
 def write_pipeline_file(path: Path, data: Dict[str, Any]) -> None:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
+    write_pipeline_document(path, data)
 
 
 def _resolve_embedding_config(settings: Dict[str, Any], root_dir: Path) -> Dict[str, Any]:
@@ -255,9 +226,9 @@ def _load_models_library(root_dir: Path) -> Dict[str, Dict[str, Any]]:
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return _substitute_env_vars(data.get("models", {}))
     except (json.JSONDecodeError, OSError):
         return {}
+    return resolve_environment_values(data.get("models", {}))
 
 
 def _first_model_id(models_library: Dict[str, Dict[str, Any]]) -> str:

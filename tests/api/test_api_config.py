@@ -2,6 +2,63 @@ from tests.api._base import *  # noqa: F403
 
 class ApiConfigTests(ApiTestBase):
 
+    def test_config_schema_endpoint_exposes_v2_form_contract(self):
+        response = TestClient(web_app).get("/api/config/schema")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["schema_version"], 2)
+        self.assertIn("runtime", body["schema"]["properties"])
+
+    def test_invalid_yaml_returns_structured_error_instead_of_defaults(self):
+        original_active = web_server._active_project_id
+        original_base = web_server.BASE_DIR
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            web_server._active_project_id = None
+            config_dir = self.tmpdir / "config"
+            config_dir.mkdir(parents=True)
+            (config_dir / "pipeline.yaml").write_text(
+                "runtime: [broken",
+                encoding="utf-8",
+            )
+
+            response = TestClient(web_app).get("/api/config")
+
+            self.assertEqual(response.status_code, 422)
+            body = response.json()
+            self.assertEqual(body["code"], "CONFIG_INVALID")
+            self.assertTrue(body["errors"])
+        finally:
+            web_server._active_project_id = original_active
+            web_server.BASE_DIR = original_base
+
+    def test_update_config_returns_structured_error_for_invalid_existing_yaml(self):
+        original_active = web_server._active_project_id
+        original_base = web_server.BASE_DIR
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            web_server._active_project_id = None
+            config_dir = self.tmpdir / "config"
+            config_dir.mkdir(parents=True)
+            (config_dir / "pipeline.yaml").write_text(
+                "runtime: [broken",
+                encoding="utf-8",
+            )
+
+            response = TestClient(web_app).put(
+                "/api/config",
+                json={"runtime": {"max_workers": 2}},
+            )
+
+            self.assertEqual(response.status_code, 422)
+            body = response.json()
+            self.assertEqual(body["code"], "CONFIG_INVALID")
+            self.assertEqual(body["errors"][0]["type"], "yaml_syntax")
+        finally:
+            web_server._active_project_id = original_active
+            web_server.BASE_DIR = original_base
+
     def test_get_config_exposes_first_model_as_default_when_project_is_static(self):
         original_active = web_server._active_project_id
         original_base = web_server.BASE_DIR

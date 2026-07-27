@@ -43,6 +43,7 @@ from web.models import (
 from novel_agent.control.scale_profile import resolve_scale_profile
 from novel_agent.control.chapter_window import build_pacing_report, normalize_chapter_window
 from novel_agent.control.genre_genes import ensure_genre_genes
+from novel_agent.pipeline import load_project_pipeline_file, write_pipeline_file
 from novel_agent.control.outline_structure import normalize_macro_outline
 
 
@@ -175,10 +176,9 @@ def create_project(req: ProjectCreateRequest) -> Dict[str, Any]:
     if req.target_chars_per_chapter and len(req.target_chars_per_chapter) == 2:
         config_path = project_dir / "config" / "pipeline.yaml"
         if config_path.exists():
-            import yaml
-            cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            cfg = load_project_pipeline_file(project_dir)
             cfg.setdefault("chapter", {})["default_target_chars"] = req.target_chars_per_chapter
-            ws_server._write_yaml(config_path, cfg)
+            write_pipeline_file(config_path, cfg)
 
     return result
 

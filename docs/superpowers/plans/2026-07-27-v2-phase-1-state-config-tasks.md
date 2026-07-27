@@ -197,7 +197,7 @@ Actual: 聚焦回归 48 passed、5 subtests passed；后端全量 775 passed、
 - Modify: `tests/api/test_api_config.py`
 - Create: `tests/test_v2_config_schema.py`
 
-- [ ] **Step 1: 写失败的配置解析测试**
+- [x] **Step 1: 写失败的配置解析测试**
 
 覆盖：
 
@@ -207,32 +207,34 @@ Actual: 聚焦回归 48 passed、5 subtests passed；后端全量 775 passed、
 - 未设置的 `${ENV}` 不再静默替换为空字符串
 - API 返回结构化错误路径，不回退到空配置
 
-- [ ] **Step 2: 写失败的原子写入测试**
+- [x] **Step 2: 写失败的原子写入测试**
 
 模拟替换失败时原文件不变；成功后不存在临时文件；密钥字段不出现在日志、
 异常消息和普通 GET 响应中。
 
-- [ ] **Step 3: 实现宽进严出的 Pydantic schema**
+- [x] **Step 3: 实现宽进严出的 Pydantic schema**
 
 覆盖 runtime、chapter、quality、llm、embedding；已知字段严格验证，插件
 扩展字段允许保留。schema 版本固定为 2。
 
-- [ ] **Step 4: 统一所有 pipeline.yaml 读写入口**
+- [x] **Step 4: 统一所有 pipeline.yaml 读写入口**
 
 所有业务模块调用 `load_pipeline_document()` / `write_pipeline_document()`；
 写入使用同目录临时文件、flush、fsync 与 `os.replace()`。
 
-- [ ] **Step 5: 提供配置 schema API**
+- [x] **Step 5: 提供配置 schema API**
 
 新增 `GET /api/config/schema`，供 Phase 2 表单元数据消费。普通 GET 始终
 脱敏；高级源码模式单独返回无密钥文档。
 
-- [ ] **Step 6: 验证并提交**
+- [x] **Step 6: 验证并提交**
 
 ```powershell
 py -3.12 -m pytest tests/test_v2_config_schema.py tests/test_pipeline.py tests/api/test_api_config.py tests/test_model_slots.py tests/test_pipeline_global_settings.py -q --tb=short
 git commit -m "refactor: make pydantic the configuration source of truth"
 ```
+
+Actual: 配置与相关 API/模型/项目回归 128 passed；Ruff 全量检查通过。
 
 ## Task 5：提供统一 ProjectSnapshot
 
