@@ -65,6 +65,23 @@ class ManuscriptRepositoryMixin:
             ).fetchone()
         return self._document_row(row) if row else None
 
+    def list_manuscript_documents(self) -> List[Dict[str, Any]]:
+        """Return authoritative documents in stable chapter order."""
+        with safe_connection(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                select document_id, chapter_id, title, content_json, plain_text,
+                       markdown_text, revision, source, created_at, updated_at
+                from documents
+                order by
+                  case when chapter_id GLOB '[0-9]*' then 0 else 1 end,
+                  cast(chapter_id as integer),
+                  chapter_id
+                """
+            ).fetchall()
+        return [self._document_row(row) for row in rows]
+
     @db_write_lock
     def create_manuscript_document(
         self,

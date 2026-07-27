@@ -1,65 +1,84 @@
-"""Shared chapter iteration for markdown/docx exporters."""
+"""Authoritative manuscript collection shared by all publication exporters."""
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator, List, Optional
+from typing import Iterable, Iterator, Optional
 
-from novel_agent.exporters.chapter_selection import filter_chapter_dirs
+from novel_agent.domain.publishing import PublicationBook, PublicationChapter
+from novel_agent.exporters.chapter_selection import selected_chapter_ids
+from novel_agent.state.sqlite_store import SQLiteStateStore
 
-
-@dataclass(frozen=True)
-class ExportChapter:
-    chapter_id: str
-    title: str
-    text: str
+# Kept as an import-compatible name for first-party extensions.
+ExportChapter = PublicationChapter
 
 
-def _chapter_title(plan_path: Path) -> str:
-    if not plan_path.is_file():
-        return ""
-    try:
-        plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return ""
-    return str(plan.get("chapter_title") or "").strip()
+def _matches_selection(chapter_id: str, selected: set[str]) -> bool:
+    if not selected:
+        return True
+    normalized = (
+        f"{int(chapter_id):03d}" if str(chapter_id).isdigit() else str(chapter_id)
+    )
+    return normalized in selected
 
 
-def _format_chapter_number(chapter_id: str) -> str:
-    return str(int(chapter_id)) if chapter_id.isdigit() else chapter_id
+def collect_publication_book(
+    root_dir: Path,
+    *,
+    title: str = "未命名小说",
+    author: str = "栖墨",
+    chapter_ids: Optional[Iterable[str]] = None,
+) -> PublicationBook:
+    """Build a publication snapshot from SQLite, never from disk projections."""
+    store = SQLiteStateStore(Path(root_dir))
+    selected = selected_chapter_ids(chapter_ids)
+    chapters: list[PublicationChapter] = []
+    for document in store.list_manuscript_documents():
+        chapter_id = str(document["chapter_id"])
+        if not _matches_selection(chapter_id, selected):
+            continue
+        plain_text = str(document["plain_text"]).strip()
+        if not plain_text:
+            continue
+        chapters.append(
+            PublicationChapter(
+                chapter_id=chapter_id,
+                title=str(document["title"]).strip(),
+                plain_text=plain_text,
+                markdown_text=str(document["markdown_text"]).strip(),
+                revision=int(document["revision"]),
+                word_count=len(plain_text),
+            )
+        )
+    return PublicationBook(
+        title=str(title or "未命名小说").strip() or "未命名小说",
+        author=str(author or "栖墨").strip() or "栖墨",
+        chapters=chapters,
+    )
 
 
 def iter_export_chapters(
     root_dir: Path,
     chapter_ids: Optional[Iterable[str]] = None,
 ) -> Iterator[ExportChapter]:
-    chapters_dir = root_dir / "workspace" / "chapters"
-    if not chapters_dir.is_dir():
-        raise FileNotFoundError("Chapters directory not found")
-
-    chapter_dirs = filter_chapter_dirs(
-        sorted(chapters_dir.glob("chapter_*")),
-        chapter_ids,
-    )
-    for ch_dir in chapter_dirs:
-        final_path = ch_dir / "chapter_final.txt"
-        if not final_path.is_file():
-            continue
-        text = final_path.read_text(encoding="utf-8").strip()
-        if not text:
-            continue
-        chapter_id = ch_dir.name.replace("chapter_", "", 1)
-        yield ExportChapter(
-            chapter_id=chapter_id,
-            title=_chapter_title(ch_dir / "plan.json"),
-            text=text,
-        )
+    yield from collect_publication_book(
+        root_dir,
+        chapter_ids=chapter_ids,
+    ).chapters
 
 
 def collect_export_chapters(
     root_dir: Path,
     chapter_ids: Optional[Iterable[str]] = None,
-) -> List[ExportChapter]:
+) -> list[ExportChapter]:
     return list(iter_export_chapters(root_dir, chapter_ids))
+
+
+def chapter_heading(chapter: PublicationChapter) -> str:
+    number = (
+        str(int(chapter.chapter_id))
+        if chapter.chapter_id.isdigit()
+        else chapter.chapter_id
+    )
+    heading = f"第 {number} 章"
+    return f"{heading}　{chapter.title}" if chapter.title else heading

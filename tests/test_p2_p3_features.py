@@ -54,6 +54,8 @@ def test_external_review_and_continue_block(tmp_path: Path) -> None:
 
 def test_export_trial_requires_body(tmp_path: Path, monkeypatch) -> None:
     from fastapi.testclient import TestClient
+    from novel_agent.services.manuscript_documents import plain_text_to_tiptap
+    from novel_agent.state.sqlite_store import SQLiteStateStore
 
     import web.context as web_context
     import web.server as web_server
@@ -64,6 +66,15 @@ def test_export_trial_requires_body(tmp_path: Path, monkeypatch) -> None:
     d.mkdir(parents=True)
     (d / "plan.json").write_text('{"chapter_title":"t"}', encoding="utf-8")
     (d / "chapter_final.txt").write_text("正文" * 20, encoding="utf-8")
+    text = "正文" * 20
+    SQLiteStateStore(tmp_path).create_manuscript_document(
+        chapter_id="001",
+        title="t",
+        content_json=plain_text_to_tiptap(text),
+        plain_text=text,
+        markdown_text=text,
+        source="test",
+    )
 
     original_active = web_server._active_project_id
     original_base = web_server.BASE_DIR

@@ -6,8 +6,17 @@ from typing import Any, List, Optional
 from novel_agent.exporters.txt_exporter import export_txt
 from novel_agent.exporters.epub_exporter import export_epub
 from novel_agent.exporters.pdf_exporter import export_pdf
+from novel_agent.exporters.markdown_exporter import export_markdown
+from novel_agent.exporters.docx_exporter import export_docx
 
-__all__ = ["export_txt", "export_epub", "export_pdf", "export_novel"]
+__all__ = [
+    "export_txt",
+    "export_epub",
+    "export_pdf",
+    "export_markdown",
+    "export_docx",
+    "export_novel",
+]
 
 
 def export_novel(
@@ -41,6 +50,12 @@ def export_novel(
         return output_path
     elif format_lower == "pdf":
         export_pdf(root_dir, output_path, chapter_ids=chapter_ids, title=title)
+        return output_path
+    elif format_lower in {"markdown", "md"}:
+        export_markdown(root_dir, output_path, chapter_ids=chapter_ids, title=title)
+        return output_path
+    elif format_lower == "docx":
+        export_docx(root_dir, output_path, chapter_ids=chapter_ids, title=title)
         return output_path
 
     raise ValueError(f"Unsupported export format: {format}")

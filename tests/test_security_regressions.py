@@ -272,16 +272,22 @@ class SecurityRegressionTests(unittest.TestCase):
 
     def test_export_markdown_matches_requested_chapter_id_exactly(self):
         from web.routes.database import export_markdown_internal
+        from novel_agent.services.manuscript_documents import plain_text_to_tiptap
 
-        chapters_dir = self.base_dir / "workspace" / "chapters"
+        store = SQLiteStateStore(self.base_dir)
         for chapter_id, text in (
             ("001", "only chapter one"),
             ("011", "wrong chapter eleven"),
             ("101", "wrong chapter one hundred one"),
         ):
-            chapter_dir = chapters_dir / f"chapter_{chapter_id}"
-            chapter_dir.mkdir(parents=True)
-            (chapter_dir / "chapter_final.txt").write_text(text, encoding="utf-8")
+            store.create_manuscript_document(
+                chapter_id=chapter_id,
+                title=f"Chapter {chapter_id}",
+                content_json=plain_text_to_tiptap(text),
+                plain_text=text,
+                markdown_text=text,
+                source="test",
+            )
 
         output_path = self.tmpdir / "export.md"
 
@@ -299,10 +305,16 @@ class SecurityRegressionTests(unittest.TestCase):
 
     def test_export_markdown_raises_when_selection_has_no_chapters(self):
         from web.routes.database import export_markdown_internal
+        from novel_agent.services.manuscript_documents import plain_text_to_tiptap
 
-        chapter_dir = self.base_dir / "workspace" / "chapters" / "chapter_001"
-        chapter_dir.mkdir(parents=True)
-        (chapter_dir / "chapter_final.txt").write_text("chapter one", encoding="utf-8")
+        SQLiteStateStore(self.base_dir).create_manuscript_document(
+            chapter_id="001",
+            title="Chapter 001",
+            content_json=plain_text_to_tiptap("chapter one"),
+            plain_text="chapter one",
+            markdown_text="chapter one",
+            source="test",
+        )
 
         with self.assertRaises(ValueError):
             export_markdown_internal(

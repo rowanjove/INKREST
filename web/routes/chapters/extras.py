@@ -220,37 +220,16 @@ def export_chapters_for_trial(
     from web.models import TrialExportRequest
 
     req = TrialExportRequest(**body)
-    root = session.root_dir
-    chapters_root = root / "workspace" / "chapters"
-    ids = req.chapter_ids
-    if not ids:
-        for d in sorted(chapters_root.glob("chapter_*")) if chapters_root.is_dir() else []:
-            ids.append(d.name.replace("chapter_", ""))
-    parts: List[str] = []
-    exported: List[str] = []
-    for raw_id in ids[:50]:
-        safe_id = ws_server._validate_id(str(raw_id), "chapter_id")
-        chapter_dir = chapters_root / f"chapter_{safe_id}"
-        if not chapter_dir.is_dir():
-            continue
-        plan = ws_server._read_json(chapter_dir / "plan.json")
-        body_text = ws_server._read_text(chapter_dir / "chapter_final.txt").strip()
-        if not body_text:
-            continue
-        title = (plan.get("chapter_title") or "").strip()
-        if req.include_titles and title:
-            parts.append(f"=== 第 {safe_id} 章 {title} ===\n\n{body_text}")
-        else:
-            parts.append(f"=== 第 {safe_id} 章 ===\n\n{body_text}")
-        exported.append(safe_id)
-    text = "\n\n---\n\n".join(parts)
-    if not text:
-        raise HTTPException(400, "没有可导出的章节正文")
-    return {
-        "chapter_ids": exported,
-        "text": text,
-        "char_count": len(text),
-    }
+    from novel_agent.services.publishing_workspace import build_trial_bundle
+
+    try:
+        return build_trial_bundle(
+            session.root_dir,
+            chapter_ids=list(req.chapter_ids),
+            include_titles=req.include_titles,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 
 @router.post("/api/pipeline-alerts/{chapter_id}/dismiss")

@@ -26,7 +26,8 @@ from novel_agent.services.chapter_index_sync import sync_chapters_from_disk
 from novel_agent.control.narrative_debt import classify_debt
 from novel_agent.control.scale_profile import build_upgrade_pressure, resolve_scale_profile
 from novel_agent.dashboard import build_dashboard_html
-from novel_agent.exporters.chapter_export import collect_export_chapters, iter_export_chapters
+from novel_agent.exporters.docx_exporter import export_docx
+from novel_agent.exporters.markdown_exporter import export_markdown
 
 router = APIRouter()
 
@@ -84,39 +85,11 @@ def export_yaml_mirror_snapshot(
 
 
 def export_markdown_internal(root_dir: Path, output_path: Path, chapter_ids: Optional[List[str]] = None, title: str = "未命名小说"):
-    parts = [f"# {title}\n"]
-    for chapter in iter_export_chapters(root_dir, chapter_ids):
-        number = int(chapter.chapter_id) if chapter.chapter_id.isdigit() else chapter.chapter_id
-        header = f"## 第 {number} 章"
-        if chapter.title:
-            header += f" {chapter.title}"
-        parts.append(f"{header}\n\n{chapter.text}")
-
-    if len(parts) <= 1:
-        raise ValueError("No chapters found to export")
-    output_path.write_text("\n\n".join(parts), encoding="utf-8")
+    export_markdown(root_dir, output_path, chapter_ids=chapter_ids, title=title)
 
 
 def export_docx_internal(root_dir: Path, output_path: Path, chapter_ids: Optional[List[str]] = None, title: str = "未命名小说"):
-    import docx
-
-    chapters = collect_export_chapters(root_dir, chapter_ids)
-    if not chapters:
-        raise ValueError("No chapters found to export")
-
-    doc = docx.Document()
-    doc.add_heading(title, 0)
-    for chapter in chapters:
-        number = int(chapter.chapter_id) if chapter.chapter_id.isdigit() else chapter.chapter_id
-        header = f"第 {number} 章"
-        if chapter.title:
-            header += f"  {chapter.title}"
-        doc.add_heading(header, level=1)
-        for paragraph in chapter.text.split("\n"):
-            paragraph_clean = paragraph.strip()
-            if paragraph_clean:
-                doc.add_paragraph(paragraph_clean)
-    doc.save(str(output_path))
+    export_docx(root_dir, output_path, chapter_ids=chapter_ids, title=title)
 
 
 # ---- Export ----
