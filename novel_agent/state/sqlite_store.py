@@ -12,6 +12,7 @@ from novel_agent.state.sqlite_schema import (
 )
 from novel_agent.state.state_repository import StateRepositoryMixin
 from novel_agent.state.history_repository import HistoryRepositoryMixin
+from novel_agent.state.manuscript_repository import ManuscriptRepositoryMixin
 from novel_agent.state.schema_version import (
     SCHEMA_VERSION,
     SchemaState,
@@ -23,7 +24,12 @@ from novel_agent.state.task_repository import TaskRepository
 logger = logging.getLogger("novel_agent.state.sqlite_store")
 
 
-class SQLiteStateStore(SchemaMixin, StateRepositoryMixin, HistoryRepositoryMixin):
+class SQLiteStateStore(
+    SchemaMixin,
+    StateRepositoryMixin,
+    HistoryRepositoryMixin,
+    ManuscriptRepositoryMixin,
+):
     """Unified entry point for database state store.
 
     Combines schema management, state candidates, metrics,

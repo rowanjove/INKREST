@@ -24,6 +24,8 @@ NARRATIVE_STATE_TABLES: Tuple[str, ...] = (
     "reader_feedback",
     "chapter_versions",
     "chapter_rewrites",
+    "document_revisions",
+    "documents",
 )
 
 # Task queue, cost logs, prompt/asset version history (kept unless include_operational).

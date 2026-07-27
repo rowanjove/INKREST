@@ -142,6 +142,8 @@ def purge_chapter_narrative_state(conn: Any, root_dir: Path, chapter_id: str) ->
     conn.execute("delete from state_change_candidates where chapter_id = ?", (chapter_id,))
     conn.execute("delete from chapter_rewrites where chapter_id = ?", (chapter_id,))
     conn.execute("delete from chapter_versions where chapter_id = ?", (chapter_id,))
+    conn.execute("delete from document_revisions where chapter_id = ?", (chapter_id,))
+    conn.execute("delete from documents where chapter_id = ?", (chapter_id,))
     conn.execute("delete from reader_feedback where chapter_id = ?", (chapter_id,))
 
     conn.execute(

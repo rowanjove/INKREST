@@ -348,6 +348,37 @@ class SchemaMixin:
                 );
                 create index if not exists idx_chapter_versions_chapter_id on chapter_versions(chapter_id);
 
+                -- Authoritative V2 manuscript documents
+                create table if not exists documents (
+                  document_id text primary key,
+                  chapter_id text not null unique,
+                  title text not null,
+                  content_json text not null,
+                  plain_text text not null,
+                  markdown_text text not null,
+                  revision integer not null default 1,
+                  source text not null default 'import',
+                  created_at datetime default current_timestamp,
+                  updated_at datetime default current_timestamp
+                );
+                create unique index if not exists idx_documents_chapter_id on documents(chapter_id);
+
+                create table if not exists document_revisions (
+                  revision_id text primary key,
+                  document_id text not null,
+                  chapter_id text not null,
+                  revision integer not null,
+                  title text not null,
+                  content_json text not null,
+                  plain_text text not null,
+                  markdown_text text not null,
+                  source text not null,
+                  created_at datetime default current_timestamp,
+                  unique(document_id, revision)
+                );
+                create index if not exists idx_document_revisions_chapter
+                  on document_revisions(chapter_id, revision desc);
+
                 -- Reader feedback table
                 create table if not exists reader_feedback (
                   id text primary key,
