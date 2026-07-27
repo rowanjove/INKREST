@@ -278,9 +278,15 @@ def import_demo_project(demo_id: str = Query("demo-factory-novel")) -> Dict[str,
 def delete_project(pid: str) -> Dict[str, str]:
     ws_server._validate_id(pid, "project_id")
     with ws_server._project_lock:
-        data = ws_server.project_manager._read_registry()
-        if data.get("active_id") == pid:
-            ws_server._ensure_no_active_tasks("delete the active project")
+        projects_root = (ws_server.BASE_DIR / "projects").resolve()
+        project_dir = (projects_root / pid).resolve()
+        if projects_root not in project_dir.parents:
+            raise HTTPException(400, "Invalid project_id: path traversal detected")
+        if ws_server._task_registry.has_active_tasks(project_dir):
+            raise HTTPException(
+                409,
+                "Cannot delete project while generation tasks are running",
+            )
         ws_server.project_manager.delete_project(pid)
     return {"status": "deleted"}
 

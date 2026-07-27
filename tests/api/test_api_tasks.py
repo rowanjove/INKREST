@@ -187,6 +187,36 @@ class ApiTasksTests(ApiTestBase):
             web_server.project_manager = original_project_manager
             web_context._task_registry = original_registry
 
+    def test_delete_inactive_project_rejects_active_background_tasks(self):
+        original_active = web_server._active_project_id
+        original_base = web_server.BASE_DIR
+        original_manager = web_server._task_manager
+        original_project_manager = web_server.project_manager
+        original_registry = web_context._task_registry
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            web_server._active_project_id = None
+            web_server._task_manager = None
+            web_server.project_manager = web_server.ProjectManager(self.tmpdir)
+            first = web_server.project_manager.create_project("first")
+            second = web_server.project_manager.create_project("second")
+            registry = ProjectTaskRegistry()
+            web_context._task_registry = registry
+            web_server._active_project_id = second["id"]
+            manager_a = registry.get(self.tmpdir / "projects" / first["id"])
+            manager_a._running_tasks["task-a"] = MagicMock()
+
+            response = TestClient(web_app).delete(f"/api/projects/{first['id']}")
+
+            self.assertEqual(response.status_code, 409)
+            self.assertTrue((self.tmpdir / "projects" / first["id"]).exists())
+        finally:
+            web_server._active_project_id = original_active
+            web_server.BASE_DIR = original_base
+            web_server._task_manager = original_manager
+            web_server.project_manager = original_project_manager
+            web_context._task_registry = original_registry
+
     def test_clear_database_removes_narrative_debt_tables(self):
         original_active = web_server._active_project_id
         original_base = web_server.BASE_DIR

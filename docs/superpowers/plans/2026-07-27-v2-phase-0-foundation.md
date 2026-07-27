@@ -484,7 +484,7 @@ git commit -m "fix: isolate progress handlers by task context"
 - Modify: `tests/api/test_api_tasks.py`
 - Modify: `web/routes/projects.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 测试建立 A、B 两个项目，激活 B，在 A 的 `TaskManager` 中加入未完成任务，然后调用：
 
@@ -494,7 +494,7 @@ self.assertEqual(response.status_code, 409)
 self.assertTrue((self.tmpdir / "projects" / first["id"]).exists())
 ```
 
-- [ ] **Step 2: 验证旧实现错误删除非当前项目**
+- [x] **Step 2: 验证旧实现错误删除非当前项目**
 
 Run:
 
@@ -504,7 +504,7 @@ py -3.12 -m pytest tests/api/test_api_tasks.py::ApiTasksTests::test_delete_inact
 
 Expected: FAIL，响应不是 409 或项目目录被删除。
 
-- [ ] **Step 3: 按目标项目检查任务**
+- [x] **Step 3: 按目标项目检查任务**
 
 在删除路由中解析目标目录并检查：
 
@@ -519,7 +519,7 @@ if ws_server._task_registry.has_active_tasks(project_dir):
 
 目标目录仍必须由项目管理器和 ID 校验共同约束在 `projects/` 下。
 
-- [ ] **Step 4: 验证**
+- [x] **Step 4: 验证**
 
 Run:
 
@@ -529,7 +529,7 @@ py -3.12 -m pytest tests/api/test_api_tasks.py tests/test_project_task_registry.
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```powershell
 git add tests/api/test_api_tasks.py web/routes/projects.py
