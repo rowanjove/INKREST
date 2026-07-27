@@ -17,8 +17,6 @@ from novel_agent.agents.length_fix import LengthFixAgent
 from novel_agent.agents.managing_editor import ManagingEditorAgent
 from novel_agent.agents.planner import PlannerAgent
 from novel_agent.agents.state_extractor import StateExtractorAgent
-from novel_agent.agents.stitch_editor import StitchEditorAgent
-from novel_agent.agents.style_editor import StyleEditorAgent
 from novel_agent.agents.writer import WriterAgent
 from novel_agent.agents.persona_reader import PersonaReaderAgent
 from novel_agent.approval import ApprovalGate
@@ -67,6 +65,10 @@ from novel_agent.orchestrator_novel_batch import (
 )
 from novel_agent.orchestrator_types import ChapterResult
 
+from novel_agent.services.agent_factory import inject_agents
+from novel_agent.services.cost_tracker import CostTracker
+from novel_agent.services.utils import auto_compress_assets, write_calibration_report
+
 logger = get_logger("orchestrator")
 
 _COMPRESS_EVERY_N_CHAPTERS = 10
@@ -87,7 +89,7 @@ class NovelOrchestrator:
         self.logger = logger
         
         # 注册所有 Agent
-        self._init_agents(config)
+        inject_agents(self, config)
         
         self.state_manager = StateManager(self.root_dir)
         self.approval_gate = ApprovalGate(interactive=config.interactive, plugin_manager=config.plugin_manager)
@@ -97,6 +99,8 @@ class NovelOrchestrator:
         self.context_builder = ContextBuilderAgent(self.root_dir, self.vector_store)
         self.store = SQLiteStateStore(self.root_dir)
         self.prompts.store = self.store
+
+        self.cost_tracker = CostTracker(self)
         self._round_tokens_acc = 0
         
         # 挂载项目目录和存储库到大纲规划器及场景写入器 Agent
@@ -135,47 +139,6 @@ class NovelOrchestrator:
                 self.phases.insert(idx + 1, (name, instance))
                 return
         self.phases.append((name, instance))
-
-    def _init_agents(self, config: PipelineConfig) -> None:
-        """Initialize all workflow agents."""
-        overrides = {}
-        if config.plugin_manager:
-            overrides = config.plugin_manager.get_agent_overrides()
-
-        factories = {
-            "chief_editor": lambda: ChiefEditorAgent(config.get_llm("chief_editor"), self.prompts),
-            "managing_editor": lambda: ManagingEditorAgent(config.get_llm("managing_editor"), self.prompts),
-            "chapter_planner": lambda: ChapterPlannerAgent(config.get_llm("chapter_planner"), self.prompts),
-            "planner": lambda: PlannerAgent(config.get_llm("planner"), self.prompts),
-            "writer": lambda: WriterAgent(config.get_llm("writer"), self.prompts),
-            "length_fix": lambda: LengthFixAgent(config.get_llm("length_fix"), self.prompts),
-            "stitch_editor": lambda: StitchEditorAgent(config.get_llm("stitch_editor"), self.prompts),
-            "style_editor": lambda: StyleEditorAgent(config.get_llm("style_editor"), self.prompts),
-            "auditor": lambda: AuditorAgent(config.get_llm("auditor"), self.prompts),
-            "state_extractor": lambda: StateExtractorAgent(config.get_llm("state_extractor"), self.prompts),
-            "chapter_summary": lambda: ChapterSummaryAgent(config.get_llm("chapter_summary"), self.prompts),
-            "continuity_checker": lambda: ContinuityCheckerAgent(config.get_llm("continuity_checker"), self.prompts),
-            "persona_reader": lambda: PersonaReaderAgent(config.get_llm("persona_reader"), self.prompts, self.root_dir),
-        }
-
-        for role, plugin in overrides.items():
-            if role in factories:
-                factories[role] = lambda r=role, p=plugin: p.create_agent(config.get_llm(r), self.prompts)
-
-        self.chief_editor = factories["chief_editor"]()
-        self.managing_editor = factories["managing_editor"]()
-        self.chapter_planner = factories["chapter_planner"]()
-        self.planner = factories["planner"]()
-        self.writer = factories["writer"]()
-        self.length_fix = factories["length_fix"]()
-        self.stitch_editor = factories["stitch_editor"]()
-        self.style_editor = factories["style_editor"]()
-        self.auditor = factories["auditor"]()
-        self.auditor.root_dir = self.root_dir
-        self.state_extractor = factories["state_extractor"]()
-        self.chapter_summary_agent = factories["chapter_summary"]()
-        self.continuity_checker = factories["continuity_checker"]()
-        self.persona_reader = factories["persona_reader"]()
 
     def _load_checkpoint(self, chapter_dir: Path) -> Dict[str, Any]:
         return self._checkpoint.load(chapter_dir)
@@ -346,40 +309,14 @@ class NovelOrchestrator:
         )
 
     def _auto_compress_assets(self, threshold: Optional[int] = None) -> None:
-        try:
-            from novel_agent.control.long_run import resolve_compress_schedule
-
-            if threshold is None:
-                _, _, threshold = resolve_compress_schedule(self.root_dir)
-            state = self.state_manager.get_state()
-            event_count = len(state.get("events", []))
-            if event_count < (threshold or _COMPRESS_EVENT_THRESHOLD):
-                return
-            compress_assets(self.root_dir, self.config.get_llm("asset_compressor"), self.prompts)
-        except Exception as exc:
-            logger.warning("Auto asset compression failed: %s", exc)
+        auto_compress_assets(self, threshold)
 
     def _write_calibration_report(
         self,
         chapter_id: str,
         planned_chapters: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
-        try:
-            outline_path = self.root_dir / "workspace" / "outline.json"
-            outline = self._load_checkpoint_data(outline_path)
-            chapters = planned_chapters or self.store.get_chapters()
-            debt = {
-                "foreshadows": classify_debt(self.store.list_foreshadows(), chapter_id, default_period=10),
-                "reader_promises": classify_debt(self.store.list_reader_promises(), chapter_id, default_period=3),
-                "secrets": classify_debt(self.store.list_secrets(), chapter_id, default_period=15),
-            }
-            report = build_calibration_report(outline, chapters, debt)
-            self._write_json(
-                self.root_dir / "workspace" / "reports" / f"calibration_chapter_{chapter_id}.json",
-                report,
-            )
-        except Exception as exc:
-            logger.warning("Calibration report failed for chapter %s: %s", chapter_id, exc)
+        write_calibration_report(self, chapter_id, planned_chapters)
 
     # ------------------------------------------------------------------
     # Single-chapter pipeline
@@ -465,56 +402,13 @@ class NovelOrchestrator:
             logger.warning("Failed to estimate chapter cost: %s", e)
 
     def _clear_call_logs(self) -> None:
-        for client in self.config.llm_registry.values():
-            if hasattr(client, "call_log"):
-                client.call_log.clear()
-        if hasattr(self.config.llm, "call_log"):
-            self.config.llm.call_log.clear()
+        self.cost_tracker.clear_call_logs()
 
     def reset_round_token_accumulator(self) -> None:
-        """Start a fresh autopilot round: drop stale call_log from failed chapters."""
-        self._round_tokens_acc = 0
-        self._clear_call_logs()
+        self.cost_tracker.reset_round_token_accumulator()
 
     def consume_round_tokens(self) -> int:
-        used = int(getattr(self, "_round_tokens_acc", 0) or 0)
-        self._round_tokens_acc = 0
-        return used
+        return self.cost_tracker.consume_round_tokens()
 
     def _persist_llm_cost(self, chapter_id: str) -> None:
-        try:
-            from novel_agent.pricing import resolve_model_prices_usd, usd_to_cny
-
-            logs = self.config.get_call_log()
-            round_tokens = 0
-            for log in logs:
-                round_tokens += int(
-                    log.get("total_tokens")
-                    or (log.get("prompt_tokens", 0) + log.get("completion_tokens", 0))
-                    or 0
-                )
-            self._round_tokens_acc = int(getattr(self, "_round_tokens_acc", 0) or 0) + round_tokens
-            for log in logs:
-                model_name = log.get("model", "")
-                prompt_tokens = log.get("prompt_tokens", 0)
-                completion_tokens = log.get("completion_tokens", 0)
-                in_price, out_price = resolve_model_prices_usd(model_name)
-                input_cost = usd_to_cny((prompt_tokens / 1000) * in_price)
-                output_cost = usd_to_cny((completion_tokens / 1000) * out_price)
-                
-                import uuid
-                call_id = f"call_{uuid.uuid4().hex[:8]}"
-                self.store.log_llm_cost(
-                    call_id=call_id,
-                    model=model_name,
-                    input_tokens=prompt_tokens,
-                    output_tokens=completion_tokens,
-                    input_cost=input_cost,
-                    output_cost=output_cost,
-                    project_id=str(self.root_dir.name)
-                )
-            
-            self._clear_call_logs()
-            logger.info("Successfully persisted and cleared %d LLM cost logs for chapter %s", len(logs), chapter_id)
-        except Exception as e:
-            logger.warning("Failed to persist LLM cost logs: %s", e)
+        self.cost_tracker.persist_llm_cost(chapter_id)

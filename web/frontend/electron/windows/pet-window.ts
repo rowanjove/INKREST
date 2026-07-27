@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron';
 import path from 'path';
 import { PetSettings, clampPetPosition } from '../pet-settings';
+import { showWhenReady } from './window-ready';
 
 export function createPetWindow(options: {
   settings: PetSettings;
@@ -20,6 +21,8 @@ export function createPetWindow(options: {
     resizable: false,
     skipTaskbar: true,
     hasShadow: false,
+    show: false,
+    backgroundColor: '#00000000',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
@@ -38,5 +41,6 @@ export function createPetWindow(options: {
     petWindow.loadURL(`http://127.0.0.1:${apiPort}/pet`);
   }
 
+  showWhenReady(petWindow, 'showInactive');
   return petWindow;
 }

@@ -290,6 +290,16 @@ class SchemaMixin:
                   created_at datetime default current_timestamp
                 );
                 create index if not exists idx_task_logs_task_id on task_logs(task_id);
+                create table if not exists task_status_events (
+                  id integer primary key autoincrement,
+                  task_id text not null,
+                  from_status text,
+                  to_status text not null,
+                  reason text,
+                  resumable_from text,
+                  created_at datetime default current_timestamp
+                );
+                create index if not exists idx_task_status_events_task_id on task_status_events(task_id);
 
                 -- State change candidates pending approval
                 create table if not exists state_change_candidates (
@@ -359,6 +369,12 @@ class SchemaMixin:
             conn.execute("alter table tasks add column pipeline_version text")
         if "updated_at" not in columns:
             conn.execute("alter table tasks add column updated_at datetime")
+        if "last_heartbeat" not in columns:
+            conn.execute("alter table tasks add column last_heartbeat datetime")
+        if "resumable_from" not in columns:
+            conn.execute("alter table tasks add column resumable_from text")
+        if "status_reason" not in columns:
+            conn.execute("alter table tasks add column status_reason text")
 
     def _ensure_marker_columns(self, conn) -> None:
         for table in ("foreshadows", "hooks", "reader_promises", "secrets"):

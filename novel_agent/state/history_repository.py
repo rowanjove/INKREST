@@ -8,7 +8,10 @@ from typing import Any, Dict, List, Tuple, Optional
 from novel_agent.state.sqlite_schema import db_write_lock, safe_connection
 
 
-class HistoryRepositoryMixin:
+from novel_agent.state.history_repository_legacy import HistoryLegacySearchMixin
+
+
+class HistoryRepositoryMixin(HistoryLegacySearchMixin):
     """Contains chapter versions, task management, metrics, prompts, and reader feedback logging."""
     db_path: Path
 
@@ -119,110 +122,6 @@ class HistoryRepositoryMixin:
             with conn:
                 purge_chapter_narrative_state(conn, self.root_dir, chapter_id)
 
-    def search_events(self, query: str, limit: int = 8) -> List[Dict[str, Any]]:
-        like = f"%{query}%"
-        with safe_connection(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
-                select id, chapter_id, scene_id, summary, characters, objects, threads
-                from events
-                where summary like ? or characters like ? or objects like ? or threads like ?
-                order by chapter_id desc, id desc
-                limit ?
-                """,
-                (like, like, like, like, limit),
-            ).fetchall()
-        return [self._event_row(row) for row in rows]
-
-    def search_timeline(self, query: str, limit: int = 8) -> List[Dict[str, Any]]:
-        like = f"%{query}%"
-        results: List[Dict[str, Any]] = []
-        with safe_connection(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            node_rows = conn.execute(
-                """
-                select id, type, name, description, status, chapter_id, 'node' as kind
-                from timeline_nodes
-                where name like ? or description like ? or type like ?
-                  or ? like '%' || name || '%'
-                order by chapter_id desc, id desc
-                limit ?
-                """,
-                (like, like, like, query, limit),
-            ).fetchall()
-            edge_rows = conn.execute(
-                """
-                select id, type, from_node, to_node, description, strength, change, chapter_id, 'edge' as kind
-                from timeline_edges
-                where from_node like ? or to_node like ? or description like ? or type like ?
-                  or ? like '%' || from_node || '%'
-                  or ? like '%' || to_node || '%'
-                order by chapter_id desc, id desc
-                limit ?
-                """,
-                (like, like, like, like, query, query, limit),
-            ).fetchall()
-            foreshadow_rows = conn.execute(
-                """
-                select id, title, status, description, chapter_id, 'foreshadow' as kind
-                from foreshadows
-                where title like ? or description like ? or status like ?
-                  or ? like '%' || title || '%'
-                order by chapter_id desc, id desc
-                limit ?
-                """,
-                (like, like, like, query, limit),
-            ).fetchall()
-            hook_rows = conn.execute(
-                """
-                select id, title, status, description, chapter_id, 'hook' as kind
-                from hooks
-                where title like ? or description like ? or status like ?
-                  or ? like '%' || title || '%'
-                order by chapter_id desc, id desc
-                limit ?
-                """,
-                (like, like, like, query, limit),
-            ).fetchall()
-        for row in node_rows:
-            results.append(
-                {
-                    "id": row["id"],
-                    "kind": row["kind"],
-                    "type": row["type"],
-                    "name": row["name"],
-                    "description": row["description"],
-                    "status": row["status"],
-                    "chapter_id": row["chapter_id"],
-                }
-            )
-        for row in edge_rows:
-            results.append(
-                {
-                    "id": row["id"],
-                    "kind": row["kind"],
-                    "type": row["type"],
-                    "from": row["from_node"],
-                    "to": row["to_node"],
-                    "description": row["description"],
-                    "strength": row["strength"],
-                    "change": row["change"],
-                    "chapter_id": row["chapter_id"],
-                }
-            )
-        for row in foreshadow_rows + hook_rows:
-            results.append(
-                {
-                    "id": row["id"],
-                    "kind": row["kind"],
-                    "title": row["title"],
-                    "status": row["status"],
-                    "description": row["description"],
-                    "chapter_id": row["chapter_id"],
-                }
-            )
-        return results[:limit]
 
     def get_chapters(self) -> List[Dict[str, Any]]:
         return self.list_chapters_page(offset=0, limit=1_000_000)
@@ -523,14 +422,21 @@ class HistoryRepositoryMixin:
                           progress = ?,
                           current_step = ?,
                           pipeline_version = ?,
-                          updated_at = datetime('now', 'localtime')
+                          updated_at = datetime('now', 'localtime'),
+                          last_heartbeat = datetime('now', 'localtime')
                         where id = ?
                         """,
                         (progress_str, step, "Chapter Pipeline v1.0", task_id),
                     )
                 else:
                     conn.execute(
-                        "update tasks set progress = ?, updated_at = datetime('now', 'localtime') where id = ?",
+                        """
+                        update tasks set
+                          progress = ?,
+                          updated_at = datetime('now', 'localtime'),
+                          last_heartbeat = datetime('now', 'localtime')
+                        where id = ?
+                        """,
                         (progress_str, task_id),
                     )
 
@@ -542,11 +448,18 @@ class HistoryRepositoryMixin:
         result: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
         llm_logs: Optional[List[Dict[str, Any]]] = None,
+        status_reason: Optional[str] = None,
+        resumable_from: Optional[str] = None,
     ) -> None:
         res_str = json.dumps(result, ensure_ascii=False) if result else None
         logs_str = json.dumps(llm_logs, ensure_ascii=False) if llm_logs else None
         with safe_connection(self.db_path) as conn:
             with conn:
+                row = conn.execute(
+                    "select status from tasks where id = ?",
+                    (task_id,),
+                ).fetchone()
+                from_status = row[0] if row else None
                 conn.execute(
                     """
                     update tasks set
@@ -554,17 +467,61 @@ class HistoryRepositoryMixin:
                       result = coalesce(?, result),
                       error = coalesce(?, error),
                       llm_logs = coalesce(?, llm_logs),
+                      status_reason = coalesce(?, status_reason),
+                      resumable_from = coalesce(?, resumable_from),
+                      last_heartbeat = datetime('now', 'localtime'),
                       updated_at = datetime('now', 'localtime')
                     where id = ?
                     """,
-                    (status, res_str, error, logs_str, task_id),
+                    (status, res_str, error, logs_str, status_reason, resumable_from, task_id),
                 )
+                if row:
+                    conn.execute(
+                        """
+                        insert into task_status_events
+                          (task_id, from_status, to_status, reason, resumable_from)
+                        values (?, ?, ?, ?, ?)
+                        """,
+                        (task_id, from_status, status, status_reason, resumable_from),
+                    )
+
+    @db_write_lock
+    def record_task_heartbeat(self, task_id: str, step: Optional[str] = None) -> None:
+        with safe_connection(self.db_path) as conn:
+            with conn:
+                if step:
+                    conn.execute(
+                        """
+                        update tasks set
+                          current_step = ?,
+                          updated_at = datetime('now', 'localtime'),
+                          last_heartbeat = datetime('now', 'localtime')
+                        where id = ?
+                        """,
+                        (step, task_id),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        update tasks set
+                          updated_at = datetime('now', 'localtime'),
+                          last_heartbeat = datetime('now', 'localtime')
+                        where id = ?
+                        """,
+                        (task_id,),
+                    )
 
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         with safe_connection(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "select id, chapter_id, goal, dry_run, status, result, error, progress, llm_logs, current_step, pipeline_version, updated_at, created_at from tasks where id = ?",
+                """
+                select
+                  id, chapter_id, goal, dry_run, status, result, error, progress,
+                  llm_logs, current_step, pipeline_version, updated_at,
+                  last_heartbeat, resumable_from, status_reason, created_at
+                from tasks where id = ?
+                """,
                 (task_id,),
             ).fetchone()
             if row:
@@ -581,7 +538,13 @@ class HistoryRepositoryMixin:
         with safe_connection(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "select id, chapter_id, goal, dry_run, status, result, error, progress, llm_logs, current_step, pipeline_version, updated_at, created_at from tasks order by created_at desc limit ?",
+                """
+                select
+                  id, chapter_id, goal, dry_run, status, result, error, progress,
+                  llm_logs, current_step, pipeline_version, updated_at,
+                  last_heartbeat, resumable_from, status_reason, created_at
+                from tasks order by created_at desc limit ?
+                """,
                 (limit,),
             ).fetchall()
             results = []
@@ -627,19 +590,73 @@ class HistoryRepositoryMixin:
                 for chapter_id in cids:
                     purge_chapter_narrative_state(conn, self.root_dir, chapter_id)
 
-    def clean_interrupted_tasks(self) -> None:
+    def _interrupted_task_reason(
+        self,
+        last_heartbeat: Optional[str],
+        *,
+        stale_after_seconds: int,
+    ) -> str:
+        if not last_heartbeat:
+            return "startup_cleanup"
+        try:
+            heartbeat = datetime.datetime.strptime(last_heartbeat, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return "startup_cleanup"
+        age = (datetime.datetime.now() - heartbeat).total_seconds()
+        if age >= stale_after_seconds:
+            return "stale_heartbeat"
+        return "process_interrupted"
+
+    def clean_interrupted_tasks(self, stale_after_seconds: int = 600) -> None:
         with safe_connection(self.db_path) as conn:
             with conn:
-                conn.execute(
-                    "update tasks set status = 'failed', error = '服务重启，任务意外中断' where status in ('pending', 'running')"
-                )
+                rows = conn.execute(
+                    """
+                    select id, status, current_step, last_heartbeat
+                    from tasks
+                    where status = 'running'
+                    """
+                ).fetchall()
+                for task_id, from_status, current_step, last_heartbeat in rows:
+                    resumable_from = current_step or "unknown"
+                    reason = self._interrupted_task_reason(
+                        last_heartbeat,
+                        stale_after_seconds=stale_after_seconds,
+                    )
+
+                    conn.execute(
+                        """
+                        update tasks set
+                          status = 'pending',
+                          status_reason = ?,
+                          resumable_from = ?,
+                          last_heartbeat = datetime('now', 'localtime'),
+                          updated_at = datetime('now', 'localtime')
+                        where id = ?
+                        """,
+                        (reason, resumable_from, task_id),
+                    )
+                    conn.execute(
+                        """
+                        insert into task_status_events
+                          (task_id, from_status, to_status, reason, resumable_from)
+                        values (?, 'running', 'pending', ?, ?)
+                        """,
+                        (task_id, reason, resumable_from),
+                    )
 
     @db_write_lock
     def update_task_step(self, task_id: str, step: str) -> None:
         with safe_connection(self.db_path) as conn:
             with conn:
                 conn.execute(
-                    "update tasks set current_step = ?, updated_at = datetime('now', 'localtime') where id = ?",
+                    """
+                    update tasks set
+                      current_step = ?,
+                      updated_at = datetime('now', 'localtime'),
+                      last_heartbeat = datetime('now', 'localtime')
+                    where id = ?
+                    """,
                     (step, task_id)
                 )
 

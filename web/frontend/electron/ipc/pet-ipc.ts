@@ -2,6 +2,7 @@ import { BrowserWindow, Menu, app, ipcMain, screen } from 'electron';
 import { PetSettings, readPetSettings, writePetSettings } from '../pet-settings';
 import { createBubbleWindow, positionBubbleNearPet } from '../windows/bubble-window';
 import { createPetWindow } from '../windows/pet-window';
+import { showWhenReady } from '../windows/window-ready';
 
 export interface PetIpcContext {
   isDev: boolean;
@@ -95,14 +96,14 @@ export function registerPetIpc(ctx: PetIpcContext) {
     const settings = writePetSettings(patch);
     applySettingsToPetWindow(settings, ctx.getPetWindow());
     if (settings.enabled && settings.showOnStartup) {
-      ensurePetWindow(ctx).showInactive();
+      showWhenReady(ensurePetWindow(ctx), 'showInactive');
     }
     return settings;
   });
 
   ipcMain.handle('pet:show', () => {
     writePetSettings({ enabled: true });
-    ensurePetWindow(ctx).showInactive();
+    showWhenReady(ensurePetWindow(ctx), 'showInactive');
   });
 
   ipcMain.handle('pet:hide', () => {
@@ -117,7 +118,7 @@ export function registerPetIpc(ctx: PetIpcContext) {
       bubbleWindow.hide();
     } else {
       positionBubbleNearPet(bubbleWindow, ensurePetWindow(ctx));
-      bubbleWindow.showInactive();
+      showWhenReady(bubbleWindow, 'showInactive');
     }
   });
 

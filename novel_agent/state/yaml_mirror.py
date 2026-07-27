@@ -28,7 +28,7 @@ def resolve_yaml_mirror_mode(root_dir: Path) -> YamlMirrorMode:
         else:
             enabled = bool(raw)
         return "write" if enabled else "off"
-    return "write"
+    return "read_only"
 
 
 def is_yaml_mirror_enabled(root_dir: Path) -> bool:
@@ -111,13 +111,22 @@ def check_yaml_mirror_drift(root_dir: Path) -> List[str]:
         key: len(lists.get(key) or []) for key in _YAML_LIST_KEYS
     }
     warnings: List[str] = []
+    mode = resolve_yaml_mirror_mode(root_dir)
+
     for key in _YAML_LIST_KEYS:
         yaml_count = _yaml_list_count(state_dir / f"{key}.yaml", key)
         if yaml_count < 0:
             continue
         sqlite_count = sqlite_counts.get(key, 0)
-        if yaml_count != sqlite_count:
-            warnings.append(
-                f"state/{key}.yaml 条目数 ({yaml_count}) 与 SQLite ({sqlite_count}) 不一致"
-            )
+        if mode == "write":
+            if yaml_count != sqlite_count:
+                warnings.append(
+                    f"state/{key}.yaml 条目数 ({yaml_count}) 与 SQLite ({sqlite_count}) 不一致"
+                )
+        elif mode == "read_only":
+            if sqlite_count == 0 and yaml_count > 0:
+                warnings.append(
+                    f"检测到 SQLite 状态为空，但 state/{key}.yaml 镜像中存在数据 ({yaml_count}条)。"
+                    f"若您是从旧版迁移，请运行导入以同步状态。"
+                )
     return warnings

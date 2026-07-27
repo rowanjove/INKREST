@@ -54,6 +54,24 @@ ERROR_HINTS: Dict[ErrorCode, str] = {
     ErrorCode.UNKNOWN: "发生未分类错误，请查看 logs/novel_agent.log 或运行监控日志。",
 }
 
+ERROR_ACTIONS: Dict[ErrorCode, Dict[str, Any]] = {
+    ErrorCode.LLM_NOT_READY: {"retryable": False, "user_action": "configure_model"},
+    ErrorCode.ARC_QUEUE_STALE: {"retryable": False, "user_action": "sync_arc_queue"},
+    ErrorCode.READINESS_BLOCKED: {"retryable": False, "user_action": "complete_readiness"},
+    ErrorCode.CIRCUIT_PAUSED: {"retryable": False, "user_action": "repair_and_rerun_gate"},
+    ErrorCode.CHAPTER_ALREADY_RUNNING: {"retryable": False, "user_action": "wait_or_abort_existing_task"},
+    ErrorCode.NOVEL_BATCH_RUNNING: {"retryable": False, "user_action": "wait_for_batch"},
+    ErrorCode.EXTERNAL_REVIEW_PENDING: {"retryable": False, "user_action": "complete_external_review"},
+    ErrorCode.LLM_AUTH: {"retryable": False, "user_action": "fix_model_auth"},
+    ErrorCode.LLM_RATE_LIMIT: {"retryable": True, "user_action": "retry_later_or_switch_model"},
+    ErrorCode.LLM_TIMEOUT: {"retryable": True, "user_action": "retry_or_reduce_concurrency"},
+    ErrorCode.LLM_RESPONSE: {"retryable": True, "user_action": "rerun_step"},
+    ErrorCode.TASK_ABORTED: {"retryable": False, "user_action": "restart_task_if_needed"},
+    ErrorCode.RECOVERABLE_PIPELINE: {"retryable": True, "user_action": "resume_or_rerun_chapter"},
+    ErrorCode.VALIDATION: {"retryable": False, "user_action": "fix_request"},
+    ErrorCode.UNKNOWN: {"retryable": False, "user_action": "inspect_logs"},
+}
+
 
 def _code_from_message(message: str) -> Optional[ErrorCode]:
     text = (message or "").lower()
@@ -113,6 +131,7 @@ def failure_payload(
         "failure_hint": hint,
         "code": code.value,
         "message": str(exc).strip() or hint,
+        **ERROR_ACTIONS.get(code, ERROR_ACTIONS[ErrorCode.UNKNOWN]),
     }
     if resumable_from:
         payload["resumable_from"] = resumable_from
@@ -129,6 +148,7 @@ def http_error_detail(
         "code": code.value,
         "detail": message or ERROR_HINTS.get(code, code.value),
         "hint": ERROR_HINTS.get(code, ""),
+        **ERROR_ACTIONS.get(code, ERROR_ACTIONS[ErrorCode.UNKNOWN]),
     }
     if extra:
         body.update(extra)

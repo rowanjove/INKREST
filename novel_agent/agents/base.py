@@ -2,7 +2,7 @@ import json
 import time
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, ClassVar, Dict, List, Optional, Protocol, Set, Tuple
 
 import httpx
 
@@ -51,6 +51,140 @@ class LLMClient(Protocol):
         """Return text generated asynchronously for an agent role and prompt."""
 
 
+# ---------------------------------------------------------------------------
+# StaticLLM mock response handlers (extracted from monolithic generate())
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+
+def _mock_stitch_editor(prompt: str) -> str:
+    if "=== 场景A结尾 ===" in prompt:
+        a_match = _re.search(r"=== 场景A结尾 ===\s*(.*?)\s*=== 场景B开头 ===", prompt, _re.DOTALL)
+        b_match = _re.search(r"=== 场景B开头 ===\s*(.*)", prompt, _re.DOTALL)
+        a_text = a_match.group(1).strip() if a_match else ""
+        b_text = b_match.group(1).strip() if b_match else ""
+        return f"{a_text}\n\n{b_text}"
+    parts = prompt.split("输出完整章节正文。\n\n")
+    if len(parts) > 1:
+        return parts[-1].strip()
+    return prompt.strip()
+
+
+def _mock_style_editor(prompt: str) -> str:
+    if "=== 待润色片段 ===" in prompt:
+        match = _re.search(r"=== 待润色片段 ===\s*(.*?)(?:\s*===|$)", prompt, _re.DOTALL)
+        if match:
+            return match.group(1).strip()
+    parts = prompt.split("输出完整修订版。\n\n")
+    if len(parts) > 1:
+        return parts[-1].strip()
+    return prompt.strip()
+
+
+def _mock_text_passthrough(prompt: str) -> str:
+    parts = prompt.split("以下是待修正文本：\n")
+    if len(parts) > 1:
+        return parts[-1].strip()
+    return prompt.strip()
+
+
+def _mock_state_extractor(_prompt: str) -> str:
+    return json.dumps({
+        "events": [{"id": "E01_001", "summary": "故事开始，主角登场。", "characters": ["主角"], "objects": [], "threads": []}],
+        "characters": {"主角": {"location": "小镇", "emotion": "平静", "physical_state": "正常"}},
+        "objects": [],
+        "threads": [],
+        "foreshadows": [],
+        "hooks": [],
+        "character_behaviors": [],
+        "character_memories": [],
+        "character_relations": []
+    }, ensure_ascii=False)
+
+
+def _mock_chief_editor(_prompt: str) -> str:
+    return json.dumps({
+        "title_options": ["《干跑小说》"],
+        "logline": "一个在静态测试模式下自动生成的故事描述",
+        "core_theme": "成长",
+        "genre_positioning": "都市",
+        "target_reader": "测试读者",
+        "reader_promise": ["精彩的故事"],
+        "world_rules": ["现实世界"],
+        "protagonist": {"name": "主角", "desire": "梦想", "flaw": "平凡", "edge": "努力", "limit": "时间"},
+        "main_cast": [],
+        "antagonistic_forces": [],
+        "macro_outline": [{"arc_id": "A01", "name": "起步", "chapters": "1-3", "goal": "开始旅程", "turning_point": "抉择", "payoff": "出发"}],
+        "forbidden_moves": []
+    }, ensure_ascii=False)
+
+
+def _mock_managing_editor(_prompt: str) -> str:
+    return json.dumps({
+        "arc_id": "A01",
+        "arc_name": "起步",
+        "arc_goal": "开始旅程",
+        "chapters": [
+            {"chapter_id": "001", "chapter_title": "第一章", "chapter_goal": "踏出第一步", "input_state": "起始", "output_state": "发展", "reader_payoff": "爽点", "hook": "悬念", "must_include": [], "must_not_include": []}
+        ]
+    }, ensure_ascii=False)
+
+
+def _mock_chapter_planner(_prompt: str) -> str:
+    return json.dumps({
+        "chapter_id": "001",
+        "chapter_title": "第一章",
+        "detailed_synopsis": "这是静态模式下的章节规划内容。",
+        "beats": [{"beat_id": "B01", "function": "起", "content": "起步", "state_change": "变化"}],
+        "character_intents": [],
+        "foreshadow_plan": [],
+        "handoff_to_scene_planner": {"must_include": [], "must_not_include": []}
+    }, ensure_ascii=False)
+
+
+def _mock_planner(_prompt: str) -> str:
+    return json.dumps({
+        "chapter_id": "001",
+        "chapter_title": "第一章",
+        "target_chars": [1500, 2500],
+        "scenes": [
+            {"scene_id": "001-01", "target_chars": [800, 1200], "purpose": "引出故事", "entry": "开场", "exit": "收尾", "must_include": [], "must_not_include": []}
+        ]
+    }, ensure_ascii=False)
+
+
+def _mock_auditor(_prompt: str) -> str:
+    return json.dumps({"risk_level": "低", "issues": [], "state_update": {}}, ensure_ascii=False)
+
+
+def _mock_continuity_checker(_prompt: str) -> str:
+    return json.dumps({"pass": True, "issues": []}, ensure_ascii=False)
+
+
+def _mock_asset_compressor(_prompt: str) -> str:
+    return json.dumps({"compressed": True, "archived_threads": [], "removed_events": []}, ensure_ascii=False)
+
+
+_STATIC_MOCK_HANDLERS: Dict[str, Any] = {
+    "stitch_editor": _mock_stitch_editor,
+    "style_editor": _mock_style_editor,
+    "expander": _mock_text_passthrough,
+    "compressor": _mock_text_passthrough,
+    "length_fix": _mock_text_passthrough,
+    "state_extractor": _mock_state_extractor,
+    "chief_editor": _mock_chief_editor,
+    "managing_editor": _mock_managing_editor,
+    "chapter_planner": _mock_chapter_planner,
+    "planner": _mock_planner,
+    "auditor": _mock_auditor,
+    "continuity_checker": _mock_continuity_checker,
+    "asset_compressor": _mock_asset_compressor,
+}
+
+_DEFAULT_STATIC_RESPONSE = "这是一个占位输出。请接入真实模型后重新生成本段内容。"
+
+
 @dataclass
 class StaticLLM:
     """Deterministic LLM substitute for tests and dry runs."""
@@ -61,122 +195,11 @@ class StaticLLM:
         if role in self.responses:
             return self.responses[role]
 
-        # Smart mock logic for text editors to preserve content during dry runs
-        if role == "stitch_editor":
-            if "=== 场景A结尾 ===" in prompt:
-                import re
-                a_match = re.search(r"=== 场景A结尾 ===\s*(.*?)\s*=== 场景B开头 ===", prompt, re.DOTALL)
-                b_match = re.search(r"=== 场景B开头 ===\s*(.*)", prompt, re.DOTALL)
-                a_text = a_match.group(1).strip() if a_match else ""
-                b_text = b_match.group(1).strip() if b_match else ""
-                return f"{a_text}\n\n{b_text}"
-            parts = prompt.split("输出完整章节正文。\n\n")
-            if len(parts) > 1:
-                return parts[-1].strip()
-            return prompt.strip()
+        handler = _STATIC_MOCK_HANDLERS.get(role)
+        if handler is not None:
+            return handler(prompt)
 
-        if role == "style_editor":
-            if "=== 待润色片段 ===" in prompt:
-                import re
-                match = re.search(r"=== 待润色片段 ===\s*(.*?)(?:\s*===|$)", prompt, re.DOTALL)
-                if match:
-                    return match.group(1).strip()
-            parts = prompt.split("输出完整修订版。\n\n")
-            if len(parts) > 1:
-                return parts[-1].strip()
-            return prompt.strip()
-
-        if role in ("expander", "compressor", "length_fix"):
-            parts = prompt.split("以下是待修正文本：\n")
-            if len(parts) > 1:
-                return parts[-1].strip()
-            return prompt.strip()
-
-        # JSON roles fallbacks
-        if role == "state_extractor":
-            return json.dumps({
-                "events": [{"id": "E01_001", "summary": "故事开始，主角登场。", "characters": ["主角"], "objects": [], "threads": []}],
-                "characters": {"主角": {"location": "小镇", "emotion": "平静", "physical_state": "正常"}},
-                "objects": [],
-                "threads": [],
-                "foreshadows": [],
-                "hooks": [],
-                "character_behaviors": [],
-                "character_memories": [],
-                "character_relations": []
-            }, ensure_ascii=False)
-
-        if role == "chief_editor":
-            return json.dumps({
-                "title_options": ["《干跑小说》"],
-                "logline": "一个在静态测试模式下自动生成的故事描述",
-                "core_theme": "成长",
-                "genre_positioning": "都市",
-                "target_reader": "测试读者",
-                "reader_promise": ["精彩的故事"],
-                "world_rules": ["现实世界"],
-                "protagonist": {"name": "主角", "desire": "梦想", "flaw": "平凡", "edge": "努力", "limit": "时间"},
-                "main_cast": [],
-                "antagonistic_forces": [],
-                "macro_outline": [{"arc_id": "A01", "name": "起步", "chapters": "1-3", "goal": "开始旅程", "turning_point": "抉择", "payoff": "出发"}],
-                "forbidden_moves": []
-            }, ensure_ascii=False)
-
-        if role == "managing_editor":
-            return json.dumps({
-                "arc_id": "A01",
-                "arc_name": "起步",
-                "arc_goal": "开始旅程",
-                "chapters": [
-                    {"chapter_id": "001", "chapter_title": "第一章", "chapter_goal": "踏出第一步", "input_state": "起始", "output_state": "发展", "reader_payoff": "爽点", "hook": "悬念", "must_include": [], "must_not_include": []}
-                ]
-            }, ensure_ascii=False)
-
-        if role == "chapter_planner":
-            return json.dumps({
-                "chapter_id": "001",
-                "chapter_title": "第一章",
-                "detailed_synopsis": "这是静态模式下的章节规划内容。",
-                "beats": [{"beat_id": "B01", "function": "起", "content": "起步", "state_change": "变化"}],
-                "character_intents": [],
-                "foreshadow_plan": [],
-                "handoff_to_scene_planner": {"must_include": [], "must_not_include": []}
-            }, ensure_ascii=False)
-
-        if role == "planner":
-            return json.dumps({
-                "chapter_id": "001",
-                "chapter_title": "第一章",
-                "target_chars": [1500, 2500],
-                "scenes": [
-                    {"scene_id": "001-01", "target_chars": [800, 1200], "purpose": "引出故事", "entry": "开场", "exit": "收尾", "must_include": [], "must_not_include": []}
-                ]
-            }, ensure_ascii=False)
-
-        if role == "auditor":
-            return json.dumps({
-                "risk_level": "低",
-                "issues": [],
-                "state_update": {}
-            }, ensure_ascii=False)
-
-        if role == "continuity_checker":
-            return json.dumps({
-                "pass": True,
-                "issues": []
-            }, ensure_ascii=False)
-
-        if role == "asset_compressor":
-            return json.dumps({
-                "compressed": True,
-                "archived_threads": [],
-                "removed_events": []
-            }, ensure_ascii=False)
-
-        return self.responses.get(
-            "default",
-            "这是一个占位输出。请接入真实模型后重新生成本段内容。",
-        )
+        return self.responses.get("default", _DEFAULT_STATIC_RESPONSE)
 
     async def agenerate(self, role: str, prompt: str) -> str:
         return self.generate(role, prompt)
@@ -201,17 +224,30 @@ class OpenAILLM:
     proxy: str = ""
 
     def __post_init__(self):
+        self._client: Optional[httpx.Client] = None
+        self._aclient: Optional[httpx.AsyncClient] = None
+        self.call_log: List[Dict[str, Any]] = []
+
+    def _client_kwargs(self) -> Dict[str, Any]:
         client_kwargs: Dict[str, Any] = {"timeout": self.timeout}
         if self.proxy:
             client_kwargs["proxy"] = self.proxy
-        self._client = httpx.Client(**client_kwargs)
-        self._aclient = httpx.AsyncClient(**client_kwargs)
-        self.call_log: List[Dict[str, Any]] = []
+        return client_kwargs
 
-    def generate(self, role: str, prompt: str) -> str:
-        from novel_agent.progress import check_aborted
-        check_aborted()
-        _assert_safe_model_base_url(self.base_url)
+    def _get_client(self) -> httpx.Client:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.Client(**self._client_kwargs())
+        return self._client
+
+    def _get_async_client(self) -> httpx.AsyncClient:
+        if self._aclient is None or self._aclient.is_closed:
+            self._aclient = httpx.AsyncClient(**self._client_kwargs())
+        return self._aclient
+
+    # ---- shared helpers (eliminates ~100 lines of duplication) ----
+
+    def _build_payload(self, role: str, prompt: str) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
+        """Build (url, headers, payload) for the chat/completions endpoint."""
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         headers: Dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
@@ -225,58 +261,68 @@ class OpenAILLM:
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
         }
+        return url, headers, payload
 
-        # Non-retryable HTTP status codes
-        non_retryable_status = {400, 401, 403, 404, 422}
+    _NON_RETRYABLE_STATUS: ClassVar[Set[int]] = {400, 401, 403, 404, 422}
 
+    def _process_response(self, resp: httpx.Response, role: str, t0: float) -> str:
+        """Validate HTTP response, parse JSON, record metrics, return content.
+
+        Raises LLMResponseError on non-retryable status or malformed payload.
+        """
+        if resp.status_code in self._NON_RETRYABLE_STATUS:
+            error_body = resp.text[:500]
+            raise LLMResponseError(f"Non-retryable HTTP {resp.status_code}: {error_body}")
+
+        resp.raise_for_status()
+        data = resp.json()
+
+        if "choices" not in data or not data["choices"]:
+            raise LLMResponseError("Invalid response structure: missing 'choices'")
+
+        result = data["choices"][0].get("message", {}).get("content", "").strip()
+        if not result:
+            raise LLMResponseError("Empty response content")
+
+        latency_ms = int((time.time() - t0) * 1000)
+        usage = data.get("usage", {})
+        self.call_log.append({
+            "role": role,
+            "model": data.get("model", self.model),
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+            "latency_ms": latency_ms,
+            "timestamp": time.time(),
+        })
+        logger.debug(
+            "LLM call succeeded for role=%s, length=%d, tokens=%d, latency=%dms",
+            role, len(result), usage.get("total_tokens", 0), latency_ms,
+        )
+        return result
+
+    # ---- public API ----
+
+    def generate(self, role: str, prompt: str) -> str:
+        from novel_agent.progress import check_aborted
+        check_aborted()
+        _assert_safe_model_base_url(self.base_url)
+        url, headers, payload = self._build_payload(role, prompt)
         last_error: Exception | None = None
         for attempt in range(self.max_retries):
             check_aborted()
             t0 = time.time()
             try:
-                resp = self._client.post(url, headers=headers, json=payload)
-
-                # Check for non-retryable errors before raising
-                if resp.status_code in non_retryable_status:
-                    error_body = resp.text[:500]
-                    raise LLMResponseError(
-                        f"Non-retryable HTTP {resp.status_code}: {error_body}"
-                    )
-
-                resp.raise_for_status()
-                data = resp.json()
-
-                # Validate response structure
-                if "choices" not in data or not data["choices"]:
-                    raise LLMResponseError(f"Invalid response structure: missing 'choices'")
-
-                result = data["choices"][0].get("message", {}).get("content", "").strip()
-                if not result:
-                    raise LLMResponseError("Empty response content")
-
-                latency_ms = int((time.time() - t0) * 1000)
-                usage = data.get("usage", {})
-                self.call_log.append({
-                    "role": role,
-                    "model": data.get("model", self.model),
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                    "latency_ms": latency_ms,
-                    "timestamp": time.time(),
-                })
-                logger.debug("LLM call succeeded for role=%s, length=%d, tokens=%d, latency=%dms",
-                           role, len(result), usage.get("total_tokens", 0), latency_ms)
-                return result
+                resp = self._get_client().post(url, headers=headers, json=payload)
+                return self._process_response(resp, role, t0)
             except (httpx.HTTPStatusError, httpx.RequestError, KeyError, LLMResponseError) as exc:
                 last_error = exc
-                logger.warning("LLM call attempt %d/%d failed for role=%s: %s",
-                             attempt + 1, self.max_retries, role, exc)
-
-                # Don't retry non-retryable errors
+                logger.warning(
+                    "LLM call attempt %d/%d failed for role=%s: %s",
+                    attempt + 1, self.max_retries, role, exc,
+                )
                 if isinstance(exc, LLMResponseError):
                     raise
-
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay * (2 ** attempt))
         logger.error("LLM call failed after %d attempts for role=%s", self.max_retries, role)
@@ -288,58 +334,20 @@ class OpenAILLM:
         from novel_agent.progress import check_aborted
         check_aborted()
         _assert_safe_model_base_url(self.base_url)
-        url = f"{self.base_url.rstrip('/')}/chat/completions"
-        headers: Dict[str, str] = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": f"你是{role}。"},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
-        }
-
-        non_retryable_status = {400, 401, 403, 404, 422}
+        url, headers, payload = self._build_payload(role, prompt)
         last_error: Exception | None = None
         for attempt in range(self.max_retries):
             check_aborted()
             t0 = time.time()
             try:
-                resp = await self._aclient.post(url, headers=headers, json=payload)
-                if resp.status_code in non_retryable_status:
-                    error_body = resp.text[:500]
-                    raise LLMResponseError(
-                        f"Non-retryable HTTP {resp.status_code}: {error_body}"
-                    )
-                resp.raise_for_status()
-                data = resp.json()
-                if "choices" not in data or not data["choices"]:
-                    raise LLMResponseError(f"Invalid response structure: missing 'choices'")
-                result = data["choices"][0].get("message", {}).get("content", "").strip()
-                if not result:
-                    raise LLMResponseError("Empty response content")
-
-                latency_ms = int((time.time() - t0) * 1000)
-                usage = data.get("usage", {})
-                self.call_log.append({
-                    "role": role,
-                    "model": data.get("model", self.model),
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                    "latency_ms": latency_ms,
-                    "timestamp": time.time(),
-                })
-                logger.debug("LLM call succeeded for role=%s, length=%d, tokens=%d, latency=%dms",
-                           role, len(result), usage.get("total_tokens", 0), latency_ms)
-                return result
+                resp = await self._get_async_client().post(url, headers=headers, json=payload)
+                return self._process_response(resp, role, t0)
             except (httpx.HTTPStatusError, httpx.RequestError, KeyError, LLMResponseError) as exc:
                 last_error = exc
-                logger.warning("LLM call attempt %d/%d failed for role=%s: %s",
-                             attempt + 1, self.max_retries, role, exc)
+                logger.warning(
+                    "LLM call attempt %d/%d failed for role=%s: %s",
+                    attempt + 1, self.max_retries, role, exc,
+                )
                 if isinstance(exc, LLMResponseError):
                     raise
                 if attempt < self.max_retries - 1:
@@ -362,7 +370,7 @@ class OpenAILLM:
         }
         t0 = time.time()
         try:
-            resp = self._client.post(url, headers=headers, json=payload)
+            resp = self._get_client().post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
             latency_ms = int((time.time() - t0) * 1000)
@@ -373,20 +381,20 @@ class OpenAILLM:
                 "model": data.get("model", self.model),
                 "response_preview": preview,
             }
-        except Exception as exc:
+        except (httpx.HTTPStatusError, httpx.RequestError, KeyError, json.JSONDecodeError) as exc:
             latency_ms = int((time.time() - t0) * 1000)
             return {"success": False, "latency_ms": latency_ms, "error": str(exc)}
 
     def test_context_budget(self, target_tokens: int) -> Dict[str, Any]:
         """Test model's ability to handle large context payloads by sending dummy text.
-        
+
         Calculates payload size based on target_tokens and appends a verification prompt.
         """
         # Estimate repeater based on target_tokens. One repetition is ~38 tokens.
         sample_phrase = "这是一个用于测试大语言模型大上下文承载能力的填充测试句子。"
         repeat_count = int(target_tokens / 38)
         padding_text = "\n".join([sample_phrase] * max(1, repeat_count))
-        
+
         ver_secret = "TEST_SECRET_BUDGET_OK_9981"
         prompt = (
             f"{padding_text}\n\n"
@@ -395,61 +403,62 @@ class OpenAILLM:
             f"请在您的回复中仅输出上面本指令给出的暗号，暗号是：{ver_secret}。 "
             f"不要输出任何其他解释、说明或 Markdown 标记，只输出这个暗号即可。"
         )
-        
+
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         headers: Dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-            
+
         payload = {
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 50,
             "temperature": 0.0,
         }
-        
+
         t0 = time.time()
         try:
             timeout = max(self.timeout, 180.0)
             client_kwargs = {"timeout": timeout}
             if self.proxy:
                 client_kwargs["proxy"] = self.proxy
-            
+
             with httpx.Client(**client_kwargs) as test_client:
                 resp = test_client.post(url, headers=headers, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
                 latency_ms = int((time.time() - t0) * 1000)
                 reply = data["choices"][0]["message"]["content"].strip()
-                
+
                 success = ver_secret in reply
                 if success:
                     return {
                         "success": True,
                         "latency_ms": latency_ms,
                         "model": data.get("model", self.model),
-                        "message": f"上下文承载测试成功！成功提取测试暗号。总耗时 {latency_ms} ms。"
+                        "message": f"上下文承载测试成功！成功提取测试暗号。总耗时 {latency_ms} ms。",
                     }
-                else:
-                    return {
-                        "success": False,
-                        "latency_ms": latency_ms,
-                        "error": f"大模型回复未包含正确暗号。模型回复预览：'{reply[:100]}'"
-                    }
-        except Exception as exc:
+                return {
+                    "success": False,
+                    "latency_ms": latency_ms,
+                    "error": f"大模型回复未包含正确暗号。模型回复预览：'{reply[:100]}'",
+                }
+        except (httpx.HTTPStatusError, httpx.RequestError, KeyError, json.JSONDecodeError) as exc:
             latency_ms = int((time.time() - t0) * 1000)
             return {
                 "success": False,
                 "latency_ms": latency_ms,
-                "error": f"测试时发生网络或网关限制报错: {str(exc)}"
+                "error": f"测试时发生网络或网关限制报错: {str(exc)}",
             }
 
     def close(self):
-        self._client.close()
+        if self._client is not None:
+            self._client.close()
 
     async def aclose(self):
-        self._client.close()
-        await self._aclient.aclose()
+        self.close()
+        if self._aclient is not None:
+            await self._aclient.aclose()
 
     def __enter__(self):
         return self

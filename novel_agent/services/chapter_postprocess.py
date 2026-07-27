@@ -394,6 +394,42 @@ class ChapterPostProcessor:
                     )
                 )
 
+        for e in extracted_state.get("events", []):
+            if isinstance(e, dict) and e.get("id"):
+                text_parts = [e.get("summary", "")]
+                if e.get("characters"):
+                    text_parts.append(f"人物：{', '.join(e['characters']) if isinstance(e['characters'], list) else str(e['characters'])}")
+                if e.get("objects"):
+                    text_parts.append(f"物品：{', '.join(e['objects']) if isinstance(e['objects'], list) else str(e['objects'])}")
+                if e.get("threads"):
+                    text_parts.append(f"线索：{', '.join(e['threads']) if isinstance(e['threads'], list) else str(e['threads'])}")
+                chunks.append(
+                    VectorChunk(
+                        id=e.get("id"),
+                        type="event",
+                        text=" | ".join(p for p in text_parts if p),
+                        metadata={
+                            "chapter": chapter_id,
+                            "scene_id": e.get("scene_id", ""),
+                        },
+                    )
+                )
+
+        for n in extracted_state.get("timeline_nodes", []):
+            if isinstance(n, dict) and n.get("id"):
+                chunks.append(
+                    VectorChunk(
+                        id=n.get("id"),
+                        type="timeline_node",
+                        text=f"{n.get('name', '')}：{n.get('description', '')}",
+                        metadata={
+                            "chapter": chapter_id,
+                            "node_type": n.get("type", ""),
+                        },
+                    )
+                )
+
+
         report_path = (
             self._o.root_dir
             / "workspace"

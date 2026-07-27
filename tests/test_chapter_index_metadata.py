@@ -45,6 +45,27 @@ def test_derive_gate_status_blocked_on_quality_checkpoint(tmp_path: Path) -> Non
     assert derive_gate_status(chapter_dir, "blocked chapter") == "blocked"
 
 
+def test_index_treats_unified_gate_block_as_blocked(tmp_path: Path) -> None:
+    chapter_dir = _chapter_dir(tmp_path, "011")
+    (chapter_dir / "chapter_final.txt").write_text("blocked by gate", encoding="utf-8")
+    (chapter_dir / "plan.json").write_text(
+        json.dumps({"chapter_title": "门禁阻断"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (chapter_dir / "reports").mkdir(parents=True, exist_ok=True)
+    (chapter_dir / "reports" / "unified_gate.json").write_text(
+        json.dumps({"blocked": True, "resumable_from": "audit"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    store = SQLiteStateStore(tmp_path)
+    assert sync_chapters_from_disk(tmp_path, store) == 1
+
+    row = store.list_chapters_page(limit=10)[0]
+    assert row["has_final"] is True
+    assert row["gate_status"] == "blocked"
+
+
 def test_derive_gate_status_empty_without_final(tmp_path: Path) -> None:
     chapter_dir = _chapter_dir(tmp_path, "010")
     assert derive_gate_status(chapter_dir, "") == "empty"

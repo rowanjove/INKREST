@@ -14,6 +14,7 @@ import {
   resolveEmbeddingCloudEndpoint,
   type EmbeddingCloudPreset,
 } from '../constants/embeddingPresets'
+import { deriveEmbeddingReadiness } from '../utils/embeddingReadiness'
 
 const loading = ref(false)
 const expanded = ref(false)
@@ -60,28 +61,16 @@ const showCloudBaseUrlField = computed(() => cloudForm.value.provider === 'opena
 
 let statusTimer: number | null = null
 
-const providerLabel = computed(() => {
-  const p = envStatus.value.provider
-  if (p === 'local') return '本地 BGE-Micro'
-  if (p === 'stub') return 'Stub（关键词）'
-  if (p === 'zhipu') return '云端 · 智谱'
-  if (p === 'dashscope' || p === 'bailian') return '云端 · 阿里百炼'
-  if (p === 'openai') return '云端 · OpenAI 兼容'
-  return p
-})
-
-const semanticOk = computed(() => envStatus.value.semantic_search_effective)
-const vectorOn = computed(() => envStatus.value.vector_enabled !== false)
-const vectorDegraded = computed(() => vectorOn.value && !semanticOk.value)
-const depsReady = computed(
-  () => envStatus.value.has_onnx && envStatus.value.has_transformers && envStatus.value.has_model,
-)
-
-const statusTone = computed(() => {
-  if (!vectorOn.value) return 'muted'
-  if (semanticOk.value) return 'ok'
-  return 'warn'
-})
+const embeddingReadiness = computed(() => deriveEmbeddingReadiness(envStatus.value))
+const providerLabel = computed(() => embeddingReadiness.value.providerLabel)
+const semanticOk = computed(() => embeddingReadiness.value.semanticOk)
+const vectorOn = computed(() => embeddingReadiness.value.vectorOn)
+const depsReady = computed(() => embeddingReadiness.value.depsReady)
+const statusTone = computed(() => embeddingReadiness.value.statusTone)
+const statusLabel = computed(() => embeddingReadiness.value.statusLabel)
+const semanticLabel = computed(() => embeddingReadiness.value.semanticLabel)
+const dependencyLabel = computed(() => embeddingReadiness.value.dependencyLabel)
+const readinessAlert = computed(() => embeddingReadiness.value.alert)
 
 const load = async () => {
   loading.value = true
@@ -281,31 +270,21 @@ defineExpose({ load })
         <span class="status-pill" :class="statusTone">
           <el-icon v-if="statusTone === 'ok'"><CircleCheck /></el-icon>
           <el-icon v-else-if="statusTone === 'warn'"><Warning /></el-icon>
-          {{ statusTone === 'ok' ? '就绪' : statusTone === 'warn' ? '待配置' : '已关闭' }}
+          {{ statusLabel }}
         </span>
       </div>
     </div>
 
     <div v-show="expanded" class="fold-body">
       <el-alert
-        v-if="vectorDegraded"
-        type="warning"
+        v-if="readinessAlert"
+        :type="readinessAlert.type"
         :closable="false"
         show-icon
-        title="语义检索未生效"
+        :title="readinessAlert.title"
         class="emb-alert"
       >
-        长篇/超长篇已开启向量能力，但当前为 Stub 或未配置密钥。重复剧情检测与语义召回不会真正执行，请选择下方方案之一。
-      </el-alert>
-      <el-alert
-        v-else-if="!vectorOn"
-        type="info"
-        :closable="false"
-        show-icon
-        title="短篇体量无需向量"
-        class="emb-alert"
-      >
-        微型/短篇档位默认关闭向量索引；在工作台升级体量后会自动要求配置嵌入。
+        {{ readinessAlert.message }}
       </el-alert>
 
       <div class="status-grid">
@@ -316,19 +295,13 @@ defineExpose({ load })
         <div class="status-cell">
           <span class="cell-label">语义检索</span>
           <span class="cell-value" :class="{ ok: semanticOk, warn: vectorOn && !semanticOk }">
-            {{ !vectorOn ? '体量已关闭' : semanticOk ? '生效中' : '未生效' }}
+            {{ semanticLabel }}
           </span>
         </div>
         <div class="status-cell">
           <span class="cell-label">本地依赖</span>
           <span class="cell-value" :class="{ ok: depsReady }">
-            {{
-              envStatus.has_onnx && envStatus.has_transformers && envStatus.has_model
-                ? '环境 + 模型就绪'
-                : envStatus.has_model
-                  ? '模型已下载'
-                  : '未部署'
-            }}
+            {{ dependencyLabel }}
           </span>
         </div>
       </div>

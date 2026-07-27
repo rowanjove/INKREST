@@ -31,6 +31,8 @@ class ApiConfigTests(ApiTestBase):
             config = web_server.get_config()
 
             self.assertEqual(config["llm"]["default_model_id"], "main-model")
+            self.assertEqual(config["schema_name"], "pipeline_config")
+            self.assertGreaterEqual(config["schema_version"], 1)
         finally:
             web_server._active_project_id = original_active
             web_server.BASE_DIR = original_base

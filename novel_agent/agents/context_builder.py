@@ -567,63 +567,74 @@ class ContextBuilderAgent:
         return "\n".join(f"- {item}" for item in items)
 
     def _relevant_history(self, chapter_goal: str, scene: Dict[str, Any]) -> str:
-        terms = [chapter_goal]
-        terms.extend(scene.get("must_include", []))
-        terms.extend(scene.get("characters", []))
-        terms.extend(scene.get("objects", []))
-        terms.extend(scene.get("threads", []))
-        seen = set()
+        query_parts = [chapter_goal]
+        query_parts.extend(scene.get("must_include", []))
+        query_parts.extend(scene.get("characters", []))
+        query_parts.extend(scene.get("objects", []))
+        query_parts.extend(scene.get("threads", []))
+        query = " ".join(str(p) for p in query_parts if str(p).strip())
+        if not query:
+            return "- 暂无"
+
+        from novel_agent.control.long_run import resolve_vector_search_window
+
+        current_chapter = str(scene.get("chapter_id", "")).split("-")[0] or None
+        window = resolve_vector_search_window(self.root_dir)
+
+        results = self.vector_store.search(
+            query=query,
+            top_k=8,
+            filters={"type": "event"},
+            near_chapter_id=current_chapter,
+            chapter_window=window,
+        )
+
         lines = []
-        for term in terms:
-            for event in self.store.search_events(str(term), limit=3):
-                if event["id"] in seen:
-                    continue
-                seen.add(event["id"])
-                lines.append(
-                    f"- 第 {event['chapter_id']} 章 / {event['id']}：{event['summary']}"
-                )
+        seen = set()
+        for r in results:
+            if r["id"] in seen:
+                continue
+            seen.add(r["id"])
+            meta = r.get("metadata", {})
+            chapter = meta.get("chapter", "?")
+            lines.append(f"- 第 {chapter} 章 / {r['id']}：{r['text']}")
+
         return "\n".join(lines) if lines else "- 暂无"
 
     def _relevant_timeline(self, chapter_goal: str, scene: Dict[str, Any]) -> str:
-        terms = [chapter_goal]
-        terms.extend(scene.get("must_include", []))
-        terms.extend(scene.get("characters", []))
-        terms.extend(scene.get("objects", []))
-        terms.extend(scene.get("threads", []))
-        seen = set()
-        lines = []
-        for term in terms:
-            for item in self.store.search_timeline(str(term), limit=4):
-                if item["id"] in seen:
-                    continue
-                seen.add(item["id"])
-                lines.append(f"- {self._format_timeline_item(item)}")
-        return "\n".join(lines) if lines else "- 暂无"
+        query_parts = [chapter_goal]
+        query_parts.extend(scene.get("must_include", []))
+        query_parts.extend(scene.get("characters", []))
+        query_parts.extend(scene.get("objects", []))
+        query_parts.extend(scene.get("threads", []))
+        query = " ".join(str(p) for p in query_parts if str(p).strip())
+        if not query:
+            return "- 暂无"
 
-    @staticmethod
-    def _format_timeline_item(item: Dict[str, Any]) -> str:
-        kind = item.get("kind")
-        if kind == "node":
-            return (
-                f"节点/{item.get('type', '')}/{item.get('name', '')}"
-                f"：{item.get('description', '')}"
-            )
-        if kind == "edge":
-            return (
-                f"关系/{item.get('from', '')} -> {item.get('to', '')}"
-                f"：{item.get('description', '')}"
-            )
-        if kind == "foreshadow":
-            return (
-                f"伏笔/{item.get('status', '')}/{item.get('title', '')}"
-                f"：{item.get('description', '')}"
-            )
-        if kind == "hook":
-            return (
-                f"钩子/{item.get('status', '')}/{item.get('title', '')}"
-                f"：{item.get('description', '')}"
-            )
-        return str(item)
+        from novel_agent.control.long_run import resolve_vector_search_window
+
+        current_chapter = str(scene.get("chapter_id", "")).split("-")[0] or None
+        window = resolve_vector_search_window(self.root_dir)
+
+        results = self.vector_store.search(
+            query=query,
+            top_k=8,
+            filters={"type": "timeline_node"},
+            near_chapter_id=current_chapter,
+            chapter_window=window,
+        )
+
+        lines = []
+        seen = set()
+        for r in results:
+            if r["id"] in seen:
+                continue
+            seen.add(r["id"])
+            meta = r.get("metadata", {})
+            node_type = meta.get("node_type", "")
+            lines.append(f"- 节点/{node_type}/{r['id']}：{r['text']}")
+
+        return "\n".join(lines) if lines else "- 暂无"
 
     def _vector_recall(self, chapter_goal: str, scene: Dict[str, Any]) -> str:
         """Semantic search for relevant snippets from the vector store."""

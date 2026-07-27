@@ -121,12 +121,18 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(result.audit["risk_level"], "低")
 
     def test_context_builder_includes_relevant_history_from_sqlite(self):
-        SQLiteStateStore(self.tmpdir).sync_state_update(
-            "012",
-            {"events": [{"id": "E012", "summary": "黑色录音笔指向白塔医院。"}]},
-        )
+        from novel_agent.state.vector_store import VectorChunk
         from novel_agent.agents.context_builder import ContextBuilderAgent
-        context = ContextBuilderAgent(self.tmpdir).build(
+        cb = ContextBuilderAgent(self.tmpdir)
+        cb.vector_store.upsert([
+            VectorChunk(
+                id="E012",
+                type="event",
+                text="黑色录音笔指向白塔医院。",
+                metadata={"chapter": "012"}
+            )
+        ])
+        context = cb.build(
             "调查白塔医院和黑色录音笔",
             {
                 "scene_id": "013-01",
@@ -141,21 +147,18 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("黑色录音笔指向白塔医院", context)
 
     def test_context_builder_includes_relevant_timeline_network(self):
-        SQLiteStateStore(self.tmpdir).sync_state_update(
-            "012",
-            {
-                "foreshadows": [
-                    {
-                        "id": "F001",
-                        "title": "白塔医院地下二层",
-                        "status": "open",
-                        "description": "建筑图纸里不存在的楼层。",
-                    }
-                ]
-            },
-        )
+        from novel_agent.state.vector_store import VectorChunk
         from novel_agent.agents.context_builder import ContextBuilderAgent
-        context = ContextBuilderAgent(self.tmpdir).build(
+        cb = ContextBuilderAgent(self.tmpdir)
+        cb.vector_store.upsert([
+            VectorChunk(
+                id="F001",
+                type="timeline_node",
+                text="白塔医院地下二层：建筑图纸里不存在的楼层。",
+                metadata={"chapter": "012", "node_type": "setting"}
+            )
+        ])
+        context = cb.build(
             "调查白塔医院",
             {
                 "scene_id": "013-01",

@@ -22,3 +22,36 @@ export function errorCodeHint(code: string | undefined | null, fallback?: string
   if (!code) return fallback || ''
   return ERROR_CODE_HINTS[code] || fallback || `[${code}]`
 }
+
+export interface FailureDetail {
+  code: string
+  message: string
+  hint: string
+  retryable?: boolean
+  user_action?: string
+  resumable_from?: string
+}
+
+export function normalizeFailureDetail(raw: any, fallback = '操作失败'): FailureDetail {
+  const code = String(raw?.code || raw?.failure_kind || raw?.error_code || '')
+  const message = String(raw?.detail || raw?.message || raw?.error || fallback)
+  const hint = String(raw?.hint || raw?.failure_hint || errorCodeHint(code, '') || '')
+  return {
+    code,
+    message,
+    hint,
+    retryable: typeof raw?.retryable === 'boolean' ? raw.retryable : undefined,
+    user_action: raw?.user_action ? String(raw.user_action) : undefined,
+    resumable_from: raw?.resumable_from ? String(raw.resumable_from) : undefined,
+  }
+}
+
+export function formatFailureDetail(detail: FailureDetail): string {
+  const message = detail.message || detail.hint || '操作失败'
+  const hint = detail.hint
+  if (hint && hint !== message) return `${message}（${hint}）`
+  if (detail.code && !message.includes(detail.code) && message === '操作失败') {
+    return `[${detail.code}] ${message}`
+  }
+  return message
+}

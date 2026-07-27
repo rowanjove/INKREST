@@ -18,8 +18,11 @@ _SYNC_MANIFEST_REL = Path("workspace/reports/chapter_index_sync.json")
 _TRACKED_FILES = (
     "plan.json",
     "chapter_final.txt",
+    "checkpoint.json",
     "reports/wordcount.json",
     "reports/audit.json",
+    "reports/quality.json",
+    "reports/unified_gate.json",
 )
 
 
@@ -60,6 +63,7 @@ def derive_gate_status(chapter_dir: Path, final_text: str) -> str:
     if not final_text.strip():
         return "empty"
     checkpoint_path = chapter_dir / "checkpoint.json"
+    checkpoint = {}
     if checkpoint_path.is_file():
         try:
             checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
@@ -68,6 +72,31 @@ def derive_gate_status(chapter_dir: Path, final_text: str) -> str:
                 return "blocked"
         except (json.JSONDecodeError, OSError):
             pass
+    unified_gate = {}
+    unified_gate_path = chapter_dir / "reports" / "unified_gate.json"
+    if unified_gate_path.is_file():
+        try:
+            unified_gate = json.loads(unified_gate_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            unified_gate = {}
+    if unified_gate.get("blocked"):
+        return "blocked"
+    try:
+        from novel_agent.services.chapter_artifact_status import build_chapter_artifact_status
+        from novel_agent.services.report_validity import load_report_validity
+
+        artifact_rows = build_chapter_artifact_status(
+            chapter_dir,
+            checkpoint=checkpoint,
+            unified_gate=unified_gate,
+            report_validity=load_report_validity(chapter_dir / "reports") or {},
+        )
+        by_key = {row.get("key"): row for row in artifact_rows}
+        gate_row = by_key.get("unified_gate") or {}
+        if gate_row.get("exists") and gate_row.get("status") == "authoritative" and unified_gate.get("blocked"):
+            return "blocked"
+    except Exception as exc:
+        logger.debug("Artifact status gate derivation skipped for %s: %s", chapter_dir, exc)
     audit_path = chapter_dir / "reports" / "audit.json"
     if audit_path.is_file():
         try:

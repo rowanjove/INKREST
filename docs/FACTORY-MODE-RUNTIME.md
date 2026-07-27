@@ -15,9 +15,17 @@
 
 `config/pipeline.yaml` → `runtime`：
 
-- `yaml_mirror_mode`：`write`（默认）| `read_only` | `off` — 控制 `state/*.yaml` 双写；`read_only` 时 SQLite 为唯一写入源，仍可读旧 YAML 并做漂移检查
+- `yaml_mirror_mode`：`write`（当前默认，兼容旧工具）| `read_only` | `off` — 控制 `state/*.yaml` 双写；`read_only` 时 SQLite 为唯一写入源，仍可读旧 YAML 并做漂移检查
 - `yaml_mirror_enabled`（遗留布尔）：`true`→`write`，`false`→`off`；未设置 `yaml_mirror_mode` 时生效
 - `vector_readiness`：`auto` | `block` | `warn` | `ignore` — 覆盖长篇向量 stub 时的阻断/警告策略
+
+### YAML mirror 策略决定（2026-06-15）
+
+本周期不静默修改默认行为：未显式配置时仍为 `write`，避免破坏依赖 `state/*.yaml` 的旧项目、调试脚本和人工编辑流程。硬化方向是：
+
+1. 新增/迁移后的模板可显式写入 `runtime.yaml_mirror_mode: read_only`。
+2. 用户需要磁盘 YAML 时使用 `POST /api/database/export-yaml-mirror` 一次性导出。
+3. 当 UI 已能清楚提示“SQLite 为主状态、YAML 为导出快照”后，再考虑把全局默认从 `write` 调整为 `read_only`。
 
 ### 长篇向量存储（ChromaDB）
 

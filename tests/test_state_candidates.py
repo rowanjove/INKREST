@@ -16,6 +16,12 @@ class StateCandidatesTests(unittest.TestCase):
         self.state_dir.mkdir()
         (self.state_dir / "events.yaml").write_text("events: []\n", encoding="utf-8")
         (self.state_dir / "objects.yaml").write_text("objects: []\n", encoding="utf-8")
+        config_dir = self.tmpdir / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "pipeline.yaml").write_text(
+            "runtime:\n  yaml_mirror_mode: write\n",
+            encoding="utf-8",
+        )
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir)
@@ -153,6 +159,9 @@ class StateCandidatesTests(unittest.TestCase):
             self.assertIn("current_step", columns)
             self.assertIn("pipeline_version", columns)
             self.assertIn("updated_at", columns)
+            self.assertIn("last_heartbeat", columns)
+            self.assertIn("resumable_from", columns)
+            self.assertIn("status_reason", columns)
             
         # 模拟保存 task，并写入 progress updates
         task_id = "test-task-1"
@@ -169,6 +178,102 @@ class StateCandidatesTests(unittest.TestCase):
         store.update_task_step(task_id, "writer")
         task = store.get_task(task_id)
         self.assertEqual(task["current_step"], "writer")
+
+    def test_task_status_transitions_record_metadata_and_events(self):
+        store = SQLiteStateStore(self.tmpdir)
+        task_id = "task-transition-1"
+        store.save_task(task_id, "001", "生成第001章", False, "pending")
+
+        store.update_task_status(task_id, "running", status_reason="worker_started")
+        store.update_task_status(
+            task_id,
+            "failed",
+            error="服务重启，任务意外中断",
+            status_reason="startup_cleanup",
+            resumable_from="writer",
+        )
+
+        task = store.get_task(task_id)
+        self.assertEqual(task["status"], "failed")
+        self.assertEqual(task["status_reason"], "startup_cleanup")
+        self.assertEqual(task["resumable_from"], "writer")
+        self.assertIsNotNone(task["last_heartbeat"])
+
+        with safe_connection(store.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            events = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    select task_id, from_status, to_status, reason, resumable_from
+                    from task_status_events
+                    where task_id = ?
+                    order by id
+                    """,
+                    (task_id,),
+                ).fetchall()
+            ]
+        self.assertEqual([event["to_status"] for event in events], ["running", "failed"])
+        self.assertEqual(events[-1]["from_status"], "running")
+        self.assertEqual(events[-1]["reason"], "startup_cleanup")
+        self.assertEqual(events[-1]["resumable_from"], "writer")
+
+    def test_task_heartbeat_updates_last_heartbeat_without_changing_status(self):
+        store = SQLiteStateStore(self.tmpdir)
+        task_id = "task-heartbeat-1"
+        store.save_task(task_id, "001", "生成第001章", False, "running")
+
+        before = store.get_task(task_id)
+        store.record_task_heartbeat(task_id, step="planner")
+        after = store.get_task(task_id)
+
+        self.assertEqual(after["status"], "running")
+        self.assertEqual(after["current_step"], "planner")
+        self.assertNotEqual(before["last_heartbeat"], after["last_heartbeat"])
+
+    def test_cleanup_classifies_interrupted_tasks_by_heartbeat_age(self):
+        store = SQLiteStateStore(self.tmpdir)
+        store.save_task("task-no-heartbeat", "001", "无心跳", False, "pending")
+        store.save_task("task-fresh-heartbeat", "002", "新心跳", False, "running")
+        store.save_task("task-stale-heartbeat", "003", "旧心跳", False, "running")
+
+        with safe_connection(store.db_path) as conn:
+            with conn:
+                conn.execute(
+                    """
+                    update tasks
+                    set current_step = 'writer',
+                        last_heartbeat = datetime('now', 'localtime')
+                    where id = 'task-fresh-heartbeat'
+                    """
+                )
+                conn.execute(
+                    """
+                    update tasks
+                    set current_step = 'auditor',
+                        last_heartbeat = datetime('now', 'localtime', '-30 minutes')
+                    where id = 'task-stale-heartbeat'
+                    """
+                )
+
+        store.clean_interrupted_tasks(stale_after_seconds=600)
+
+        no_heartbeat = store.get_task("task-no-heartbeat")
+        fresh = store.get_task("task-fresh-heartbeat")
+        stale = store.get_task("task-stale-heartbeat")
+
+        # pending task remains pending untouched
+        self.assertEqual(no_heartbeat["status"], "pending")
+        self.assertIsNone(no_heartbeat["status_reason"])
+
+        # running tasks are requeued to pending with appropriate reasons
+        self.assertEqual(fresh["status"], "pending")
+        self.assertEqual(fresh["status_reason"], "process_interrupted")
+        self.assertEqual(fresh["resumable_from"], "writer")
+
+        self.assertEqual(stale["status"], "pending")
+        self.assertEqual(stale["status_reason"], "stale_heartbeat")
+        self.assertEqual(stale["resumable_from"], "auditor")
 
 
 if __name__ == "__main__":

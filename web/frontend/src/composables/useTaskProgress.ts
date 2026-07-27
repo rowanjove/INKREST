@@ -23,6 +23,7 @@ export type RuntimeLogRow = {
 
 type TaskListTransportOptions = {
   onTasksList: (tasks: TaskSummary[]) => void
+  onProgressMessage?: (msg: any) => void
 }
 
 type RuntimeLogTransportOptions = {
@@ -123,7 +124,11 @@ export function createTaskListTransport(options: TaskListTransportOptions) {
       socket.onmessage = (ev) => {
         try {
           const payload = JSON.parse(ev.data)
-          if (Array.isArray(payload)) onTasksList(payload)
+          if (Array.isArray(payload)) {
+            onTasksList(payload)
+          } else if (payload && (payload.type === 'progress' || payload.type === 'log')) {
+            options.onProgressMessage?.(payload)
+          }
         } catch {
           /* ignore malformed */
         }

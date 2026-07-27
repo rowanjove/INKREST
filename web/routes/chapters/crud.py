@@ -147,7 +147,7 @@ def get_chapter(chapter_id: str, session: ProjectSession = RequireProjectDep) ->
     unified_gate = ws_server._read_json(chapter_dir / "reports" / "unified_gate.json")
     checkpoint = ws_server._read_json(chapter_dir / "checkpoint.json")
 
-    from novel_agent.services.chapter_artifact_status import build_chapter_artifact_status
+    from novel_agent.services.chapter_artifact_status import build_chapter_artifact_status, summarize_chapter_artifact_status
     from novel_agent.services.report_validity import load_report_validity
 
     artifact_status = build_chapter_artifact_status(
@@ -156,6 +156,7 @@ def get_chapter(chapter_id: str, session: ProjectSession = RequireProjectDep) ->
         unified_gate=unified_gate,
         report_validity=load_report_validity(chapter_dir / "reports") or {},
     )
+    artifact_summary = summarize_chapter_artifact_status(artifact_status)
 
     from novel_agent.services.external_review import get_external_review_status
 
@@ -173,6 +174,7 @@ def get_chapter(chapter_id: str, session: ProjectSession = RequireProjectDep) ->
         unified_gate=unified_gate,
         checkpoint=checkpoint,
         artifact_status=artifact_status,
+        artifact_summary=artifact_summary,
         external_review_status=get_external_review_status(session.root_dir, chapter_id),
     )
 

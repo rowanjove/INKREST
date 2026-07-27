@@ -9,7 +9,7 @@ import {
 } from '../api'
 import { useChapterStore } from '../stores/chapter'
 import { useStateStore } from '../stores/state'
-import { matchesChapterRange, mergeById } from '../utils/stateViewFilters'
+import { buildChronicleTimeline, paginateTimelineItems } from '../utils/stateViewFilters'
 import { useStateRelationGraph } from './useStateRelationGraph'
 
 export function useStateViewChronicle(deps: {
@@ -61,37 +61,18 @@ export function useStateViewChronicle(deps: {
     () => timeline.value || { nodes: [], edges: [], foreshadows: [], hooks: [] },
   )
 
-  const matchesRange = (item: any) => matchesChapterRange(item, chapterRange.value)
+  const chronicleTimeline = computed(() =>
+    buildChronicleTimeline({
+      source: chronicleSource.value,
+      timeline: timelineData.value,
+      range: chapterRange.value,
+    }),
+  )
 
-  const timelineNodes = computed(() => {
-    const nodes = (timelineData.value.nodes || []).filter(matchesRange)
-    return nodes.sort(
-      (a: any, b: any) => (parseInt(a.chapter_id) || 0) - (parseInt(b.chapter_id) || 0),
-    )
-  })
-
-  const timelineForeshadows = computed(() => {
-    const fromState = (chronicleSource.value?.foreshadows || []).filter(matchesRange)
-    const fromTimeline = (timelineData.value.foreshadows || []).filter(matchesRange)
-    return mergeById([...fromState, ...fromTimeline]).sort(
-      (a: any, b: any) => (parseInt(a.chapter_id) || 0) - (parseInt(b.chapter_id) || 0),
-    )
-  })
-
-  const timelineHooks = computed(() => {
-    const fromState = (chronicleSource.value?.hooks || []).filter(matchesRange)
-    const fromTimeline = (timelineData.value.hooks || []).filter(matchesRange)
-    return mergeById([...fromState, ...fromTimeline]).sort(
-      (a: any, b: any) => (parseInt(a.chapter_id) || 0) - (parseInt(b.chapter_id) || 0),
-    )
-  })
-
-  const timelineEvents = computed(() => {
-    const events = (chronicleSource.value?.events || []).filter(matchesRange)
-    return events.sort(
-      (a: any, b: any) => (parseInt(a.chapter_id) || 0) - (parseInt(b.chapter_id) || 0),
-    )
-  })
+  const timelineNodes = computed(() => chronicleTimeline.value.nodes)
+  const timelineForeshadows = computed(() => chronicleTimeline.value.foreshadows)
+  const timelineHooks = computed(() => chronicleTimeline.value.hooks)
+  const timelineEvents = computed(() => chronicleTimeline.value.events)
 
   const chapterGoalPreviews = computed(() =>
     (chapterStore.chapters || [])
@@ -138,25 +119,21 @@ export function useStateViewChronicle(deps: {
     }
   }
 
-  const paginatedTimelineEvents = computed(() => {
-    const start = (timelineEventPage.value - 1) * timelinePageSize.value
-    return timelineEvents.value.slice(start, start + timelinePageSize.value)
-  })
+  const paginatedTimelineEvents = computed(() =>
+    paginateTimelineItems(timelineEvents.value, timelineEventPage.value, timelinePageSize.value),
+  )
 
-  const paginatedTimelineForeshadows = computed(() => {
-    const start = (timelineFsPage.value - 1) * timelinePageSize.value
-    return timelineForeshadows.value.slice(start, start + timelinePageSize.value)
-  })
+  const paginatedTimelineForeshadows = computed(() =>
+    paginateTimelineItems(timelineForeshadows.value, timelineFsPage.value, timelinePageSize.value),
+  )
 
-  const paginatedTimelineHooks = computed(() => {
-    const start = (timelineHookPage.value - 1) * timelinePageSize.value
-    return timelineHooks.value.slice(start, start + timelinePageSize.value)
-  })
+  const paginatedTimelineHooks = computed(() =>
+    paginateTimelineItems(timelineHooks.value, timelineHookPage.value, timelinePageSize.value),
+  )
 
-  const paginatedTimelineNodes = computed(() => {
-    const start = (timelineNodePage.value - 1) * timelinePageSize.value
-    return timelineNodes.value.slice(start, start + timelinePageSize.value)
-  })
+  const paginatedTimelineNodes = computed(() =>
+    paginateTimelineItems(timelineNodes.value, timelineNodePage.value, timelinePageSize.value),
+  )
 
   const {
     characters,

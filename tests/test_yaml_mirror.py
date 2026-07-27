@@ -31,7 +31,8 @@ class YamlMirrorTests(unittest.TestCase):
         path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
     def test_yaml_mirror_enabled_by_default(self):
-        self.assertTrue(is_yaml_mirror_enabled(self.tmpdir))
+        self.assertFalse(is_yaml_mirror_enabled(self.tmpdir))
+        self.assertEqual(resolve_yaml_mirror_mode(self.tmpdir), "off")
 
     def test_yaml_mirror_can_be_disabled(self):
         self._write_runtime_flag(False)
@@ -71,8 +72,10 @@ class YamlMirrorTests(unittest.TestCase):
     def test_drift_check_reports_count_mismatch(self):
         from novel_agent.state.sqlite_store import SQLiteStateStore
 
+        # 1. Test write mode drift warning
+        self._write_runtime_flag(True)  # Set yaml_mirror_enabled to true -> mode: write
         state_dir = self.tmpdir / "state"
-        state_dir.mkdir(parents=True)
+        state_dir.mkdir(parents=True, exist_ok=True)
         (state_dir / "events.yaml").write_text(
             yaml.safe_dump({"events": [{"id": "e1"}, {"id": "e2"}]}, allow_unicode=True),
             encoding="utf-8",
@@ -84,6 +87,18 @@ class YamlMirrorTests(unittest.TestCase):
         )
         warnings = check_yaml_mirror_drift(self.tmpdir)
         self.assertTrue(any("events.yaml" in item for item in warnings))
+
+        # 2. Test read_only mode import warning (SQLite empty, YAML has data)
+        store.clear_narrative_state()
+
+        # Set mode to read_only
+        path = self.tmpdir / "config" / "pipeline.yaml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data["runtime"] = {"yaml_mirror_mode": "read_only"}
+        path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+        warnings_ro = check_yaml_mirror_drift(self.tmpdir)
+        self.assertTrue(any("SQLite" in item and "state/events.yaml" in item for item in warnings_ro))
 
 
 if __name__ == "__main__":

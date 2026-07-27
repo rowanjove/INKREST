@@ -95,6 +95,12 @@ def handle_progress_message(
             update_task_chapter_id(task_id, chapter_id)
             wrote = True
 
+    try:
+        from web.task_ws_hub import broadcast_progress
+        broadcast_progress(msg)
+    except Exception:
+        pass
+
     if wrote:
         try:
             from web.task_ws_hub import notify_tasks_changed

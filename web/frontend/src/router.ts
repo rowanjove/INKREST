@@ -40,8 +40,8 @@ const router = createRouter({
     { path: '/config', name: 'config', component: () => import('./views/ConfigView.vue') },
     { path: '/writer', name: 'writer', component: () => import('./views/WritingWorkspace.vue') },
     { path: '/plugins', name: 'plugins', component: () => import('./views/PluginManager.vue') },
-    { path: '/pet', name: 'pet', component: () => import('./views/PetView.vue') },
-    { path: '/pet-bubble', name: 'pet-bubble', component: () => import('./views/PetBubbleView.vue') },
+    { path: '/pet', name: 'pet', component: () => import('./views/PetView.vue'), meta: { petShell: true } },
+    { path: '/pet-bubble', name: 'pet-bubble', component: () => import('./views/PetBubbleView.vue'), meta: { petShell: true } },
     { path: '/trope-workshop', name: 'trope-workshop', component: () => import('./views/TropeWorkshop.vue') },
   ],
 })

@@ -137,3 +137,38 @@ def test_validate_circuit_breaker_requires_force_resume(tmp_path: Path) -> None:
     assert "门禁阻断" in detail3
     ok2, detail2 = validate_novel_continue(tmp_path, force_resume=True)
     assert ok2 or "模型" in detail2 or "Static" in detail2
+
+
+def test_vector_scale_warning(tmp_path: Path) -> None:
+    _seed_project(tmp_path)
+
+    from novel_agent.state.sqlite_store import safe_connection
+    db_dir = tmp_path / "data"
+    db_dir.mkdir(parents=True, exist_ok=True)
+    db_path = db_dir / "novel.sqlite"
+
+    with safe_connection(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS vector_embeddings (
+                id TEXT PRIMARY KEY,
+                type TEXT,
+                text TEXT,
+                embedding BLOB,
+                metadata TEXT,
+                chapter_id TEXT
+            )
+            """
+        )
+        vals = []
+        for i in range(2005):
+            vals.append((f"chunk-{i}", "prose", f"text {i}", b"\x00" * 16, "{}", ""))
+        conn.executemany(
+            "INSERT INTO vector_embeddings VALUES (?, ?, ?, ?, ?, ?)",
+            vals
+        )
+        conn.commit()
+
+    report = build_readiness_report(tmp_path)
+    warnings = report.get("warnings") or []
+    assert any("已索引的向量块数量" in w and "NumPy" in w for w in warnings)

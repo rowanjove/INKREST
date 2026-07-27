@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { matchesChapterRange, maxChapterFromState } from './stateViewFilters'
+import {
+  buildChronicleTimeline,
+  matchesChapterRange,
+  maxChapterFromState,
+  paginateTimelineItems,
+} from './stateViewFilters'
 
 describe('stateViewFilters', () => {
   describe('matchesChapterRange', () => {
@@ -35,6 +40,57 @@ describe('stateViewFilters', () => {
         events: [{ chapter_id: '12' }, { chapter_id: '2' }],
       }
       expect(maxChapterFromState(state)).toBe(12)
+    })
+  })
+
+  describe('buildChronicleTimeline', () => {
+    it('filters by chapter range, sorts by chapter, and merges matching timeline records by id', () => {
+      const result = buildChronicleTimeline({
+        source: {
+          events: [
+            { id: 'e3', chapter_id: '3', summary: 'third' },
+            { id: 'e1', chapter_id: '1', summary: 'outside' },
+            { id: 'e2', chapter_id: '2', summary: 'second' },
+          ],
+          foreshadows: [
+            { id: 'f1', chapter_id: '2', title: 'seed', status: 'open' },
+            { id: 'f2', chapter_id: '6', title: 'outside' },
+          ],
+          hooks: [{ id: 'h1', chapter_id: '3', content: 'old hook' }],
+        },
+        timeline: {
+          nodes: [
+            { id: 'n5', chapter_id: '5', label: 'later' },
+            { id: 'n2', chapter_id: '2', label: 'earlier' },
+            { id: 'n9', chapter_id: '9', label: 'outside' },
+          ],
+          foreshadows: [{ id: 'f1', chapter_id: '2', status: 'resolved' }],
+          hooks: [
+            { id: 'h1', chapter_id: '3', content: 'merged hook', pressure_level: 'high' },
+            { id: 'h2', chapter_id: '4', content: 'new hook' },
+          ],
+        },
+        range: [2, 5],
+      })
+
+      expect(result.events.map((item) => item.id)).toEqual(['e2', 'e3'])
+      expect(result.nodes.map((item) => item.id)).toEqual(['n2', 'n5'])
+      expect(result.foreshadows).toEqual([
+        { id: 'f1', chapter_id: '2', title: 'seed', status: 'resolved' },
+      ])
+      expect(result.hooks).toEqual([
+        { id: 'h1', chapter_id: '3', content: 'merged hook', pressure_level: 'high' },
+        { id: 'h2', chapter_id: '4', content: 'new hook' },
+      ])
+    })
+  })
+
+  describe('paginateTimelineItems', () => {
+    it('returns the requested one-based page without mutating items', () => {
+      const items = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]
+
+      expect(paginateTimelineItems(items, 2, 2)).toEqual([{ id: 3 }, { id: 4 }])
+      expect(items).toHaveLength(4)
     })
   })
 })

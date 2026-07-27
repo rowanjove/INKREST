@@ -111,6 +111,9 @@ function onPipelineStarted() {
 }
 
 onMounted(async () => {
+  if (isPetRoute.value) {
+    return
+  }
   await projectStore.fetchProjects()
   await projectStore.fetchCurrent()
   if (
@@ -217,7 +220,17 @@ const activePath = computed(() => {
   return match?.path || ''
 })
 
-const isPetRoute = computed(() => route.path === '/pet' || route.path === '/pet-bubble')
+function isPetPath(path: string) {
+  return path === '/pet' || path === '/pet-bubble'
+}
+
+const isPetRoute = computed(() => {
+  if (isPetPath(route.path)) return true
+  if (typeof window !== 'undefined' && isPetPath(window.location.pathname || '')) {
+    return true
+  }
+  return false
+})
 
 const getStageRoute = (stage: EngineStage) => {
   const label = stage.label || ''
@@ -375,7 +388,6 @@ const loadEngineStatus = async () => {
 
     pushCheck('api', 'API 服务')
     pushCheck('single_process', '单进程模式')
-    pushCheck('remote_token', '远程访问令牌')
 
     if (sysChecks.llm) {
       stages.push({

@@ -150,6 +150,14 @@ const getProgressMessage = (task: any) => {
   }
   return task.error || task.goal || '排队中...'
 }
+
+const recoveryMessage = (task: any) => {
+  const parts = []
+  if (task.status_reason) parts.push(`Reason: ${task.status_reason}`)
+  if (task.resumable_from) parts.push(`Resume: ${task.resumable_from}`)
+  if (task.last_heartbeat) parts.push(`Heartbeat: ${formatTime(task.last_heartbeat)}`)
+  return parts.join(' · ')
+}
 </script>
 
 <template>
@@ -202,6 +210,7 @@ const getProgressMessage = (task: any) => {
               <span class="status-label" :class="task.status">{{ formatStatus(task.status) }}</span>
             </div>
             <p class="task-message">{{ getProgressMessage(task) }}</p>
+            <p v-if="recoveryMessage(task)" class="task-recovery">{{ recoveryMessage(task) }}</p>
           </div>
         </div>
       </div>
@@ -268,6 +277,7 @@ const getProgressMessage = (task: any) => {
 .status-label.failed { background: #fef0f0; color: #f56c6c; }
 .status-label.running, .status-label.pending { background: #fdf6ec; color: #e6a23c; }
 .task-message { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+.task-recovery { margin: 0; font-size: 12px; color: var(--color-text-subtle); line-height: 1.45; }
 .empty-state-card {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 12px; padding: 40px; color: var(--text-muted); text-align: center;

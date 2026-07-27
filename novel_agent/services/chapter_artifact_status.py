@@ -150,3 +150,59 @@ def build_chapter_artifact_status(
             row["resumable_from"] = resumable_from
 
     return rows
+
+
+def summarize_chapter_artifact_status(rows: List[ArtifactRow]) -> Dict[str, Any]:
+    """Return compact artifact completeness data for list/dashboard surfaces."""
+    by_status: Dict[str, List[str]] = {
+        "authoritative": [],
+        "reference": [],
+        "stale": [],
+        "missing": [],
+    }
+    for row in rows:
+        status = str(row.get("status") or "unknown")
+        key = str(row.get("key") or "")
+        if not key:
+            continue
+        by_status.setdefault(status, []).append(key)
+
+    repair_steps: List[Dict[str, str]] = []
+    if by_status.get("missing"):
+        repair_steps.append(
+            {
+                "action": "resume_pipeline",
+                "label": "从检查点续跑",
+                "reason": "存在缺失章节产物",
+            }
+        )
+    if by_status.get("stale"):
+        repair_steps.append(
+            {
+                "action": "rerun_gate_or_resume",
+                "label": "重跑门禁或从阻断点恢复",
+                "reason": "存在过期章节产物",
+            }
+        )
+    if by_status.get("reference") and not repair_steps:
+        repair_steps.append(
+            {
+                "action": "review_before_resume",
+                "label": "人工确认后继续",
+                "reason": "存在仅供参考的章节产物",
+            }
+        )
+
+    return {
+        "total": len(rows),
+        "authoritative_count": len(by_status.get("authoritative", [])),
+        "reference_count": len(by_status.get("reference", [])),
+        "stale_count": len(by_status.get("stale", [])),
+        "missing_count": len(by_status.get("missing", [])),
+        "authoritative_keys": by_status.get("authoritative", []),
+        "reference_keys": by_status.get("reference", []),
+        "stale_keys": by_status.get("stale", []),
+        "missing_keys": by_status.get("missing", []),
+        "repair_steps": repair_steps,
+        "complete": not by_status.get("missing") and not by_status.get("stale"),
+    }

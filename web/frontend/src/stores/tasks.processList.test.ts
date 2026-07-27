@@ -8,11 +8,15 @@ vi.mock('../api', () => ({
   clearRuntimeLogs: vi.fn(),
 }))
 
+import { listTasks } from '../api'
 import { useTasksStore } from './tasks'
+
+const listTasksMock = vi.mocked(listTasks)
 
 describe('tasks processTasksList', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    listTasksMock.mockResolvedValue({ data: [] } as any)
   })
 
   it('keeps isRunning when local progress is running but API list is empty', async () => {
@@ -30,5 +34,28 @@ describe('tasks processTasksList', () => {
     expect(store.progress.some((p) => p.step === 'ensure_queue' && p.status === 'running')).toBe(
       true,
     )
+  })
+
+  it('marks pending standard chapter tasks as recoverable running work', async () => {
+    const store = useTasksStore()
+    listTasksMock.mockResolvedValueOnce({
+      data: [
+        {
+          task_id: 'task-resume-1',
+          chapter_id: '001',
+          status: 'pending',
+          goal: 'draft chapter',
+          status_reason: 'process_interrupted',
+          resumable_from: 'writer',
+        },
+      ],
+    } as any)
+
+    await store.refreshTaskList()
+
+    expect(store.isRunning).toBe(true)
+    expect(store.currentTaskId).toBe('task-resume-1')
+    expect(store.currentChapterId).toBe('001')
+    expect(store.taskList[0].resumable_from).toBe('writer')
   })
 })

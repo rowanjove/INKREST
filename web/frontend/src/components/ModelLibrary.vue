@@ -9,40 +9,17 @@ import {
   modelSlotTagType,
   type ModelSlot,
 } from '../constants/modelSlots'
+import {
+  buildModelSavePayload,
+  createEmptyModelForm,
+  entryToModelForm,
+  filterAvailablePresets,
+  presetToModelForm,
+  type ModelLibraryEntry,
+  type ModelLibraryPreset,
+} from '../utils/modelLibraryForm'
 
-
-interface ModelEntry {
-  id: string
-  name: string
-  provider: string
-  base_url: string
-  model: string
-  max_tokens: number
-  temperature: number
-  timeout: number
-  proxy: string
-  api_key: string
-  has_api_key?: boolean
-  type?: string
-  slot?: ModelSlot
-}
-
-interface PresetModel {
-  id: string
-  name: string
-  provider: string
-  brand: string
-  base_url: string
-  model: string
-  max_tokens: number
-  temperature: number
-  timeout: number
-  description: string
-  local?: boolean
-  type?: string
-}
-
-const PRESET_MODELS: PresetModel[] = [
+const PRESET_MODELS: ModelLibraryPreset[] = [
   {
     id: 'openai-gpt-5-2',
     name: 'GPT-5.2',
@@ -208,7 +185,7 @@ const PRESET_MODELS: PresetModel[] = [
 
 const HIDDEN_PRESETS_KEY = 'novel-agent-hidden-preset-models'
 
-const models = ref<ModelEntry[]>([])
+const models = ref<ModelLibraryEntry[]>([])
 const loading = ref(false)
 const expanded = ref(false)
 const dialogVisible = ref(false)
@@ -218,21 +195,7 @@ const applyingId = ref('')
 const testResults = ref<Record<string, { loading: boolean; result: any }>>({})
 const hiddenPresetIds = ref<string[]>([])
 
-const form = ref({
-  id: '',
-  name: '',
-  provider: 'openai',
-  base_url: '',
-  api_key: '',
-  has_api_key: false,
-  model: '',
-  max_tokens: 8192,
-  temperature: 0.7,
-  timeout: 120,
-  proxy: '',
-  type: 'text',
-  slot: '' as ModelSlot,
-})
+const form = ref(createEmptyModelForm())
 
 const apiKeyPlaceholder = computed(() => {
   if (form.value.has_api_key && !form.value.api_key) {
@@ -241,14 +204,18 @@ const apiKeyPlaceholder = computed(() => {
   return '本地模型可留空'
 })
 
-const existingIds = computed(() => new Set(models.value.map((m) => m.id)))
-const hiddenPresets = computed(() => new Set(hiddenPresetIds.value))
-const availablePresets = computed(() => PRESET_MODELS.filter((p) => !existingIds.value.has(p.id) && !hiddenPresets.value.has(p.id)))
+const availablePresets = computed(() =>
+  filterAvailablePresets({
+    presets: PRESET_MODELS,
+    models: models.value,
+    hiddenPresetIds: hiddenPresetIds.value,
+  }),
+)
 const dailyModel = computed(() => models.value.find((m) => m.slot === 'daily'))
 const reasoningModel = computed(() => models.value.find((m) => m.slot === 'reasoning'))
 const backupModels = computed(() => models.value.filter((m) => m.slot === 'backup'))
 const previewModels = computed(() => {
-  const picked = [dailyModel.value, reasoningModel.value, ...backupModels.value].filter(Boolean) as ModelEntry[]
+  const picked = [dailyModel.value, reasoningModel.value, ...backupModels.value].filter(Boolean) as ModelLibraryEntry[]
   const ids = new Set(picked.map((m) => m.id))
   const rest = textModels.value.filter((m) => !ids.has(m.id))
   return [...picked, ...rest].slice(0, 5)
@@ -286,23 +253,7 @@ const onSlotChange = async (id: string, slot: ModelSlot) => {
   }
 }
 
-const presetToEntry = (preset: PresetModel) => ({
-  id: preset.id,
-  name: preset.name,
-  provider: preset.provider,
-  base_url: preset.base_url,
-  api_key: '',
-  has_api_key: false,
-  model: preset.model,
-  max_tokens: preset.max_tokens,
-  temperature: preset.temperature,
-  timeout: preset.timeout,
-  proxy: '',
-  type: preset.type || 'text',
-  slot: '' as ModelSlot,
-})
-
-const applyPreset = async (preset: PresetModel) => {
+const applyPreset = async (preset: ModelLibraryPreset) => {
   if (!preset.base_url) {
     openPresetDialog(preset)
     ElMessage.info('这个模型需要先填写兼容网关地址，再保存应用。')
@@ -310,7 +261,8 @@ const applyPreset = async (preset: PresetModel) => {
   }
   applyingId.value = preset.id
   try {
-    await saveModel(presetToEntry(preset))
+    const { payload } = buildModelSavePayload(presetToModelForm(preset))
+    await saveModel(payload)
     ElMessage.success(preset.type === 'image' ? '图像预设已保存' : '预设已保存到模型库')
     await fetchModels()
   } catch (error: any) {
@@ -332,7 +284,7 @@ const saveHiddenPresets = () => {
   localStorage.setItem(HIDDEN_PRESETS_KEY, JSON.stringify(hiddenPresetIds.value))
 }
 
-const removePreset = async (preset: PresetModel) => {
+const removePreset = async (preset: ModelLibraryPreset) => {
   try {
     await ElMessageBox.confirm(`确定从预设列表移除「${preset.name}」吗？已配置模型不受影响。`, '删除预设', {
       confirmButtonText: '删除预设',
@@ -353,45 +305,15 @@ const restorePresets = () => {
   ElMessage.success('已恢复预设模型')
 }
 
-const openPresetDialog = (preset?: PresetModel) => {
+const openPresetDialog = (preset?: ModelLibraryPreset) => {
   editingId.value = null
-  form.value = preset
-    ? presetToEntry(preset)
-    : {
-        id: '',
-        name: '',
-        provider: 'openai',
-        base_url: '',
-        api_key: '',
-        has_api_key: false,
-        model: '',
-        max_tokens: 8192,
-        temperature: 0.7,
-        timeout: 120,
-        proxy: '',
-        type: 'text',
-        slot: '' as ModelSlot,
-      }
+  form.value = preset ? presetToModelForm(preset) : createEmptyModelForm()
   dialogVisible.value = true
 }
 
-const openEditDialog = (m: ModelEntry) => {
+const openEditDialog = (m: ModelLibraryEntry) => {
   editingId.value = m.id
-  form.value = {
-    id: m.id,
-    name: m.name || m.id,
-    provider: m.provider || 'openai',
-    base_url: m.base_url,
-    api_key: '',
-    has_api_key: Boolean(m.has_api_key),
-    model: m.model,
-    max_tokens: m.max_tokens || 8192,
-    temperature: m.temperature ?? 0.7,
-    timeout: m.timeout || 120,
-    proxy: m.proxy || '',
-    type: m.type || 'text',
-    slot: (m.slot || '') as ModelSlot,
-  }
+  form.value = entryToModelForm(m)
   dialogVisible.value = true
 }
 
@@ -400,10 +322,7 @@ const handleSave = async () => {
     ElMessage.warning('请填写模型 ID 和服务商模型名')
     return
   }
-  const payload = { ...form.value }
-  const slot = (form.value.slot || '') as ModelSlot
-  delete (payload as { has_api_key?: boolean }).has_api_key
-  delete (payload as { slot?: ModelSlot }).slot
+  const { payload, slot } = buildModelSavePayload(form.value)
   const { data } = await saveModel(payload)
   if ((!form.value.type || form.value.type === 'text') && slot) {
     await setModelSlot(form.value.id.trim(), slot)
@@ -467,7 +386,7 @@ const getBrandClass = (brandName?: string) => {
   return 'brand-other'
 }
 
-const getModelBrandClass = (m: ModelEntry) => {
+const getModelBrandClass = (m: ModelLibraryEntry) => {
   const idLower = m.id.toLowerCase()
   const nameLower = (m.name || '').toLowerCase()
   const providerLower = (m.provider || '').toLowerCase()

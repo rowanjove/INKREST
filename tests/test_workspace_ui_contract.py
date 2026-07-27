@@ -27,6 +27,7 @@ DASHBOARD_SERIALIZATION_PANE = (
     ROOT / "web" / "frontend" / "src" / "components" / "dashboard" / "DashboardSerializationPane.vue"
 )
 APP = ROOT / "web" / "frontend" / "src" / "App.vue"
+FRONTEND_MAIN = ROOT / "web" / "frontend" / "src" / "main.ts"
 PET_BUBBLE = ROOT / "web" / "frontend" / "src" / "views" / "PetBubbleView.vue"
 PET_BUBBLE_STATUS = (
     ROOT / "web" / "frontend" / "src" / "components" / "pet" / "PetBubbleStatusTab.vue"
@@ -137,6 +138,8 @@ EMBEDDING_CONFIG = ROOT / "web" / "frontend" / "src" / "components" / "Embedding
 PIPELINE_RUNTIME = ROOT / "web" / "frontend" / "src" / "components" / "PipelineRuntimeConfig.vue"
 SHANSHAN_COPY = ROOT / "web" / "frontend" / "src" / "constants" / "shanshanCopy.ts"
 FRONTEND_API = ROOT / "web" / "frontend" / "src" / "api.ts"
+FRONTEND_API_CLIENT = ROOT / "web" / "frontend" / "src" / "api" / "client.ts"
+BUBBLE_WINDOW = ROOT / "web" / "frontend" / "electron" / "windows" / "bubble-window.ts"
 
 
 def test_writer_supports_chapter_delete_right_sidebar_collapse_and_ai_reload() -> None:
@@ -397,10 +400,9 @@ def test_embedding_config_stays_collapsed_by_default() -> None:
 
 
 def test_api_errors_prefer_backend_detail_over_status_text() -> None:
-    api_client = ROOT / "web" / "frontend" / "src" / "api" / "client.ts"
     api_source = FRONTEND_API.read_text(encoding="utf-8")
-    if api_client.is_file():
-        api_source = api_client.read_text(encoding="utf-8") + "\n" + api_source
+    if FRONTEND_API_CLIENT.is_file():
+        api_source = FRONTEND_API_CLIENT.read_text(encoding="utf-8") + "\n" + api_source
     library_source = LIBRARY_PROJECTS.read_text(encoding="utf-8")
     chapter_list_source = CHAPTER_LIST_COMPOSABLE.read_text(encoding="utf-8")
     writer_chapter_source = WRITER_CHAPTER.read_text(encoding="utf-8")
@@ -413,6 +415,30 @@ def test_api_errors_prefer_backend_detail_over_status_text() -> None:
     assert "apiErrorMessage(error" in library_source
     assert "apiErrorMessage(error" in chapter_list_source
     assert "apiErrorMessage(e" in writer_chapter_source
+
+
+def test_electron_api_auth_does_not_use_native_prompt() -> None:
+    source = FRONTEND_API_CLIENT.read_text(encoding="utf-8")
+
+    assert "window.prompt" not in source
+    assert "ElMessageBox.prompt" not in source
+    assert "需要访问令牌" not in source
+    assert "请输入栖墨远程访问令牌" not in source
+    assert "fetchLocalAccessToken" in source
+    assert "X-Novel-Agent-Local-Client" in source
+    assert "localStorage.getItem('novel-agent-access-token')) return" not in source
+
+
+def test_pet_bubble_initial_position_is_clamped_to_work_area() -> None:
+    source = BUBBLE_WINDOW.read_text(encoding="utf-8")
+    create_block = source.split("export function createBubbleWindow", 1)[1].split(
+        "const bubbleWindow = new BrowserWindow",
+        1,
+    )[0]
+
+    assert "workArea.x + workArea.width - width" in create_block
+    assert "workArea.y + workArea.height - height" in create_block
+    assert "Math.min(" in create_block
 
 
 def test_task_log_uses_tasks_store_with_manual_refresh() -> None:
@@ -524,6 +550,23 @@ def test_tasks_store_uses_polling_reference_counts() -> None:
     assert "consumers" in transport_source
     assert "wsAllowReconnect" in transport_source
     assert "startRuntimeLogPolling" not in log_stream_source
+
+
+def test_tasks_store_exposes_failure_action_contract() -> None:
+    tasks_source = (ROOT / "web" / "frontend" / "src" / "stores" / "tasks.ts").read_text(
+        encoding="utf-8"
+    )
+    client_source = (ROOT / "web" / "frontend" / "src" / "api" / "client.ts").read_text(
+        encoding="utf-8"
+    )
+
+    assert "retryable?: boolean" in tasks_source
+    assert "user_action?: string" in tasks_source
+    assert "resumable_from?: string" in tasks_source
+    assert "status_reason?: string" in tasks_source
+    assert "normalizeFailureDetail" in tasks_source
+    assert "normalizeFailureDetail" in client_source
+    assert "formatFailureDetail" in client_source
 
 
 def test_writing_chapter_editor_guards_save_and_load_races() -> None:

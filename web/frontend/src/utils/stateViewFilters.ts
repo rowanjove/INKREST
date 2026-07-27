@@ -46,6 +46,52 @@ export function mergeById(items: { id?: string | number }[]): any[] {
   return Array.from(map.values())
 }
 
+function chapterSortValue(item: { chapter_id?: string | number }): number {
+  return parseInt(String(item.chapter_id)) || 0
+}
+
+function sortByChapter<T extends Record<string, any>>(items: T[]): T[] {
+  return [...items].sort((a, b) => chapterSortValue(a) - chapterSortValue(b))
+}
+
+export function buildChronicleTimeline({
+  source,
+  timeline,
+  range,
+}: {
+  source: Record<string, any> | null | undefined
+  timeline: Record<string, any> | null | undefined
+  range: [number, number]
+}): { nodes: any[]; foreshadows: any[]; hooks: any[]; events: any[] } {
+  const matchesRange = (item: any) => matchesChapterRange(item, range)
+  const timelineData = timeline || {}
+  const sourceData = source || {}
+
+  const nodes = sortByChapter((timelineData.nodes || []).filter(matchesRange))
+  const foreshadows = sortByChapter(
+    mergeById([
+      ...(sourceData.foreshadows || []).filter(matchesRange),
+      ...(timelineData.foreshadows || []).filter(matchesRange),
+    ]),
+  )
+  const hooks = sortByChapter(
+    mergeById([
+      ...(sourceData.hooks || []).filter(matchesRange),
+      ...(timelineData.hooks || []).filter(matchesRange),
+    ]),
+  )
+  const events = sortByChapter((sourceData.events || []).filter(matchesRange))
+
+  return { nodes, foreshadows, hooks, events }
+}
+
+export function paginateTimelineItems<T>(items: T[], page: number, pageSize: number): T[] {
+  const safePage = Math.max(1, page || 1)
+  const safePageSize = Math.max(1, pageSize || 1)
+  const start = (safePage - 1) * safePageSize
+  return items.slice(start, start + safePageSize)
+}
+
 export function emotionDotColor(emotion?: string): string {
   const e = emotion || ''
   return e.includes('怒') || e.includes('恨') ? 'var(--color-danger)' : 'var(--color-success)'

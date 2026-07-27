@@ -12,6 +12,12 @@ from novel_agent.state.sqlite_store import SQLiteStateStore, safe_connection
 class StateTests(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="novel-agent-state-test-"))
+        config_dir = self.tmpdir / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "pipeline.yaml").write_text(
+            "runtime:\n  yaml_mirror_mode: write\n",
+            encoding="utf-8",
+        )
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir)

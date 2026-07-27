@@ -1,22 +1,35 @@
+"""Novel Agent Dashboard HTML generator."""
+
 import html
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, List
 
 import yaml
 from novel_agent.state.sqlite_store import SQLiteStateStore
 
+logger = logging.getLogger("novel_agent.dashboard")
+
 
 def _read_yaml(path: Path) -> Dict[str, Any]:
     if not path.exists():
         return {}
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (yaml.YAMLError, OSError) as exc:
+        logger.warning("Failed to read YAML %s: %s", path, exc)
+        return {}
 
 
 def _read_json(path: Path) -> Dict[str, Any]:
     if not path.exists():
         return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("Failed to read JSON %s: %s", path, exc)
+        return {}
 
 
 def _legacy_chapters(root_dir: Path) -> List[Dict[str, Any]]:
@@ -44,17 +57,34 @@ def _legacy_chapters(root_dir: Path) -> List[Dict[str, Any]]:
 
 
 def build_dashboard_html(root_dir: Path) -> str:
+    """Build the dashboard HTML, gracefully degrading when data sources fail."""
     root_dir = Path(root_dir)
-    store = SQLiteStateStore(root_dir)
     state_dir = root_dir / "state"
 
+    try:
+        store = SQLiteStateStore(root_dir)
+    except Exception as exc:
+        logger.error("Failed to open SQLite state store: %s", exc)
+        store = None
+
+    # --- helper: safely resolve a list of rows ---
+    def _safe_list(getter, fallback) -> List[Any]:
+        if store is None:
+            return fallback
+        try:
+            result = getter()
+            return result or fallback
+        except Exception as exc:
+            logger.warning("Dashboard data fetch failed: %s", exc)
+            return fallback
+
     # Chapter reports table
-    chapters = store.get_chapters() or _legacy_chapters(root_dir)
+    chapters = _safe_list(store.get_chapters, _legacy_chapters(root_dir)) if store else _legacy_chapters(root_dir)
     chapter_rows = []
     for ch in chapters:
         chapter_rows.append(
             "<tr>"
-            f"<td>{html.escape(str(ch['id']))}</td>"
+            f"<td>{html.escape(str(ch.get('id', '')))}</td>"
             f"<td>{html.escape(str(ch.get('word_count', '')))}</td>"
             f"<td>{html.escape(str(ch.get('risk_level', '')))}</td>"
             "</tr>"
@@ -62,7 +92,7 @@ def build_dashboard_html(root_dir: Path) -> str:
     chapter_table = "\n".join(chapter_rows) or "<tr><td colspan=\"3\">暂无章节</td></tr>"
 
     # Foreshadows table
-    foreshadows = store.list_foreshadows() or _read_yaml(state_dir / "foreshadows.yaml").get("foreshadows", [])
+    foreshadows = _safe_list(store.list_foreshadows, _read_yaml(state_dir / "foreshadows.yaml").get("foreshadows", [])) if store else _read_yaml(state_dir / "foreshadows.yaml").get("foreshadows", [])
     foreshadow_rows = []
     for f in foreshadows:
         status = f.get("status", "")
@@ -78,7 +108,7 @@ def build_dashboard_html(root_dir: Path) -> str:
     foreshadow_table = "\n".join(foreshadow_rows) or "<tr><td colspan=\"4\">暂无伏笔</td></tr>"
 
     # Hooks table
-    hooks = store.list_hooks() or _read_yaml(state_dir / "hooks.yaml").get("hooks", [])
+    hooks = _safe_list(store.list_hooks, _read_yaml(state_dir / "hooks.yaml").get("hooks", [])) if store else _read_yaml(state_dir / "hooks.yaml").get("hooks", [])
     hook_rows = []
     for h in hooks:
         hook_rows.append(
@@ -92,7 +122,7 @@ def build_dashboard_html(root_dir: Path) -> str:
     hook_table = "\n".join(hook_rows) or "<tr><td colspan=\"4\">暂无钩子</td></tr>"
 
     # Character state table
-    characters = store.list_characters() or _read_yaml(state_dir / "continuity_state.yaml").get("characters", {})
+    characters = _safe_list(store.list_characters, _read_yaml(state_dir / "continuity_state.yaml").get("characters", {})) if store else _read_yaml(state_dir / "continuity_state.yaml").get("characters", {})
     char_rows = []
     for char_id, char_data in characters.items():
         if isinstance(char_data, dict):
@@ -107,7 +137,7 @@ def build_dashboard_html(root_dir: Path) -> str:
     char_table = "\n".join(char_rows) or "<tr><td colspan=\"4\">暂无人物状态</td></tr>"
 
     # Events timeline
-    events = store.list_events(limit=20) or _read_yaml(state_dir / "events.yaml").get("events", [])
+    events = _safe_list(lambda: store.list_events(limit=20), _read_yaml(state_dir / "events.yaml").get("events", [])) if store else _read_yaml(state_dir / "events.yaml").get("events", [])
     event_rows = []
     for e in events:
         event_rows.append(
@@ -119,7 +149,7 @@ def build_dashboard_html(root_dir: Path) -> str:
     event_table = "\n".join(event_rows) or "<tr><td colspan=\"2\">暂无事件</td></tr>"
 
     # Objects table
-    objects = store.list_objects() or _read_yaml(state_dir / "objects.yaml").get("objects", [])
+    objects = _safe_list(store.list_objects, _read_yaml(state_dir / "objects.yaml").get("objects", [])) if store else _read_yaml(state_dir / "objects.yaml").get("objects", [])
     object_rows = []
     for o in objects:
         object_rows.append(
@@ -205,9 +235,17 @@ def build_dashboard_html(root_dir: Path) -> str:
 
 
 def write_dashboard(root_dir: Path) -> Path:
+    """Write dashboard HTML, creating directory if needed.
+
+    Raises OSError only when the filesystem is truly unusable.
+    """
     root_dir = Path(root_dir)
     dashboard_dir = root_dir / "dashboard"
     dashboard_dir.mkdir(parents=True, exist_ok=True)
     path = dashboard_dir / "index.html"
-    path.write_text(build_dashboard_html(root_dir), encoding="utf-8")
+    try:
+        path.write_text(build_dashboard_html(root_dir), encoding="utf-8")
+    except OSError as exc:
+        logger.error("Failed to write dashboard: %s", exc)
+        raise
     return path

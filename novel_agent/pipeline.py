@@ -22,6 +22,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "vector_search_window": 80,
         "hnsw_rebuild_every": 50,
         "merge_review_stages": True,
+        "yaml_mirror_enabled": False,
     },
     "chapter": {
         "default_target_chars": [1200, 2200],

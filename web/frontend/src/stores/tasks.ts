@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
 import { abortTask as apiAbortTask, clearRuntimeLogs } from '../api'
-import { errorCodeHint } from '../utils/errorCodes'
+import { formatFailureDetail, normalizeFailureDetail } from '../utils/errorCodes'
 
 function pulsePetPipelineRefresh() {
   try {
@@ -51,9 +51,17 @@ export interface TaskSummary {
     failure_kind?: string
     failure_hint?: string
     message?: string
+    retryable?: boolean
+    user_action?: string
+    resumable_from?: string
   }
   failure_kind?: string
   error_code?: string
+  retryable?: boolean
+  user_action?: string
+  resumable_from?: string
+  status_reason?: string
+  last_heartbeat?: string
 }
 
 const STEP_LABELS: Record<string, string> = {
@@ -359,6 +367,17 @@ export const useTasksStore = defineStore('tasks', () => {
     return tid.startsWith('novel-') || goal.startsWith('Novel')
   }
 
+  function isAutoResumablePendingTask(task: TaskSummary): boolean {
+    if (task.status !== 'pending' || !task.chapter_id) return false
+    const goal = String(task.goal || '')
+    return !(
+      goal.startsWith('batch:') ||
+      goal.startsWith('gate_only:') ||
+      goal.startsWith('Novel:') ||
+      goal.startsWith('Arc batch:')
+    )
+  }
+
   function processTasksList(data: TaskSummary[]) {
       taskList.value = data.slice()
       let runningFound = false
@@ -379,9 +398,12 @@ export const useTasksStore = defineStore('tasks', () => {
               timestamp: (task.progress.timestamp ?? 0) * 1000,
             })
           }
-        } else if (task.status === 'pending' && isNovelPipelineTask(task)) {
+        } else if (task.status === 'pending' && (isNovelPipelineTask(task) || isAutoResumablePendingTask(task))) {
           runningFound = true
           currentTaskId.value = task.task_id
+          if (task.chapter_id) {
+            currentChapterId.value = task.chapter_id
+          }
           isRunning.value = true
         } else if (task.status === 'completed') {
           if (task.task_id === currentTaskId.value) {
@@ -406,14 +428,9 @@ export const useTasksStore = defineStore('tasks', () => {
               })
             }
             const fr = task.result || {}
-            const code = fr.code || fr.failure_kind || ''
-            const hint =
-              fr.failure_hint ||
-              errorCodeHint(code) ||
-              fr.message ||
-              task.error ||
-              '任务执行失败'
-            lastTaskFailure.value = { task_id: task.task_id, hint: String(hint), code: String(code) }
+            const detail = normalizeFailureDetail({ ...fr, error: task.error }, '任务执行失败')
+            const hint = formatFailureDetail(detail)
+            lastTaskFailure.value = { task_id: task.task_id, hint: String(hint), code: String(detail.code) }
             if (isRunning.value && currentChapterId.value === task.chapter_id) {
               markError(task.chapter_id || '', hint)
             }
@@ -431,6 +448,9 @@ export const useTasksStore = defineStore('tasks', () => {
 
   const taskListTransport = createTaskListTransport({
     onTasksList: processTasksList,
+    onProgressMessage: (payload) => {
+      ingestRuntimeLog(payload)
+    }
   })
   const runtimeLogTransport = createRuntimeLogTransport({
     onRuntimeLog: ingestRuntimeLog,

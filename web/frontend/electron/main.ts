@@ -45,6 +45,8 @@ function createWindow() {
     title: '栖墨 · INKREST',
     icon: resolveAppIcon(),
     autoHideMenuBar: true,
+    show: false,
+    backgroundColor: '#f6f4f1',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -52,7 +54,12 @@ function createWindow() {
       sandbox: false,
     },
   });
-  mainWindow.maximize();
+  mainWindow.once('ready-to-show', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.maximize();
+      mainWindow.show();
+    }
+  });
   mainWindow.setMenu(null);
   mainWindow.setMenuBarVisibility(false);
 

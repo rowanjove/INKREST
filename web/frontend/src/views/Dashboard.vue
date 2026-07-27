@@ -393,6 +393,12 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+  animation: dashboardFadeIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes dashboardFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .head-actions {
@@ -420,16 +426,26 @@ onUnmounted(() => {
   gap: 10px;
 }
 
+.factory-first-screen__grid > *, .factory-risk-grid > * {
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease;
+}
+
+.factory-first-screen__grid > *:hover, .factory-risk-grid > *:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-panel);
+}
+
 .factory-repair-compact {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border: 1px solid #fde2e2;
-  border-radius: 8px;
-  background: #fff5f5;
-  color: #c53030;
+  border: 1px solid var(--color-alert-danger-border);
+  border-radius: var(--radius-md);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  color: var(--color-danger);
   font-size: 13px;
 }
 

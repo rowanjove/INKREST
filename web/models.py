@@ -162,6 +162,7 @@ class ChapterDetail(BaseModel):
     unified_gate: Dict[str, Any] = Field(default_factory=dict)
     checkpoint: Dict[str, Any] = Field(default_factory=dict)
     artifact_status: List[Dict[str, Any]] = Field(default_factory=list)
+    artifact_summary: Dict[str, Any] = Field(default_factory=dict)
     external_review_status: str = "none"
 
 
@@ -184,6 +185,9 @@ class TaskStatus(BaseModel):
     progress: Optional[Dict[str, Any]] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    last_heartbeat: Optional[str] = None
+    resumable_from: Optional[str] = None
+    status_reason: Optional[str] = None
 
 
 class StateView(BaseModel):

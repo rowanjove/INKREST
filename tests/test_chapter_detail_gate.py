@@ -6,6 +6,10 @@ import unittest
 from pathlib import Path
 
 import web.server as web_server
+from novel_agent.services.chapter_artifact_status import (
+    build_chapter_artifact_status,
+    summarize_chapter_artifact_status,
+)
 
 
 class ChapterDetailGateTests(unittest.TestCase):
@@ -31,6 +35,10 @@ class ChapterDetailGateTests(unittest.TestCase):
             json.dumps({"chapter_title": "Gate Test"}), encoding="utf-8"
         )
         chapter_dir.joinpath("chapter_final.txt").write_text("正文。", encoding="utf-8")
+        chapter_dir.joinpath("state_update.json").write_text(
+            json.dumps({"events": [{"id": "e1"}]}),
+            encoding="utf-8",
+        )
         unified = {
             "blocked": True,
             "overall_pass": False,
@@ -69,9 +77,35 @@ class ChapterDetailGateTests(unittest.TestCase):
         self.assertTrue(detail.unified_gate.get("blocked"))
         self.assertEqual(detail.checkpoint.get("last_stage"), "quality_blocked")
         self.assertGreaterEqual(len(detail.artifact_status), 5)
+        self.assertGreaterEqual(detail.artifact_summary.get("total", 0), 5)
 
         by_key = {row["key"]: row for row in detail.artifact_status}
         self.assertEqual(by_key["unified_gate"]["status"], "authoritative")
         self.assertEqual(by_key["state_update"]["status"], "stale")
         self.assertEqual(by_key["audit"]["status"], "reference")
         self.assertEqual(by_key["final"]["status"], "authoritative")
+
+    def test_artifact_summary_reports_missing_and_repair_suggestions(self):
+        chapter_dir = self._chapter_dir("004")
+        chapter_dir.joinpath("chapter_final.txt").write_text("正文。", encoding="utf-8")
+        chapter_dir.joinpath("state_update.json").write_text(
+            json.dumps({"events": [{"id": "e1"}]}),
+            encoding="utf-8",
+        )
+        (chapter_dir / "reports" / "unified_gate.json").write_text(
+            json.dumps({"blocked": True, "resumable_from": "audit"}),
+            encoding="utf-8",
+        )
+
+        rows = build_chapter_artifact_status(
+            chapter_dir,
+            unified_gate={"blocked": True, "resumable_from": "audit"},
+        )
+        summary = summarize_chapter_artifact_status(rows)
+
+        self.assertEqual(summary["total"], len(rows))
+        self.assertGreater(summary["missing_count"], 0)
+        self.assertGreater(summary["stale_count"], 0)
+        self.assertIn("state_update", summary["stale_keys"])
+        self.assertIn("plan", summary["missing_keys"])
+        self.assertTrue(any("resume" in step["action"] for step in summary["repair_steps"]))

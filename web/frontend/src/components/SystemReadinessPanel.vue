@@ -25,13 +25,15 @@ const activeProjectId = ref<string | null>(null)
 const loadError = ref('')
 
 const items = computed(() =>
-  Object.entries(checks.value).map(([id, check]) => ({
-    id,
-    label: check.label || id,
-    ok: check.ok !== false,
-    detail: formatDetail(check),
-    action: actionFor(id, check),
-  })),
+  Object.entries(checks.value)
+    .filter(([id]) => id !== 'remote_token')
+    .map(([id, check]) => ({
+      id,
+      label: check.label || id,
+      ok: check.ok !== false,
+      detail: formatDetail(check),
+      action: actionFor(id, check),
+    })),
 )
 
 function formatDetail(check: ReadinessCheck): string {
@@ -41,8 +43,6 @@ function formatDetail(check: ReadinessCheck): string {
     return `未信任已启用：${check.untrusted_enabled.join('、')}`
   }
   if (check.hint) return check.hint
-  if (check.configured === false) return '未配置远程访问令牌（仅本机可免）'
-  if (check.configured === true) return '已配置 NOVEL_AGENT_ACCESS_TOKEN'
   if (check.active === true) return '有任务正在运行'
   if (check.active === false) return '无运行中任务'
   if (check.enabled_count != null) return `已启用 ${check.enabled_count} 个插件`
@@ -52,7 +52,6 @@ function formatDetail(check: ReadinessCheck): string {
 function actionFor(id: string, _check: ReadinessCheck): string | null {
   if (id === 'llm' || id === 'book') return '/workspace'
   if (id === 'plugins') return '/plugins'
-  if (id === 'remote_token') return '/config'
   return null
 }
 
@@ -95,7 +94,7 @@ defineExpose({ reload: load })
       </el-button>
     </div>
     <p class="readiness-desc">
-      汇总 API、单进程模式、日常模型、开书清单与插件信任状态；与侧栏「运行状态」同源，便于远程部署前自查。
+      汇总 API、单进程模式、日常模型、开书清单与插件信任状态；与侧栏「运行状态」同源。
       <span v-if="activeProjectId" class="project-tag">当前书：{{ activeProjectId }}</span>
       <span v-else class="project-tag muted">未打开书籍时「开书清单」仅作提示</span>
     </p>

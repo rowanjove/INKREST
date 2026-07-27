@@ -24,6 +24,24 @@ class ErrorCodeTests(unittest.TestCase):
         payload = failure_payload(LLMAuthError("bad key"))
         self.assertEqual(payload["code"], "LLM_AUTH")
         self.assertIn("failure_hint", payload)
+        self.assertFalse(payload["retryable"])
+        self.assertEqual(payload["user_action"], "fix_model_auth")
+
+    def test_retryable_payload_for_rate_limit(self):
+        from novel_agent.exceptions import LLMRateLimitError
+
+        payload = failure_payload(LLMRateLimitError("too many requests"), resumable_from="writer")
+
+        self.assertEqual(payload["code"], "LLM_RATE_LIMIT")
+        self.assertTrue(payload["retryable"])
+        self.assertEqual(payload["user_action"], "retry_later_or_switch_model")
+        self.assertEqual(payload["resumable_from"], "writer")
+
+    def test_http_error_detail_includes_action_contract(self):
+        body = http_error_detail(ErrorCode.CHAPTER_ALREADY_RUNNING)
+
+        self.assertFalse(body["retryable"])
+        self.assertEqual(body["user_action"], "wait_or_abort_existing_task")
 
     def test_http_error_detail_dict(self):
         body = http_error_detail(ErrorCode.ARC_QUEUE_STALE)

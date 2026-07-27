@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
-import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
+
+from novel_agent.state.sqlite_schema import safe_connection
 
 SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-\.:]{1,128}$")
 MAX_TEXT_LEN = 20_000
@@ -139,7 +140,7 @@ def _filter_cross_chapter_events(
         return events
     placeholders = ",".join("?" for _ in event_ids)
     query = f"select id, chapter_id from events where id in ({placeholders})"
-    with sqlite3.connect(db_path, timeout=30.0) as conn:
+    with safe_connection(db_path) as conn:
         for row in conn.execute(query, event_ids):
             owned[str(row[0])] = str(row[1] or "")
 

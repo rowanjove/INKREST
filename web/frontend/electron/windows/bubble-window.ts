@@ -11,8 +11,14 @@ export function createBubbleWindow(options: {
   const workArea = screen.getDisplayMatching(petBounds).workArea;
   const width = 340;
   const height = 520;
-  const x = Math.max(workArea.x, petBounds.x + petBounds.width - width);
-  const y = Math.max(workArea.y, petBounds.y - height + 24);
+  const x = Math.min(
+    workArea.x + workArea.width - width,
+    Math.max(workArea.x, petBounds.x + petBounds.width - width),
+  );
+  const y = Math.min(
+    workArea.y + workArea.height - height,
+    Math.max(workArea.y, petBounds.y - height + 24),
+  );
 
   const bubbleWindow = new BrowserWindow({
     width,
@@ -26,6 +32,7 @@ export function createBubbleWindow(options: {
     skipTaskbar: true,
     hasShadow: false,
     show: false,
+    backgroundColor: '#00000000',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),

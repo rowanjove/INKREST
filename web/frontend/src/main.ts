@@ -10,9 +10,19 @@ import ThemeRoot from './ThemeRoot.vue'
 import router from './router'
 import { bootstrapLocalAccessToken } from './api'
 
+function isPetEntryPath() {
+  if (typeof window === 'undefined') return false
+  const path = window.location.pathname || ''
+  return path === '/pet' || path === '/pet-bubble'
+}
+
 async function startApp() {
   initTheme()
-  await bootstrapLocalAccessToken()
+  if (isPetEntryPath()) {
+    void bootstrapLocalAccessToken()
+  } else {
+    await bootstrapLocalAccessToken()
+  }
 
   const app = createApp(ThemeRoot)
   app.use(createPinia())

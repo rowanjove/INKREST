@@ -200,6 +200,22 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
         embedding_backend_hint = str(resolved_emb.get("_backend_hint") or "")
         if embedding_backend_hint:
             warnings.append(embedding_backend_hint)
+
+        # Vector scale warning for NumPy / SQLite linear engine
+        from novel_agent.state.sqlite_store import safe_connection
+        db_path = root / "data" / "novel.sqlite"
+        if db_path.is_file():
+            with safe_connection(db_path) as conn:
+                table_exists = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='vector_embeddings'"
+                ).fetchone()
+                if table_exists:
+                    count = conn.execute("SELECT count(*) FROM vector_embeddings").fetchone()[0]
+                    if count > 2000 and embedding_backend == "sqlite":
+                        warnings.append(
+                            f"当前已索引的向量块数量为 {count}。由于正在使用 NumPy 内存向量引擎，"
+                            f"体量较大时可能会导致检索速度下降，建议在设置中启用并配置 ChromaDB 向量数据库。"
+                        )
     except Exception:
         pass
 

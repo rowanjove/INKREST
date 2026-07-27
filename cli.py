@@ -18,12 +18,43 @@ from typing import List, Optional
 
 from novel_agent.agents.asset_compressor import compress_assets
 from novel_agent.dashboard import write_dashboard
+from novel_agent.exceptions import AgentError, FatalPipelineError, TaskAbortedError
 from novel_agent.logging_config import setup_logging
 from novel_agent.orchestrator import NovelOrchestrator
 from novel_agent.pipeline import PipelineConfig
 from novel_agent.progress import enable_json_output, emit_complete, emit_error
 from novel_agent.prompts import PromptRepository
 from novel_agent.state.sqlite_store import SQLiteStateStore
+
+
+def _handle_cli_error(exc: Exception, chapter_id: str, step: str = "", json_output: bool = False) -> None:
+    """Centralised error handling for CLI commands.
+
+    Exits with distinct codes:
+        2  – FatalPipelineError (unrecoverable config / setup issue)
+        130 – TaskAbortedError (user cancelled)
+        1  – Other agent / pipeline errors
+    """
+    if isinstance(exc, FatalPipelineError):
+        emit_error(chapter_id, str(exc), step)
+        if not json_output:
+            print(f"Fatal error: {exc}", file=sys.stderr)
+        sys.exit(2)
+    if isinstance(exc, TaskAbortedError):
+        emit_error(chapter_id, "Task aborted by user", step)
+        if not json_output:
+            print("Aborted.", file=sys.stderr)
+        sys.exit(130)
+    if isinstance(exc, AgentError):
+        emit_error(chapter_id, str(exc), step)
+        if not json_output:
+            print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    # Truly unexpected – keep traceback out of user-facing output
+    emit_error(chapter_id, f"Unexpected error: {exc}", step)
+    if not json_output:
+        print(f"Unexpected error: {exc}", file=sys.stderr)
+    sys.exit(1)
 
 
 def run_chapter_cmd(args: argparse.Namespace) -> None:
@@ -59,10 +90,7 @@ def run_chapter_cmd(args: argparse.Namespace) -> None:
             print(f"final_path={result.final_path}")
             print(f"risk_level={result.audit.get('risk_level')}")
     except Exception as exc:
-        emit_error(args.chapter_id, str(exc))
-        if not args.json_output:
-            print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_cli_error(exc, args.chapter_id, json_output=getattr(args, "json_output", False))
 
 
 def dashboard_cmd(args: argparse.Namespace) -> None:
@@ -116,9 +144,7 @@ def run_arc_cmd(args: argparse.Namespace) -> None:
         else:
             print(f"Arc batch completed: {len(results)} chapters")
     except Exception as exc:
-        emit_error("", str(exc), "run_arc")
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_cli_error(exc, "", step="run_arc", json_output=getattr(args, "json_output", False))
 
 
 def continue_novel_cmd(args: argparse.Namespace) -> None:
@@ -139,9 +165,7 @@ def continue_novel_cmd(args: argparse.Namespace) -> None:
         else:
             print(f"Novel continue completed: {len(results)} chapters")
     except Exception as exc:
-        emit_error("", str(exc), "continue_novel")
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_cli_error(exc, "", step="continue_novel", json_output=getattr(args, "json_output", False))
 
 
 def rebuild_index_cmd(args: argparse.Namespace) -> None:

@@ -31,6 +31,9 @@ from novel_agent.pipeline import (
 
 router = APIRouter()
 
+CONFIG_SCHEMA_NAME = "pipeline_config"
+CONFIG_SCHEMA_VERSION = 1
+
 
 def _validated_model_base_url(raw_url: str) -> str:
     try:
@@ -90,7 +93,12 @@ def _save_project_scoped_sections(
 @router.get("/api/config")
 def get_config(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
-    return ws_server._mask_config_secrets(ws_server._effective_pipeline_settings(session.root_dir))
+    config = ws_server._mask_config_secrets(
+        ws_server._effective_pipeline_settings(session.root_dir)
+    )
+    config["schema_name"] = CONFIG_SCHEMA_NAME
+    config["schema_version"] = CONFIG_SCHEMA_VERSION
+    return config
 
 
 @router.put("/api/config")

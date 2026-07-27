@@ -2,8 +2,55 @@ from tests.api._base import *  # noqa: F403
 
 import web.context as web_context
 from web.project_task_registry import ProjectTaskRegistry
+from web.models import TaskStatus
 
 class ApiTasksTests(ApiTestBase):
+    def test_task_status_exposes_lifecycle_metadata(self):
+        status = TaskStatus(
+            task_id="task-meta",
+            status="failed",
+            chapter_id="001",
+            status_reason="startup_cleanup",
+            resumable_from="writer",
+            last_heartbeat="2026-06-15 10:00:00",
+        )
+
+        payload = status.model_dump()
+
+        self.assertEqual(payload["status_reason"], "startup_cleanup")
+        self.assertEqual(payload["resumable_from"], "writer")
+        self.assertEqual(payload["last_heartbeat"], "2026-06-15 10:00:00")
+
+    def test_task_failure_result_includes_retry_action_contract(self):
+        from novel_agent.exceptions import LLMTimeoutError
+        from web.task_failures import task_failure_result
+
+        payload = task_failure_result(LLMTimeoutError("timeout"), resumable_from="auditor")
+
+        self.assertEqual(payload["code"], "LLM_TIMEOUT")
+        self.assertTrue(payload["retryable"])
+        self.assertEqual(payload["user_action"], "retry_or_reduce_concurrency")
+        self.assertEqual(payload["resumable_from"], "auditor")
+
+    def test_pending_auto_resume_policy_only_allows_standard_single_chapters(self):
+        from web.tasks import _is_auto_resumable_single_chapter_task
+
+        self.assertTrue(
+            _is_auto_resumable_single_chapter_task(
+                {"id": "task-1", "chapter_id": "001", "goal": "draft chapter"}
+            )
+        )
+
+        blocked = [
+            {"id": "batch-1", "chapter_id": "", "goal": "batch:2"},
+            {"id": "gate-1", "chapter_id": "001", "goal": "gate_only:001"},
+            {"id": "novel-1", "chapter_id": "", "goal": "Novel: long run"},
+            {"id": "arc-1", "chapter_id": "", "goal": "Arc batch: A"},
+            {"id": "missing-chapter", "chapter_id": "", "goal": "draft chapter"},
+        ]
+        for task in blocked:
+            with self.subTest(task=task["id"]):
+                self.assertFalse(_is_auto_resumable_single_chapter_task(task))
 
     def test_task_manager_rejects_duplicate_running_chapter(self):
         manager = TaskManager(self.tmpdir)
@@ -81,7 +128,35 @@ class ApiTasksTests(ApiTestBase):
         self.assertEqual(task["chapter_id"], "")
         self.assertEqual(task["status"], "pending")
         self.assertTrue(abort_result)
-        self.assertEqual(manager.get_task(batch_id)["status"], "failed")
+        aborted = manager.get_task(batch_id)
+        self.assertEqual(aborted["status"], "failed")
+        self.assertEqual(aborted["status_reason"], "user_abort")
+        self.assertEqual(aborted["resumable_from"], "unknown")
+
+    def test_batch_failure_uses_structured_task_failure_payload(self):
+        import asyncio
+
+        manager = TaskManager(self.tmpdir)
+        batch_id = "batch-fail-1"
+        manager.store.save_task(batch_id, "", "batch:1", True, "pending")
+
+        async def failing_batch(*_args, **_kwargs):
+            raise RuntimeError("batch exploded")
+
+        async def run_scenario():
+            with patch("web.tasks.run_chapter_batch", failing_batch):
+                await manager._run_batch(
+                    batch_id,
+                    [{"chapter_id": "001", "goal": "first"}],
+                    dry_run=True,
+                )
+
+        asyncio.run(run_scenario())
+
+        task = manager.get_task(batch_id)
+        self.assertEqual(task["status"], "failed")
+        self.assertIn("message", task["result"])
+        self.assertIn("batch exploded", task["error"])
 
     def test_switch_project_allows_background_tasks_via_registry(self):
         original_active = web_server._active_project_id
@@ -159,9 +234,10 @@ class ApiTasksTests(ApiTestBase):
         task = reloaded_manager.get_task(task_id)
         
         self.assertIsNotNone(task)
-        # Reloading active tasks should mark them as failed with restart error
-        self.assertEqual(task["status"], "failed")
-        self.assertIn("服务重启", task["error"])
+        # Reloading active tasks should requeue them as pending
+        self.assertEqual(task["status"], "pending")
+        self.assertEqual(task["status_reason"], "startup_cleanup")
+        self.assertEqual(task["resumable_from"], "unknown")
         
         # 4. Check that completed tasks are reloaded with original status
         manager.store.update_task_status(task_id, "completed", None, None)

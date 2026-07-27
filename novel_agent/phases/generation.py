@@ -57,19 +57,8 @@ class GenerationPhase(PipelinePhase):
         self._run_scene_generation(ctx)
         
         # 2. 合并场景
-        raw_text = self._run_merge(ctx)
+        final_text = self._run_merge(ctx)
         
-        # 3. 缝合拼接
-        stitched_text, ctx = self._run_stitch(ctx, raw_text)
-        
-        # 4. 文风风格修改与截断检测
-        style_ran = self._generation_style_enabled()
-        final_text, ctx = self._run_style_edit(ctx, stitched_text, raw_text)
-
-        # 5. 多场景边界复检
-        scene_count = len(ctx.plan.get("scenes", [])) if ctx.plan else 0
-        final_text, ctx = self._run_boundary_recheck(ctx, final_text, style_ran, scene_count)
-
         return dataclasses.replace(ctx, final_text=final_text)
 
     async def aexecute(self, ctx: ChapterContext) -> ChapterContext:
@@ -84,21 +73,8 @@ class GenerationPhase(PipelinePhase):
         await self._arun_scene_generation(ctx)
         
         # 2. 合并场景
-        raw_text = self._run_merge(ctx)
+        final_text = self._run_merge(ctx)
         
-        # 3. 缝合拼接
-        stitched_text, ctx = await self._arun_stitch(ctx, raw_text)
-        
-        # 4. 文风风格修改与截断检测
-        style_ran = self._generation_style_enabled()
-        final_text, ctx = await self._arun_style_edit(ctx, stitched_text, raw_text)
-
-        # 5. 多场景边界复检
-        scene_count = len(ctx.plan.get("scenes", [])) if ctx.plan else 0
-        final_text, ctx = await self._arun_boundary_recheck(
-            ctx, final_text, style_ran, scene_count
-        )
-
         return dataclasses.replace(ctx, final_text=final_text)
 
     async def _arun_scene_generation(self, ctx: ChapterContext) -> None:
@@ -137,7 +113,36 @@ class GenerationPhase(PipelinePhase):
         context = self.orchestrator.context_builder.build(chapter_goal, scene)
         (chapter_dir / f"scene_{scene_id}_context.md").write_text(context, encoding="utf-8")
         
+        max_retries = getattr(self.orchestrator.config, "continuity_max_retries", 3)
         draft = await self.orchestrator.writer.awrite_scene(context)
+
+        for attempt in range(max_retries):
+            if not hasattr(self.orchestrator, "continuity_checker") or not self.orchestrator.continuity_checker:
+                break
+            try:
+                if hasattr(self.orchestrator.continuity_checker, "acheck"):
+                    check_result = await self.orchestrator.continuity_checker.acheck(draft, context)
+                else:
+                    check_result = self.orchestrator.continuity_checker.check(draft, context)
+            except Exception as e:
+                logger.warning("Continuity check failed with error: %s", e)
+                break
+
+            if check_result.get("pass", False) is True:
+                logger.info("Scene %s continuity check passed.", scene_id)
+                break
+            else:
+                issues = check_result.get("issues", [])
+                if not issues:
+                    break
+                feedback = "\n".join(f"- {i.get('why', '冲突')} (建议: {i.get('fix', '无')})" for i in issues)
+                logger.warning("Scene %s continuity check failed (Attempt %d/%d):\n%s", scene_id, attempt+1, max_retries, feedback)
+                if attempt < max_retries - 1:
+                    repair_context = f"{context}\n\n[质检员强制打回：前序草稿存在设定冲突，必须修正以下硬伤]\n{feedback}"
+                    draft = await self.orchestrator.writer.awrite_scene(repair_context)
+                else:
+                    logger.warning("Scene %s continuity check failed after %d attempts. Proceeding with last draft.", scene_id, max_retries)
+
         target_range = scene.get("target_chars", [400, 800])
         
         if hasattr(self.orchestrator.length_fix, "aadjust"):
@@ -356,7 +361,33 @@ class GenerationPhase(PipelinePhase):
         context = self.orchestrator.context_builder.build(chapter_goal, scene)
         (chapter_dir / f"scene_{scene_id}_context.md").write_text(context, encoding="utf-8")
         
+        max_retries = getattr(self.orchestrator.config, "continuity_max_retries", 3)
         draft = self.orchestrator.writer.write_scene(context)
+
+        for attempt in range(max_retries):
+            if not hasattr(self.orchestrator, "continuity_checker") or not self.orchestrator.continuity_checker:
+                break
+            try:
+                check_result = self.orchestrator.continuity_checker.check(draft, context)
+            except Exception as e:
+                logger.warning("Continuity check failed with error: %s", e)
+                break
+
+            if check_result.get("pass", False) is True:
+                logger.info("Scene %s continuity check passed.", scene_id)
+                break
+            else:
+                issues = check_result.get("issues", [])
+                if not issues:
+                    break
+                feedback = "\n".join(f"- {i.get('why', '冲突')} (建议: {i.get('fix', '无')})" for i in issues)
+                logger.warning("Scene %s continuity check failed (Attempt %d/%d):\n%s", scene_id, attempt+1, max_retries, feedback)
+                if attempt < max_retries - 1:
+                    repair_context = f"{context}\n\n[质检员强制打回：前序草稿存在设定冲突，必须修正以下硬伤]\n{feedback}"
+                    draft = self.orchestrator.writer.write_scene(repair_context)
+                else:
+                    logger.warning("Scene %s continuity check failed after %d attempts. Proceeding with last draft.", scene_id, max_retries)
+
         target_range = scene.get("target_chars", [400, 800])
         adjusted = self.orchestrator.length_fix.adjust(draft, target_range)
         

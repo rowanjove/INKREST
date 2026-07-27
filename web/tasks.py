@@ -20,6 +20,16 @@ task_id_var = contextvars.ContextVar("task_id", default=None)
 logger = get_logger("tasks")
 
 
+def _is_auto_resumable_single_chapter_task(task: Dict[str, Any]) -> bool:
+    """Return true only for pending standard single-chapter generation tasks."""
+    goal = str(task.get("goal") or "")
+    chapter_id = task.get("chapter_id")
+    if not chapter_id:
+        return False
+    blocked_prefixes = ("batch:", "gate_only:", "Novel:", "Arc batch:")
+    return not goal.startswith(blocked_prefixes)
+
+
 # Delay import to avoid circular imports during startup
 def _get_autopilot_helper():
     from web.tasks_autopilot import submit_novel_continue_helper
@@ -59,6 +69,12 @@ class TaskManager:
             return self.is_aborted(tid)
         register_abort_check(abort_checker)
 
+        try:
+            loop = asyncio.get_running_loop()
+            self._queue_loop_task = loop.create_task(self._run_pending_tasks_loop())
+        except RuntimeError:
+            self._queue_loop_task = None
+
     def _semaphore_for_loop(self) -> asyncio.Semaphore:
         """One semaphore per running event loop (TestClient / worker threads)."""
         loop = asyncio.get_running_loop()
@@ -79,11 +95,63 @@ class TaskManager:
         return lock
 
     def _startup_cleanup(self) -> None:
-        """Mark tasks left as pending/running on startup as failed."""
+        """Mark tasks left as running on startup as pending."""
         try:
             self.store.clean_interrupted_tasks()
         except Exception as exc:
             logger.warning("Failed to perform startup task cleanup: %s", exc)
+
+    def _get_pending_tasks_sync(self, limit: int) -> List[Dict[str, Any]]:
+        with safe_connection(self.store.db_path) as conn:
+            import sqlite3
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "select id, chapter_id, goal, dry_run from tasks where status = 'pending' order by created_at asc limit ?",
+                (limit,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    async def _run_pending_tasks_loop(self) -> None:
+        """Continuously poll for pending tasks and dispatch them if concurrency allows."""
+        while True:
+            try:
+                await asyncio.sleep(2)
+                if not self.root_dir.exists():
+                    continue
+
+                # Query pending tasks
+                pending_tasks = await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    self._get_pending_tasks_sync,
+                    10
+                )
+
+                for task in pending_tasks:
+                    task_id = task["id"]
+                    goal = task["goal"]
+                    chapter_id = task.get("chapter_id")
+                    dry_run = bool(task.get("dry_run", 0))
+
+                    if task_id in self._running_tasks:
+                        continue
+
+                    if not _is_auto_resumable_single_chapter_task(task):
+                        continue
+
+                    if chapter_id in self._running_chapters:
+                        continue
+
+                    self._running_chapters[chapter_id] = task_id
+                    logger.info("Resuming pending chapter task %s for chapter %s", task_id, chapter_id)
+                    loop = asyncio.get_running_loop()
+                    t = loop.create_task(self._run_chapter(task_id, chapter_id, goal, dry_run))
+                    self._running_tasks[task_id] = t
+
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.error("Error in pending tasks loop: %s", exc)
+                await asyncio.sleep(5)
 
     def _wrap_store_ws_notify(self) -> None:
         from web.task_ws_hub import notify_tasks_changed
@@ -301,6 +369,10 @@ class TaskManager:
             task_id,
             "failed",
             None,
+            "Task aborted by user",
+            None,
+            "user_abort",
+            task_data.get("current_step") or "unknown",
         )
         return True
 
@@ -431,6 +503,9 @@ class TaskManager:
                     "failed",
                     None,
                     "Task aborted",
+                    None,
+                    "user_abort",
+                    "unknown",
                 )
             else:
                 await asyncio.get_running_loop().run_in_executor(
@@ -449,18 +524,14 @@ class TaskManager:
                 "failed",
                 None,
                 "Task aborted",
+                None,
+                "user_abort",
+                "unknown",
             )
             raise
         except Exception as exc:
             logger.exception("Batch task %s failed", batch_id)
-            await asyncio.get_running_loop().run_in_executor(
-                None,
-                self.store.update_task_status,
-                batch_id,
-                "failed",
-                None,
-                str(exc),
-            )
+            await self._mark_task_failed(batch_id, exc)
         finally:
             self._running_tasks.pop(batch_id, None)
             task_id_var.reset(token)
