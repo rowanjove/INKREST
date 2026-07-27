@@ -64,7 +64,7 @@
 - Modify: `.github/workflows/novel-agent-full.yml`
 - Modify: `PROJECT.md`
 
-- [ ] **Step 1: 记录干净安装失败**
+- [x] **Step 1: 记录干净安装失败**
 
 Run:
 
@@ -74,7 +74,7 @@ npm ci --prefix web/frontend
 
 Expected: FAIL，错误明确指出 `package.json` 与 `package-lock.json` 不同步，包含 `@emnapi/wasi-threads` 或缺失的 `@emnapi/*` 条目。
 
-- [ ] **Step 2: 只重建锁文件**
+- [x] **Step 2: 只重建锁文件**
 
 Run:
 
@@ -84,7 +84,7 @@ npm install --prefix web/frontend --package-lock-only --ignore-scripts
 
 Expected: exit 0，只有 `web/frontend/package-lock.json` 发生依赖解析相关变化。
 
-- [ ] **Step 3: 增加统一前端门禁脚本**
+- [x] **Step 3: 增加统一前端门禁脚本**
 
 在 `web/frontend/package.json` 的 `scripts` 中加入：
 
@@ -93,7 +93,7 @@ Expected: exit 0，只有 `web/frontend/package-lock.json` 发生依赖解析相
 "audit:prod": "npm audit --omit=dev --audit-level=high"
 ```
 
-- [ ] **Step 4: 将 CI 改为 Python 3.11/3.12 矩阵**
+- [x] **Step 4: 将 CI 改为 Python 3.11/3.12 矩阵**
 
 Python job 使用：
 
@@ -118,7 +118,7 @@ steps:
 - run: npm run audit:prod
 ```
 
-- [ ] **Step 5: 更新正式支持版本**
+- [x] **Step 5: 更新正式支持版本**
 
 把 `PROJECT.md` 技术栈中的 Python 版本改为：
 
@@ -126,7 +126,7 @@ steps:
 | 后端 | Python 3.11/3.12, FastAPI, uvicorn |
 ```
 
-- [ ] **Step 6: 验证干净安装**
+- [x] **Step 6: 验证干净安装**
 
 Run:
 
@@ -136,7 +136,7 @@ npm ci --prefix web/frontend
 
 Expected: PASS，不再出现 lockfile 同步错误。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```powershell
 git add web/frontend/package.json web/frontend/package-lock.json .github/workflows/novel-agent-smoke.yml .github/workflows/novel-agent-full.yml PROJECT.md

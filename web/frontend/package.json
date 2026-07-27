@@ -17,7 +17,9 @@
     "electron:build": "npm run build && npm run build:electron && npm run build:backend && electron-builder --win",
     "preview": "vite preview",
     "test:unit": "vitest run",
+    "test:electron": "vitest run --config vitest.electron.config.ts",
     "test:e2e": "playwright test",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
     "dist:win": "npm run electron:build"
   },
   "dependencies": {

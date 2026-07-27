@@ -21,7 +21,7 @@
 
 | 层级 | 技术 |
 |------|------|
-| 后端 | Python 3.8+, FastAPI, uvicorn |
+| 后端 | Python 3.11/3.12, FastAPI, uvicorn |
 | 前端 | Vue 3, TypeScript, Vite |
 | 桌面 | Electron |
 | 数据库 | SQLite |
