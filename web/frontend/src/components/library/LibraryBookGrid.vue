@@ -84,6 +84,7 @@ function handleCommand(command: ProjectCommand, project: Project) {
               class="menu-button"
               :icon="MoreFilled"
               :aria-label="`${project.name} 的操作菜单`"
+              @click.stop
             />
             <template #dropdown>
               <el-dropdown-menu>

@@ -9,7 +9,7 @@ FRONTEND = ROOT / "web" / "frontend"
 
 def test_primary_brand_entries_use_inkrest_name() -> None:
     expected = {
-        FRONTEND / "src" / "App.vue": ("栖墨", "INKREST", "智能长篇写作空间"),
+        FRONTEND / "src" / "app" / "shell" / "AppSidebar.vue": ("栖墨", "INKREST"),
         FRONTEND / "index.html": ("栖墨 · INKREST",),
         FRONTEND / "package.json": ('"productName": "栖墨"',),
         FRONTEND / "electron" / "main.ts": ("title: '栖墨 · INKREST'", "app.setName('栖墨')"),

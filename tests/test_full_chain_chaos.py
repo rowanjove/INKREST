@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from novel_agent.orchestrator import ChapterResult, NovelOrchestrator
 from novel_agent.pipeline import PipelineConfig
+from novel_agent.state.sqlite_store import SQLiteStateStore
 from novel_agent.services.arc_queue import record_novel_batch_paused
 from novel_agent.services.batch_retry_queue import list_pending_retries
 from novel_agent.services.novel_run_guard import build_readiness_report, validate_novel_continue
@@ -64,6 +65,10 @@ def _seed_ready(root: Path) -> None:
         encoding="utf-8",
     )
     mark_arcs_synced_with_outline(root)
+    # Chaos fixtures represent newly created V2 projects. Initialize the
+    # version marker explicitly so the production legacy-data guard remains
+    # strict while concurrent task writes exercise the current schema.
+    SQLiteStateStore(root)
 
 
 # --- 1. 脏数据韧性 ---

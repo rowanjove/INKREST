@@ -70,6 +70,7 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('重命名')
     expect(source).toContain('未解决风险')
     expect(source).toContain('aria-hidden="true"')
+    expect(source).toMatch(/class="menu-button"(?:(?!\/>)[\s\S])*@click\.stop/)
   })
 
   it('OutlineView provides one three-pane planning workspace', () => {

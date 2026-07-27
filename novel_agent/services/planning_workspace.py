@@ -16,6 +16,15 @@ from novel_agent.domain.planning import (
 )
 from novel_agent.state.sqlite_store import SQLiteStateStore
 
+RULE_CATEGORY_LABELS = {
+    "commonWords": "常用词提醒",
+    "commonSentences": "常用句提醒",
+    "forbiddenWords": "禁用词",
+    "forbiddenSentences": "禁用句",
+    "writingTechniques": "写作技巧",
+    "referenceAuthors": "参考作者",
+}
+
 
 def _safe_json(path: Path) -> dict[str, Any]:
     if not path.is_file():
@@ -57,6 +66,38 @@ def _items(value: Any) -> Iterable[dict[str, Any]]:
             row = _as_dict(item)
             row.setdefault("name", str(key))
             yield row
+
+
+def _rule_category_items(value: dict[str, Any]) -> Iterable[dict[str, Any]]:
+    for key, rules in value.items():
+        label = RULE_CATEGORY_LABELS.get(str(key), str(key))
+        summary = "尚未配置"
+        if isinstance(rules, list) and rules:
+            preview = [
+                str(item.get("content") or item.get("name") or "").strip()
+                for item in rules
+                if isinstance(item, dict)
+            ]
+            preview = [item for item in preview if item][:2]
+            summary = f"{len(rules)} 条规则"
+            if preview:
+                summary += f" · {'、'.join(preview)}"
+        elif isinstance(rules, str) and rules.strip():
+            lines = [
+                line.strip().removeprefix("-").strip()
+                for line in rules.splitlines()
+                if line.strip()
+            ]
+            summary = f"{len(lines)} 条写作原则" if lines else "尚未配置"
+        elif isinstance(rules, dict) and rules:
+            summary = f"{len(rules)} 项配置"
+        yield {
+            "id": f"asset-rule:{_slug(str(key))}",
+            "name": label,
+            "summary": summary,
+            "key": str(key),
+            "value": rules,
+        }
 
 
 def _entity(
@@ -157,7 +198,12 @@ def build_planning_workspace(root_dir: Path) -> PlanningWorkspace:
             entities[f"{kind}:{entity.id}"] = entity
 
     rule_values = rules_asset.get("rules", rules_asset)
-    for item in _items(rule_values):
+    rule_items = (
+        _rule_category_items(rule_values)
+        if isinstance(rule_values, dict)
+        else _items(rule_values)
+    )
+    for item in rule_items:
         entity = _entity("rule", item, source="assets")
         entities.setdefault(f"rule:{entity.id}", entity)
 

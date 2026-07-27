@@ -66,3 +66,30 @@ def test_planning_workspace_returns_stable_empty_contract(tmp_path):
     assert workspace.entities == []
     assert workspace.relations == []
     assert "尚未建立完整大纲" in workspace.warnings
+
+
+def test_planning_workspace_summarizes_rule_categories_instead_of_using_raw_values(tmp_path):
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "rules.yaml").write_text(
+        """
+commonWords:
+  - content: 愣住
+    description: 避免重复
+  - content: 深吸一口气
+    description: 控制频次
+writingTechniques: |
+  - 直接承接上一场景。
+  - 用具体动作推动画面。
+referenceAuthors: []
+""".strip(),
+        encoding="utf-8",
+    )
+
+    workspace = build_planning_workspace(tmp_path)
+    rules = [entity for entity in workspace.entities if entity.kind == "rule"]
+
+    assert [entity.name for entity in rules] == ["常用词提醒", "写作技巧", "参考作者"]
+    assert rules[0].summary == "2 条规则 · 愣住、深吸一口气"
+    assert rules[1].summary == "2 条写作原则"
+    assert rules[2].summary == "尚未配置"
+    assert all(len(entity.name) < 20 for entity in rules)

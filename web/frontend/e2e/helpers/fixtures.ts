@@ -58,7 +58,7 @@ export async function ensureActiveProject(
   await page.goto('/workspace')
   const nav = projectNav(page)
   await expect(nav).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByRole('heading', { name: 'AI 工厂控制台' })).toBeVisible({
+  await expect(page.getByRole('heading', { name: seed.project_name })).toBeVisible({
     timeout: 15_000,
   })
   return seed

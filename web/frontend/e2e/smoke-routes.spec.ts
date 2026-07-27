@@ -19,23 +19,35 @@ test.describe('route smoke coverage', () => {
     await expect(page.locator('.task-rounds-split')).toBeVisible()
   })
 
-  test('trope workshop renders blueprint panel', async ({ page, request }) => {
-    await injectLocalAccessToken(page, request)
-    await page.goto('/trope-workshop')
-    await expect(page.getByRole('heading', { name: '网文套路设计工坊' })).toBeVisible({
-      timeout: 15_000,
-    })
-    await expect(page.locator('.blueprint-slots, .trope-workshop-layout').first()).toBeVisible()
+  test('planning canvas nodes remain visible and selectable', async ({ page, request }) => {
+    await openWithActiveProject(page, request, '/outline')
+    const outlineNode = page.locator('.vue-flow__node[data-id="A01"]')
+    await expect(outlineNode).toBeVisible({ timeout: 15_000 })
+    await outlineNode.click()
+    await expect(page.locator('.inspector h2')).toHaveText('未命名')
   })
 
-  test('onboarding wizard renders three-step flow', async ({ page, request }) => {
+  test('legacy trope route redirects into the unified create flow', async ({ page, request }) => {
     await injectLocalAccessToken(page, request)
-    await page.goto('/onboarding')
-    await expect(page.getByRole('heading', { name: '欢迎使用栖墨 INKREST' })).toBeVisible({
+    await page.goto('/trope-workshop')
+    await expect(page.getByRole('heading', { name: '新建作品' })).toBeVisible({
       timeout: 15_000,
     })
-    await expect(page.getByText('跳过向导，直接去书库')).toBeVisible()
-    await expect(page.getByText('系统就绪')).toBeVisible()
+    await expect(page).toHaveURL(/\/create\?source=template/)
+    await expect(page.getByText('确认建档', { exact: true })).toBeVisible()
+  })
+
+  test('legacy onboarding route redirects into the four-step create flow', async ({ page, request }) => {
+    await injectLocalAccessToken(page, request)
+    await page.goto('/onboarding')
+    await expect(page.getByRole('heading', { name: '新建作品' })).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect(page).toHaveURL(/\/create(?:\?welcome=1)?$/)
+    await expect(page.getByText('工作方式', { exact: true })).toBeVisible()
+    await expect(page.getByText('素材来源', { exact: true })).toBeVisible()
+    await expect(page.getByText('写作规格', { exact: true })).toBeVisible()
+    await expect(page.getByText('确认建档', { exact: true })).toBeVisible()
   })
 
   test('library home renders empty or grid', async ({ page, request }) => {

@@ -20,12 +20,6 @@ ASSET_LIST_SIDEBAR = (
 )
 MARKDOWN_EDITOR = ROOT / "web" / "frontend" / "src" / "components" / "MarkdownAssetEditor.vue"
 DASHBOARD = ROOT / "web" / "frontend" / "src" / "views" / "Dashboard.vue"
-DASHBOARD_SERIAL = (
-    ROOT / "web" / "frontend" / "src" / "composables" / "useDashboardSerial.ts"
-)
-DASHBOARD_SERIALIZATION_PANE = (
-    ROOT / "web" / "frontend" / "src" / "components" / "dashboard" / "DashboardSerializationPane.vue"
-)
 APP = ROOT / "web" / "frontend" / "src" / "App.vue"
 APP_SHELL = ROOT / "web" / "frontend" / "src" / "app" / "shell" / "AppShell.vue"
 APP_SIDEBAR = ROOT / "web" / "frontend" / "src" / "app" / "shell" / "AppSidebar.vue"
@@ -65,6 +59,19 @@ CHAPTER_MAINTENANCE_COMPOSABLE = (
 )
 
 OUTLINE_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "OutlineView.vue"
+OUTLINE_LEGACY = ROOT / "web" / "frontend" / "src" / "views" / "OutlineEditorLegacy.vue"
+PLANNING_TREE = (
+    ROOT / "web" / "frontend" / "src" / "components" / "planning" / "PlanningEntityTree.vue"
+)
+PLANNING_CANVAS = (
+    ROOT / "web" / "frontend" / "src" / "components" / "planning" / "PlanningCanvas.vue"
+)
+PLANNING_INSPECTOR = (
+    ROOT / "web" / "frontend" / "src" / "components" / "planning" / "PlanningInspector.vue"
+)
+CREATE_WIZARD = ROOT / "web" / "frontend" / "src" / "views" / "CreateWizard.vue"
+CREATE_FLOW = ROOT / "web" / "frontend" / "src" / "features" / "create" / "createFlow.ts"
+ROUTER = ROOT / "web" / "frontend" / "src" / "router.ts"
 CONFIG_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "ConfigView.vue"
 LIBRARY_VIEW = ROOT / "web" / "frontend" / "src" / "views" / "LibraryView.vue"
 LIBRARY_BOOK_GRID = (
@@ -93,18 +100,8 @@ OUTLINE_MINDMAP = (
 PLUGIN_MANAGER = ROOT / "web" / "frontend" / "src" / "views" / "PluginManager.vue"
 PLUGIN_GRID = ROOT / "web" / "frontend" / "src" / "components" / "plugin" / "PluginGrid.vue"
 PLUGIN_MANAGER_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "usePluginManager.ts"
-TROPE_WORKSHOP = ROOT / "web" / "frontend" / "src" / "views" / "TropeWorkshop.vue"
-TROPE_COMPONENT_LIBRARY = (
-    ROOT / "web" / "frontend" / "src" / "components" / "trope" / "TropeComponentLibrary.vue"
-)
-TROPE_BLUEPRINT_PANEL = (
-    ROOT / "web" / "frontend" / "src" / "components" / "trope" / "TropeBlueprintPanel.vue"
-)
-TROPE_WORKSHOP_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "useTropeWorkshop.ts"
 EMPTY_STATE = ROOT / "web" / "frontend" / "src" / "components" / "EmptyStatePanel.vue"
-READINESS_CARD = (
-    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "ProjectReadinessCard.vue"
-)
+SHARED_EMPTY_STATE = ROOT / "web" / "frontend" / "src" / "shared" / "ui" / "EmptyState.vue"
 COST_PANEL = ROOT / "web" / "frontend" / "src" / "components" / "CostSummaryPanel.vue"
 CHAPTER_LIST = ROOT / "web" / "frontend" / "src" / "views" / "ChapterList.vue"
 CHAPTER_LIST_TABLE = (
@@ -113,27 +110,6 @@ CHAPTER_LIST_TABLE = (
 CHAPTER_LIST_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "useChapterList.ts"
 NOVEL_PROGRESS_HELP = ROOT / "web" / "frontend" / "src" / "components" / "NovelProgressHelp.vue"
 BATCH_BANNER = ROOT / "web" / "frontend" / "src" / "components" / "BatchRunStatusBanner.vue"
-AGENT_PRODUCTION_LINE = (
-    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "AgentProductionLine.vue"
-)
-FACTORY_CONTROL_PANEL = (
-    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "FactoryControlPanel.vue"
-)
-PRODUCTION_PLAN_PANEL = (
-    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "ProductionPlanPanel.vue"
-)
-FACTORY_PIPELINE_PANEL = (
-    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "FactoryPipelinePanel.vue"
-)
-REPAIR_COMMAND_PANEL = (
-    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "RepairCommandPanel.vue"
-)
-LONGFORM_STABILITY_PANEL = (
-    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "LongformStabilityPanel.vue"
-)
-NATURALNESS_RISK_PANEL = (
-    ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "NaturalnessRiskPanel.vue"
-)
 CHAPTER_DETAIL = ROOT / "web" / "frontend" / "src" / "views" / "ChapterDetail.vue"
 CHAPTER_DETAIL_HEADER = (
     ROOT / "web" / "frontend" / "src" / "components" / "chapter" / "ChapterDetailHeader.vue"
@@ -200,61 +176,44 @@ def test_asset_list_sidebar_keeps_custom_asset_actions() -> None:
     assert "onContextCommand" in source
 
 
-def test_dashboard_auto_accepts_pending_state_candidates() -> None:
-    serial_source = DASHBOARD_SERIAL.read_text(encoding="utf-8")
-    serialization_pane = DASHBOARD_SERIALIZATION_PANE.read_text(encoding="utf-8")
-    assert "candidate.status === 'pending'" in serial_source
-    assert "await approveAllProjectCandidates(pid)" in serial_source
-    assert "默认自动通过" in serialization_pane
+def test_dashboard_uses_snapshot_without_direct_generation() -> None:
+    source = DASHBOARD.read_text(encoding="utf-8")
+    assert "useProjectSnapshotStore" in source
+    assert "snapshot.next_actions" in source
+    assert "confirm: '1'" in source
+    assert "continueNovel" not in source
+    assert "submitChapter" not in source
 
 
-def test_onboarding_view_exposes_three_step_flow() -> None:
-    source = (ROOT / "web" / "frontend" / "src" / "views" / "OnboardingView.vue").read_text(encoding="utf-8")
-    assert "SystemReadinessPanel" in source
-    assert "importDemoProject" in source
-    assert "el-steps" in source
-    assert "跳过向导，直接去书库" in source
-    assert "进入工厂控制台" in source
+def test_create_view_exposes_four_step_flow_and_legacy_redirect() -> None:
+    source = CREATE_WIZARD.read_text(encoding="utf-8")
+    flow = CREATE_FLOW.read_text(encoding="utf-8")
+    router = ROUTER.read_text(encoding="utf-8")
+    assert "CREATE_STEPS" in source
+    assert "['工作方式', '素材来源', '写作规格', '确认建档']" in flow
+    assert "{ id: 'quick'" in source
+    assert "{ id: 'ai'" in source
+    assert "{ id: 'parse'" in source
+    assert "{ id: 'template'" in source
+    assert "redirect: '/create?welcome=1'" in router
 
 
 def test_library_view_exposes_studio_tab() -> None:
     source = (ROOT / "web" / "frontend" / "src" / "views" / "LibraryView.vue").read_text(encoding="utf-8")
     assert "StudioProductionBoard" in source
-    assert "工作室看板" in source
+    assert "制片看板" in source
     assert "importDemoProject" in source
-    assert "导入示例书" in source
+    assert "importingDemo" in source
 
 
-def test_dashboard_exposes_factory_first_screen_panels() -> None:
+def test_dashboard_exposes_snapshot_health_and_safe_next_actions() -> None:
     dashboard = DASHBOARD.read_text(encoding="utf-8")
-    assert "FactoryControlPanel" in dashboard
-    assert "ProductionPlanPanel" in dashboard
-    assert "FactoryPipelinePanel" in dashboard
-    assert "LongformStabilityPanel" in dashboard
-    assert "NaturalnessRiskPanel" in dashboard
-    assert "factory-risk-grid" in dashboard
-    assert ':quality="qualitySummary"' in dashboard
-    assert "RepairCommandPanel" in dashboard
-    assert '@next-step="handleProductionPlanNextStep"' in dashboard
-    assert "useFactoryStore" in dashboard
-    assert "factory-first-screen" in dashboard
-    assert "factory-control-panel" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")
-    assert "factory-export-check" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")
-    assert "production-plan-panel" in PRODUCTION_PLAN_PANEL.read_text(encoding="utf-8")
-    assert "factory-pipeline-panel" in FACTORY_PIPELINE_PANEL.read_text(encoding="utf-8")
-    assert "quality-summary-strip" in FACTORY_PIPELINE_PANEL.read_text(encoding="utf-8")
-    assert "longform-stability-panel" in LONGFORM_STABILITY_PANEL.read_text(encoding="utf-8")
-    assert "naturalness-risk-panel" in NATURALNESS_RISK_PANEL.read_text(encoding="utf-8")
-    assert "repair-command-panel" in REPAIR_COMMAND_PANEL.read_text(encoding="utf-8")
-    assert "继续生产" in REPAIR_COMMAND_PANEL.read_text(encoding="utf-8")
-    assert "continueProduction" in REPAIR_COMMAND_PANEL.read_text(encoding="utf-8")
-    assert "continueProduction" in dashboard
-    assert "openBatchRunDialog" in dashboard
-    assert "useFactoryAdvancedView" in dashboard
-    assert "showFactoryAdvanced" in dashboard
-    assert "factory-repair-compact" in dashboard
-    assert "factory-author-label" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")
-    assert "展开高级指标" in FACTORY_CONTROL_PANEL.read_text(encoding="utf-8")
+    assert "项目健康" in dashboard
+    assert "安全的下一步" in dashboard
+    assert "authoritative_completed" in dashboard
+    assert "<el-progress" in dashboard
+    assert "planning?.counts" in dashboard
+    assert "blockingIssues" in dashboard
 
 
 def test_pet_abort_button_uses_short_label() -> None:
@@ -279,13 +238,14 @@ def test_shanshan_chat_keeps_four_suggested_questions() -> None:
     assert len(questions) == 4
 
 
-def test_library_book_cards_use_spine_without_tick_overlay() -> None:
+def test_library_book_cards_use_compact_comparison_layout_and_one_menu() -> None:
     source = LIBRARY_BOOK_GRID.read_text(encoding="utf-8")
-    assert 'class="book-spine-shadow"' in source
-    assert 'class="book-spine"' in source
-    assert "aria-hidden=\"true\"" in source
-    assert "book-tick" not in source
-    assert "✓" not in source.split("book-cover")[0]
+    assert 'class="project-cover"' in source
+    assert 'class="project-meta"' in source
+    assert source.count("@command=") == 1
+    assert 'command="rename"' in source
+    assert 'command="export-docx"' in source
+    assert "book-spine" not in source
 
 
 def test_project_manager_uses_cached_pipeline_alert_count() -> None:
@@ -297,8 +257,8 @@ def test_library_cards_show_pending_alert_badge() -> None:
     grid_source = LIBRARY_BOOK_GRID.read_text(encoding="utf-8")
     projects_source = LIBRARY_PROJECTS.read_text(encoding="utf-8")
     assert "pending_alert_count" in grid_source
-    assert 'class="pending-badge"' in grid_source
-    assert "待处理" in grid_source
+    assert 'class="risk-link"' in grid_source
+    assert "未解决风险" in grid_source
     assert "openPendingMaintenance" in projects_source
     assert "expand=alerts" in projects_source
 
@@ -309,16 +269,18 @@ def test_empty_state_panel_used_in_key_views() -> None:
     pending = (
         ROOT / "web" / "frontend" / "src" / "components" / "PendingChaptersPanel.vue"
     ).read_text(encoding="utf-8")
-    assert "EmptyStatePanel" in library
+    assert "shared/ui/EmptyState.vue" in library
     assert "EmptyStatePanel" in task_log
     assert "EmptyStatePanel" in pending
     assert "empty-state-panel" in EMPTY_STATE.read_text(encoding="utf-8")
+    assert 'class="ui-empty-state"' in SHARED_EMPTY_STATE.read_text(encoding="utf-8")
 
 
-def test_readiness_card_exposes_progress_bar() -> None:
-    source = READINESS_CARD.read_text(encoding="utf-8")
-    assert "readiness-progress" in source
-    assert "progressPercent" in source
+def test_dashboard_exposes_authoritative_progress_bar() -> None:
+    source = DASHBOARD.read_text(encoding="utf-8")
+    assert "authoritative_completed" in source
+    assert "target_chapters" in source
+    assert "<el-progress" in source
 
 
 def test_chapter_list_exposes_gate_only_rerun() -> None:
@@ -667,7 +629,7 @@ def test_llm_log_viewer_fills_remaining_height() -> None:
 
 
 def test_outline_page_places_progress_help_above_queue_status() -> None:
-    source = OUTLINE_VIEW.read_text(encoding="utf-8")
+    source = OUTLINE_LEGACY.read_text(encoding="utf-8")
     template = source.split("<template>", 1)[1]
     help_idx = template.index("<NovelProgressHelp")
     queue_idx = template.index("<OutlineQueueStatus")
@@ -697,36 +659,28 @@ def test_readme_documents_current_entrypoints() -> None:
     assert "python -m unittest tests.test_pipeline" not in readme
 
 
-def test_batch_run_primary_button_opens_dialog_not_split_menu() -> None:
-    source = AGENT_PRODUCTION_LINE.read_text(encoding="utf-8")
-    assert "split-button" not in source
-    assert "设置章数与选项" not in source
-    assert "await openDialog()" in source
-    assert "roundProgress" in source
+def test_batch_run_dialog_is_global_and_dashboard_only_routes_intents() -> None:
     app_source = APP.read_text(encoding="utf-8")
+    dashboard = DASHBOARD.read_text(encoding="utf-8")
     assert "NovelBatchRunDialog" in app_source
-    assert "NovelBatchRunDialog" not in DASHBOARD.read_text(encoding="utf-8")
+    assert "NovelBatchRunDialog" not in dashboard
+    assert "confirm: '1'" in dashboard
+    assert "continueNovel" not in dashboard
 
 
 def test_longform_vector_warn_surfaces_in_readiness_and_dialog() -> None:
     readiness = (ROOT / "web" / "frontend" / "src" / "utils" / "projectReadiness.ts").read_text(
         encoding="utf-8"
     )
-    card = (ROOT / "web" / "frontend" / "src" / "components" / "workbench" / "ProjectReadinessCard.vue").read_text(
-        encoding="utf-8"
-    )
     dialog = (ROOT / "web" / "frontend" / "src" / "components" / "NovelBatchRunDialog.vue").read_text(
         encoding="utf-8"
     )
     assert "longFormVectorWarn" in readiness
-    assert "vector-warn-banner" in card
-    assert "长篇向量建议" in dialog
+    assert "showVectorAlert" in dialog
+    assert "LONG_FORM_VECTOR_WARN_TEXT" in dialog
 
 
-def test_vector_readiness_and_task_queue_wired_in_workbench_and_batch_run() -> None:
-    workbench = (
-        ROOT / "web" / "frontend" / "src" / "composables" / "useDashboardWorkbench.ts"
-    ).read_text(encoding="utf-8")
+def test_vector_readiness_and_task_queue_wired_in_batch_run() -> None:
     batch_run = (
         ROOT / "web" / "frontend" / "src" / "composables" / "useNovelBatchRun.ts"
     ).read_text(encoding="utf-8")
@@ -736,10 +690,6 @@ def test_vector_readiness_and_task_queue_wired_in_workbench_and_batch_run() -> N
     )
     assert "readinessCanContinue" in readiness
     assert "mergeServerReadinessPending" in readiness
-    assert "resolveVectorContextFromApis" in workbench
-    assert "getNovelReadiness" in workbench
-    assert "serverReadiness" in workbench
-    assert "vectorReadiness" in workbench
     assert "resolveVectorContextFromApis" in batch_run
     assert "readinessCanContinue" in batch_run
     assert "serverReadiness" in batch_run
@@ -824,10 +774,14 @@ def test_state_settings_tab_keeps_foreshadow_collect() -> None:
 
 def test_outline_shell_delegates_to_pane_components() -> None:
     source = OUTLINE_VIEW.read_text(encoding="utf-8")
-    assert "OutlineMindmapPane" in source
-    assert "OutlineClassicPane" in source
-    assert "OutlineDialogs" in source
-    assert "OutlineGenesPanel" in source
+    assert "Splitpanes" in source
+    assert "PlanningEntityTree" in source
+    assert "PlanningCanvas" in source
+    assert "PlanningInspector" in source
+    assert "OutlineEditorLegacy" in source
+    inspector = PLANNING_INSPECTOR.read_text(encoding="utf-8")
+    assert "设定" in inspector
+    assert "当前状态" in inspector
 
 
 def test_outline_genes_panel_exposes_edit_action() -> None:
@@ -863,31 +817,15 @@ def test_plugin_grid_keeps_trust_toggle_actions() -> None:
     assert "onDelete" in source
 
 
-def test_trope_workshop_shell_delegates_to_subcomponents() -> None:
-    source = TROPE_WORKSHOP.read_text(encoding="utf-8")
-    composable_source = TROPE_WORKSHOP_COMPOSABLE.read_text(encoding="utf-8")
-    assert "TropeComponentLibrary" in source
-    assert "TropeBlueprintPanel" in source
-    assert "useTropeWorkshop" in source
-    assert "listComponents" in composable_source
-    assert "composePreset" in composable_source
-    assert "parsedGuideHtml" in composable_source
-
-
-def test_trope_component_library_keeps_draggable_cards() -> None:
-    source = TROPE_COMPONENT_LIBRARY.read_text(encoding="utf-8")
-    assert "defineModel<TropeTab>('activeTab'" in source
-    assert 'draggable="true"' in source
-    assert "card-add-btn" in source
-    assert "onAddToBlueprint" in source
-
-
-def test_trope_blueprint_panel_keeps_slots_and_preview() -> None:
-    source = TROPE_BLUEPRINT_PANEL.read_text(encoding="utf-8")
-    assert "blueprint-slots" in source
-    assert "markdown-preview" in source
-    assert "用此模板开书" in source
-    assert "应用到当前作品" in source
+def test_trope_entry_is_folded_into_the_create_wizard() -> None:
+    router = ROUTER.read_text(encoding="utf-8")
+    wizard = CREATE_WIZARD.read_text(encoding="utf-8")
+    quick_form = (ROOT / "web" / "frontend" / "src" / "components" / "QuickCreateForm.vue").read_text(
+        encoding="utf-8"
+    )
+    assert "redirect: '/create?source=template'" in router
+    assert "{ id: 'template'" in wizard
+    assert "PresetSelector" in quick_form
 
 
 def test_config_view_shell_delegates_to_nav_and_sections() -> None:

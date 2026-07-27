@@ -88,6 +88,7 @@ function onNodeClick(payload: { node: Node }) {
 
 <style scoped>
 .planning-canvas { width: 100%; height: 100%; min-height: 520px; background: var(--color-bg-canvas); }
+:deep(.vue-flow) { min-height: 520px; }
 .canvas-empty { height: 100%; display: grid; place-content: center; gap: 5px; color: var(--color-text-muted); text-align: center; }
 .canvas-empty strong { color: var(--color-text-strong); }
 .canvas-empty p { margin: 0; font-size: 12px; }
