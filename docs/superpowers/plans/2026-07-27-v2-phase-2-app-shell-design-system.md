@@ -67,10 +67,10 @@
 - Create: `web/frontend/src/app/commands/CommandPalette.vue`
 - Create: `web/frontend/src/app/commands/useCommandPalette.ts`
 
-- [ ] `Ctrl/Cmd+K` 打开，Esc 关闭，上下键选择，Enter 执行。
-- [ ] 搜索页面、设置入口、章节、人物和可执行的快照 next actions。
-- [ ] 搜索结果按类型分组，空结果和加载失败有明确状态。
-- [ ] 不在命令面板内触发生成；生成类 intent 只导航到确认页面。
+- [x] `Ctrl/Cmd+K` 打开，Esc 关闭，上下键选择，Enter 执行。
+- [x] 搜索页面、设置入口、章节、人物和可执行的快照 next actions。
+- [x] 搜索结果按类型分组，空结果和加载失败有明确状态。
+- [x] 不在命令面板内触发生成；生成类 intent 只导航到确认页面。
 
 ## Task 5：诊断抽屉与运行状态
 

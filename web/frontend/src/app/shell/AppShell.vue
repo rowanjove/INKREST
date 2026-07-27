@@ -5,6 +5,8 @@ import { useRoute } from 'vue-router'
 import { useProjectStore } from '../../stores/project'
 import { useProjectSnapshotStore } from '../../stores/projectSnapshot'
 import type { BackendStatus } from '../bootstrap/useDesktopLifecycle'
+import CommandPalette from '../commands/CommandPalette.vue'
+import { useCommandPalette } from '../commands/useCommandPalette'
 import AppSidebar from './AppSidebar.vue'
 import AppTopbar from './AppTopbar.vue'
 
@@ -16,8 +18,8 @@ const props = defineProps<{
 const route = useRoute()
 const projectStore = useProjectStore()
 const snapshotStore = useProjectSnapshotStore()
-const commandRequested = ref(false)
 const diagnosticsRequested = ref(false)
+const { isOpen: commandOpen, open: openCommand } = useCommandPalette()
 let refreshTimer: number | null = null
 
 const refreshSnapshot = () => {
@@ -66,12 +68,12 @@ onBeforeUnmount(() => {
       @open-diagnostics="diagnosticsRequested = true"
     />
     <section class="app-content">
-      <AppTopbar @open-command="commandRequested = true" />
+      <AppTopbar @open-command="openCommand" />
       <main class="app-workspace" :class="{ 'app-workspace--full': route.meta.fullBleed }">
         <router-view />
       </main>
     </section>
-    <span v-if="commandRequested" class="shell-placeholder" hidden>command palette pending</span>
+    <CommandPalette v-model="commandOpen" />
     <span v-if="diagnosticsRequested" class="shell-placeholder" hidden>diagnostics pending</span>
   </div>
 </template>
