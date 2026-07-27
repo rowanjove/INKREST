@@ -1,6 +1,5 @@
 export { apiErrorMessage, bootstrapLocalAccessToken } from './api/client'
 export { default } from './api/client'
-export { default as api } from './api/client'
 export * from './api/factory'
 export * from './api/chapters'
 export * from './api/projectSnapshot'
@@ -77,26 +76,12 @@ export const updatePrompt = (role: string, content: string) =>
 export const resetPrompt = (role: string) =>
   api.post(`/prompts/${role}/reset`)
 
-// ---- Dashboard ----
-
-export const getDashboard = () =>
-  api.get('/dashboard')
-
 // ---- Outline ----
 
 export const getOutline = () =>
   api.get('/outline')
 
 // ---- Longform Control ----
-
-export const getNarrativeDebt = (currentChapter = '') =>
-  api.get('/control/narrative-debt', { params: { current_chapter: currentChapter } })
-
-export const getCalibrationReport = () =>
-  api.get('/control/calibration')
-
-export const getScaleProfile = () =>
-  api.get('/control/scale-profile')
 
 export const getPipelineAlerts = () =>
   api.get('/pipeline-alerts')
@@ -213,27 +198,6 @@ export const novelChatStep = (data: {
 export const novelChatIntro = (step: number) =>
   api.get(`/novel/chat/intro/${step}`)
 
-export const generateChapterPlan = (data: {
-  start_chapter?: number
-  count?: number
-  instructions?: string
-}) =>
-  api.post('/novel/chapter-plan', data)
-
-// ---- Presets ----
-
-export const listPresets = (params?: { channel?: string }) =>
-  api.get('/presets', { params })
-
-export const getPreset = (id: string) =>
-  api.get(`/presets/${id}`)
-
-export const createPreset = (data: { name: string; channel: string; category: string; subcategory?: string; tags?: string[]; description?: string; guide: string }) =>
-  api.post('/presets', data)
-
-export const deletePreset = (id: string) =>
-  api.delete(`/presets/${id}`)
-
 // ---- Composable Preset Components ----
 
 export const listComponents = (type: string, params?: { channel?: string }) =>
@@ -242,22 +206,10 @@ export const listComponents = (type: string, params?: { channel?: string }) =>
 export const getComponent = (type: string, id: string) =>
   api.get(`/presets/components/${type}/${id}`)
 
-export const composePreset = (data: {
-  channel: string
-  theme: string
-  mechanisms?: string[]
-  cool_points?: string[]
-  project_id?: string
-}) =>
-  api.post('/presets/compose', data)
-
 // ---- Models ----
 
 export const listModels = () =>
   api.get('/models')
-
-export const getModelSlots = () =>
-  api.get<{ daily: string; reasoning: string; backup: string[] }>('/models/slots')
 
 export const setModelSlot = (modelId: string, slot: '' | 'daily' | 'reasoning' | 'backup') =>
   api.patch(`/models/${modelId}/slot`, { slot })
@@ -300,9 +252,6 @@ export const listUntrustedPlugins = () =>
 
 export const trustPlugin = (name: string, digest: string, capabilities: string[]) =>
   api.post(`/plugins/${name}/trust`, { digest, capabilities })
-
-export const getPlugin = (name: string) =>
-  api.get(`/plugins/${name}`)
 
 export const togglePlugin = (name: string, enabled: boolean) =>
   api.put(`/plugins/${name}/toggle`, { enabled })
@@ -353,9 +302,6 @@ export const inlineRewrite = (data: { text: string; instruction: string; chapter
 export const inlineExpand = (data: { before_text: string; chapter_id?: string; goal?: string }) =>
   api.post('/assistant/inline-expand', data)
 
-export const extractSyncAssets = (data: { chapter_text: string }) =>
-  api.post('/assets/extract-sync', data)
-
 // ---- Project Cover & Description Rewrite ----
 export const getProjectCoverUrl = (pid: string) => `/api/projects/${pid}/cover`
 
@@ -374,53 +320,6 @@ export const rewriteDescription = (pid: string, data: { old_description: string;
 export const updateDescription = (pid: string, description: string) =>
   api.post(`/projects/${pid}/update-description`, { description })
 
-// ---- Platform Profiles & Reader Feedback ----
-export const listPlatforms = () =>
-  api.get('/platforms')
-
-export const getProjectPlatform = (pid: string) =>
-  api.get(`/projects/${pid}/platform`)
-
-export const updateProjectPlatform = (pid: string, platform: string) =>
-  api.post(`/projects/${pid}/platform`, { platform })
-
-export const saveReaderFeedback = (pid: string, data: { chapter_id: string; bounce_rate: number; retention_rate: number; active_readers: number }) =>
-  api.post(`/projects/${pid}/feedback`, data)
-
-export const listReaderFeedback = (pid: string) =>
-  api.get(`/projects/${pid}/feedback`)
-
-export const getGoldenCheck = (pid: string) =>
-  api.get(`/projects/${pid}/golden-check`)
-
-// ---- Serialization Workbench OS ----
-export const getSerialStatus = (pid: string) =>
-  api.get(`/projects/${pid}/serial-status`)
-
-export const getProjectComments = (pid: string) =>
-  api.get(`/projects/${pid}/comments`)
-
-export const adaptiveRewriteOutline = (pid: string) =>
-  api.post(`/projects/${pid}/outline/adaptive-rewrite`)
-
-export const applyAdaptiveOutline = (pid: string, data: { new_chapters: any[] }) =>
-  api.post(`/projects/${pid}/outline/apply-adaptive`, data)
-
-export const exportSerial = (pid: string, format: string = 'zip') =>
-  api.get(`/projects/${pid}/export-serial`, { params: { format }, responseType: 'blob' })
-
-export const getProjectStateCandidates = (pid: string) =>
-  api.get(`/projects/${pid}/state-candidates`)
-
-export const approveAllProjectCandidates = (pid: string) =>
-  api.post(`/projects/${pid}/state-candidates/approve-all`)
-
-export const actionOnStateCandidate = (candidateId: string, action: 'accept' | 'reject') =>
-  api.post(`/chapters/state-candidates/${candidateId}/action`, { action })
-
-export const sendPetDebugLog = (payload: any) =>
-  api.post('/pet/debug-log', payload)
-
 // ---- Agent bridge (CLI / MCP / external AI) ----
 
 export const getAgentBridgeSettings = () => api.get('/agent/settings')
@@ -434,7 +333,3 @@ export const updateAgentBridgeSettings = (data: {
 export const getAgentSnapshot = (params?: { project_id?: string }) =>
   api.get('/agent/snapshot', { params })
 
-export const getAgentProjects = () => api.get('/agent/projects')
-
-export const updateAuthorLabel = (pid: string, authorLabel: string) =>
-  api.put(`/projects/${pid}/author-label`, { author_label: authorLabel })

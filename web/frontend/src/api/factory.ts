@@ -1,12 +1,6 @@
 import type { FactoryDashboard, FactoryMode } from '../types/factory'
 import api from './client'
 
-export const getSystemReadiness = () =>
-  api.get('/system/readiness')
-
-export const getOnboardingStatus = () =>
-  api.get('/system/onboarding')
-
 export const importDemoProject = (demoId = 'demo-factory-novel') =>
   api.post('/projects/import-demo', null, { params: { demo_id: demoId } })
 
