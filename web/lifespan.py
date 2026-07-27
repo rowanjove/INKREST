@@ -23,14 +23,9 @@ async def lifespan(app: FastAPI):
 
     project_manager = ProjectManager(context.BASE_DIR)
 
-    if not (context.BASE_DIR / "projects.json").exists():
-        has_legacy = any((context.BASE_DIR / d).exists() for d in ("state", "data", "config", "workspace"))
-        if has_legacy:
-            context._active_project_id = project_manager.migrate_legacy()
-        else:
-            context._active_project_id = None
-    else:
-        context._active_project_id = project_manager.get_active_id()
+    # V2 never guesses that global runtime folders are a book. Projects must be
+    # explicitly created/imported and registered in projects.json.
+    context._active_project_id = project_manager.get_active_id()
 
     if context._active_project_id:
         root = context.get_root_dir()
