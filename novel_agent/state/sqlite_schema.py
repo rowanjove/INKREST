@@ -87,6 +87,10 @@ class SchemaMixin:
                   threads text,
                   payload text
                 );
+                create table if not exists app_metadata (
+                  key text primary key,
+                  value text not null
+                );
                 create table if not exists objects (
                   id text primary key,
                   name text,
@@ -270,6 +274,19 @@ class SchemaMixin:
                 -- Background task management tables
                 create table if not exists tasks (
                   id text primary key,
+                  project_id text,
+                  task_type text,
+                  payload_json text,
+                  result_json text,
+                  attempt integer default 0,
+                  max_attempts integer default 1,
+                  claim_token text,
+                  lease_expires_at text,
+                  heartbeat_at text,
+                  checkpoint text,
+                  status_reason text,
+                  started_at text,
+                  finished_at text,
                   chapter_id text,
                   goal text,
                   dry_run integer default 0,
@@ -375,6 +392,35 @@ class SchemaMixin:
             conn.execute("alter table tasks add column resumable_from text")
         if "status_reason" not in columns:
             conn.execute("alter table tasks add column status_reason text")
+        v2_columns = {
+            "project_id": "text",
+            "task_type": "text",
+            "payload_json": "text",
+            "result_json": "text",
+            "attempt": "integer default 0",
+            "max_attempts": "integer default 1",
+            "claim_token": "text",
+            "lease_expires_at": "text",
+            "heartbeat_at": "text",
+            "checkpoint": "text",
+            "started_at": "text",
+            "finished_at": "text",
+        }
+        for name, declaration in v2_columns.items():
+            if name not in columns:
+                conn.execute(f"alter table tasks add column {name} {declaration}")
+        conn.execute(
+            """
+            create index if not exists idx_tasks_project_status
+            on tasks(project_id, status)
+            """
+        )
+        conn.execute(
+            """
+            create index if not exists idx_tasks_lease
+            on tasks(status, lease_expires_at)
+            """
+        )
 
     def _ensure_marker_columns(self, conn) -> None:
         for table in ("foreshadows", "hooks", "reader_promises", "secrets"):

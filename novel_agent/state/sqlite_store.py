@@ -12,6 +12,13 @@ from novel_agent.state.sqlite_schema import (
 )
 from novel_agent.state.state_repository import StateRepositoryMixin
 from novel_agent.state.history_repository import HistoryRepositoryMixin
+from novel_agent.state.schema_version import (
+    SCHEMA_VERSION,
+    SchemaState,
+    inspect_schema_state,
+    write_schema_version,
+)
+from novel_agent.state.task_repository import TaskRepository
 
 logger = logging.getLogger("novel_agent.state.sqlite_store")
 
@@ -27,7 +34,16 @@ class SQLiteStateStore(SchemaMixin, StateRepositoryMixin, HistoryRepositoryMixin
         self.db_path = self.root_dir / "data" / "novel.sqlite"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        initial_state, initial_version = inspect_schema_state(self.db_path)
         self._init_schema()
+        if initial_state is SchemaState.FRESH:
+            write_schema_version(self.db_path)
+            self.schema_state = SchemaState.V2
+            self.schema_version = SCHEMA_VERSION
+        else:
+            self.schema_state = initial_state
+            self.schema_version = initial_version
+        self.task_repository = TaskRepository(self.db_path, self.schema_state)
 
     @db_write_lock
     def clear_narrative_state(self, *, include_operational: bool = False) -> Dict[str, int]:

@@ -147,21 +147,37 @@ class StateCandidatesTests(unittest.TestCase):
         self.assertEqual(len(manager.store.list_state_change_candidates(chapter_id="004", status="accepted")), 1)
         self.assertEqual(len(manager.store.list_state_change_candidates(chapter_id="004", status="pending")), 1)
 
-    def test_tasks_table_migration_and_updates(self):
+    def test_tasks_table_exposes_v2_columns_and_legacy_projection(self):
         store = SQLiteStateStore(self.tmpdir)
         
-        # 验证 tasks 表是否成功拓宽了 current_step、pipeline_version、updated_at 字段
+        # V2 字段和当前 API 仍在迁移的投影字段同时存在；Task 3 会移除旧写入入口。
         with safe_connection(store.db_path) as conn:
             columns = {
                 row[1]
                 for row in conn.execute("pragma table_info(tasks)").fetchall()
             }
-            self.assertIn("current_step", columns)
-            self.assertIn("pipeline_version", columns)
-            self.assertIn("updated_at", columns)
-            self.assertIn("last_heartbeat", columns)
-            self.assertIn("resumable_from", columns)
-            self.assertIn("status_reason", columns)
+            self.assertTrue(
+                {
+                    "project_id",
+                    "task_type",
+                    "payload_json",
+                    "result_json",
+                    "attempt",
+                    "max_attempts",
+                    "claim_token",
+                    "lease_expires_at",
+                    "heartbeat_at",
+                    "checkpoint",
+                    "status_reason",
+                    "started_at",
+                    "finished_at",
+                    "current_step",
+                    "pipeline_version",
+                    "updated_at",
+                    "last_heartbeat",
+                    "resumable_from",
+                }.issubset(columns)
+            )
             
         # 模拟保存 task，并写入 progress updates
         task_id = "test-task-1"

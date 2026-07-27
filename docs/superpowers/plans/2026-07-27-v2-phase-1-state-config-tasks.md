@@ -82,7 +82,7 @@ git commit -m "feat: define v2 task and snapshot contracts"
 - Modify: `tests/test_state_candidates.py`
 - Create: `tests/test_v2_task_repository.py`
 
-- [ ] **Step 1: 写失败的 schema 与仓储测试**
+- [x] **Step 1: 写失败的 schema 与仓储测试**
 
 覆盖：
 
@@ -92,7 +92,7 @@ git commit -m "feat: define v2 task and snapshot contracts"
 - 创建任务必须显式传 `project_id`、`task_type`、`payload`
 - 同一 `id` 与相同 payload 幂等，payload 不同则冲突
 
-- [ ] **Step 2: 写失败的 claim / lease / heartbeat 测试**
+- [x] **Step 2: 写失败的 claim / lease / heartbeat 测试**
 
 覆盖：
 
@@ -103,7 +103,7 @@ git commit -m "feat: define v2 task and snapshot contracts"
 - heartbeat 延长 lease
 - `result_json`、`checkpoint` 与 `status_reason` 可往返
 
-- [ ] **Step 3: 实现 V2 schema 版本和 TaskRepository**
+- [x] **Step 3: 实现 V2 schema 版本和 TaskRepository**
 
 新任务列：
 
@@ -115,12 +115,13 @@ checkpoint, status_reason, created_at, started_at, finished_at
 
 所有写入使用事务与条件更新；JSON 以对象校验后序列化。
 
-- [ ] **Step 4: 让 SQLiteStateStore 组合新仓储**
+- [x] **Step 4: 让 SQLiteStateStore 组合新仓储**
 
-删除旧 `save_task()` 依赖 `goal` 的契约；查询 DTO 可从 payload 派生
-`chapter_id`、`goal`、`dry_run` 作为临时 API 投影，但数据库不再维护重复列。
+`SQLiteStateStore.task_repository` 作为 V2 唯一任务写入入口。旧方法暂留到
+Task 3 同一次执行器迁移中删除，避免仓储提交与调用方提交之间出现不可运行
+状态；查询 DTO 将从 payload 派生 `chapter_id`、`goal`、`dry_run`。
 
-- [ ] **Step 5: 验证并提交**
+- [x] **Step 5: 验证并提交**
 
 ```powershell
 py -3.12 -m pytest tests/test_v2_task_repository.py tests/test_state_candidates.py -q --tb=short

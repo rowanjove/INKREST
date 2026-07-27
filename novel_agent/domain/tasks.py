@@ -48,6 +48,7 @@ _ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     ),
     TaskStatus.RUNNING: frozenset(
         {
+            TaskStatus.PENDING,
             TaskStatus.PAUSED,
             TaskStatus.SUCCEEDED,
             TaskStatus.FAILED,
