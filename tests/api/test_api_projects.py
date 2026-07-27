@@ -6,6 +6,76 @@ from tests.api._base import *  # noqa: F403
 
 class ApiProjectsTests(ApiTestBase):
 
+    def test_v2_maintenance_requires_exact_project_scoped_confirmation(self):
+        original_base = web_server.BASE_DIR
+        original_manager = web_server.project_manager
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            project_dir = self.tmpdir / "projects" / "safe-book"
+            project_dir.mkdir(parents=True)
+            registry = {
+                "active_id": None,
+                "projects": {"safe-book": {"name": "Safe Book"}},
+            }
+            (self.tmpdir / "projects.json").write_text(
+                json.dumps(registry),
+                encoding="utf-8",
+            )
+            web_server.project_manager = web_server.ProjectManager(self.tmpdir)
+            client = TestClient(web_app)
+
+            backup = client.post(
+                "/api/projects/safe-book/backup",
+                json={"confirmation": "BACKUP wrong-book"},
+            )
+            reset = client.post(
+                "/api/projects/safe-book/reset-v2",
+                json={"confirmation": "RESET V2"},
+            )
+
+            self.assertEqual(backup.status_code, 400)
+            self.assertEqual(reset.status_code, 400)
+        finally:
+            web_server.BASE_DIR = original_base
+            web_server.project_manager = original_manager
+
+    def test_v2_reset_api_rejects_persisted_active_task(self):
+        original_base = web_server.BASE_DIR
+        original_manager = web_server.project_manager
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            project_dir = self.tmpdir / "projects" / "busy-book"
+            project_dir.mkdir(parents=True)
+            (self.tmpdir / "projects.json").write_text(
+                json.dumps(
+                    {
+                        "active_id": None,
+                        "projects": {"busy-book": {"name": "Busy Book"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            web_server.project_manager = web_server.ProjectManager(self.tmpdir)
+            store = SQLiteStateStore(project_dir)
+            store.task_repository.create_task(
+                task_id="busy-task",
+                project_id="busy-book",
+                task_type="chapter",
+                payload={"chapter_id": "001"},
+            )
+            client = TestClient(web_app)
+
+            response = client.post(
+                "/api/projects/busy-book/reset-v2",
+                json={"confirmation": "RESET V2 busy-book"},
+            )
+
+            self.assertEqual(response.status_code, 409)
+            self.assertTrue((project_dir / "data" / "novel.sqlite").is_file())
+        finally:
+            web_server.BASE_DIR = original_base
+            web_server.project_manager = original_manager
+
     def test_plan_novel_preserves_existing_identity_unless_overwrite(self):
         original_active = web_server._active_project_id
         original_base = web_server.BASE_DIR

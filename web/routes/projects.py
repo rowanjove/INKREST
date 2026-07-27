@@ -44,6 +44,7 @@ from web.models import (
     UpdateDescriptionRequest,
     UpdatePlatformRequest,
     UpdateAuthorLabelRequest,
+    ProjectMaintenanceRequest,
 )
 from novel_agent.control.scale_profile import resolve_scale_profile
 from novel_agent.control.chapter_window import build_pacing_report, normalize_chapter_window
@@ -51,6 +52,13 @@ from novel_agent.control.genre_genes import ensure_genre_genes
 from novel_agent.pipeline import load_project_pipeline_file, write_pipeline_file
 from novel_agent.control.outline_structure import normalize_macro_outline
 from novel_agent.services.project_snapshot import build_project_snapshot
+from novel_agent.services.v2_reset import (
+    ActiveProjectTasksError,
+    UnsafeProjectPathError,
+    V2ResetError,
+    create_v2_backup,
+    reset_project_to_v2,
+)
 
 
 router = APIRouter()
@@ -110,6 +118,76 @@ def get_project_snapshot(project_id: str):
         project_id=project_id,
         project_info=info,
     )
+
+
+def _maintenance_project_root(project_id: str) -> Path:
+    ws_server._validate_id(project_id, "project_id")
+    projects_root = (ws_server.BASE_DIR / "projects").resolve()
+    project_root = (projects_root / project_id).resolve()
+    if project_root.parent != projects_root:
+        raise HTTPException(400, "Invalid project_id: path traversal detected")
+    if not project_root.is_dir() or not _registered_project_info(project_id):
+        raise HTTPException(404, f"Project {project_id} not found")
+    return project_root
+
+
+def _raise_maintenance_error(exc: Exception) -> None:
+    if isinstance(exc, ActiveProjectTasksError):
+        raise HTTPException(409, str(exc)) from exc
+    if isinstance(exc, UnsafeProjectPathError):
+        raise HTTPException(400, str(exc)) from exc
+    if isinstance(exc, V2ResetError):
+        raise HTTPException(500, str(exc)) from exc
+    raise exc
+
+
+@router.post("/api/projects/{project_id}/backup")
+def backup_project_v2(
+    project_id: str,
+    body: ProjectMaintenanceRequest,
+) -> Dict[str, Any]:
+    expected = f"BACKUP {project_id}"
+    if body.confirmation != expected:
+        raise HTTPException(400, f"Confirmation must exactly equal: {expected}")
+    project_root = _maintenance_project_root(project_id)
+    with ws_server._project_lock:
+        if ws_server._task_registry.has_active_tasks(project_root):
+            raise HTTPException(409, "Project has active generation tasks")
+        try:
+            result = create_v2_backup(
+                projects_root=ws_server.BASE_DIR / "projects",
+                project_root=project_root,
+                project_id=project_id,
+            )
+        except Exception as exc:
+            _raise_maintenance_error(exc)
+    return {"status": "backed_up", "backup": result.as_dict()}
+
+
+@router.post("/api/projects/{project_id}/reset-v2")
+def reset_project_v2(
+    project_id: str,
+    body: ProjectMaintenanceRequest,
+) -> Dict[str, Any]:
+    expected = f"RESET V2 {project_id}"
+    if body.confirmation != expected:
+        raise HTTPException(400, f"Confirmation must exactly equal: {expected}")
+    project_root = _maintenance_project_root(project_id)
+    with ws_server._project_lock:
+        if ws_server._task_registry.has_active_tasks(project_root):
+            raise HTTPException(409, "Project has active generation tasks")
+        try:
+            result = reset_project_to_v2(
+                projects_root=ws_server.BASE_DIR / "projects",
+                project_root=project_root,
+                project_id=project_id,
+            )
+        except Exception as exc:
+            _raise_maintenance_error(exc)
+        ws_server._task_registry.drop(project_root)
+        if ws_server._active_project_id == project_id:
+            ws_server.activate_project(project_id)
+    return result.as_dict()
 
 
 _SENSITIVE_LOG_KEYS = frozenset({

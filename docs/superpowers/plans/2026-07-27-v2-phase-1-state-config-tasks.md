@@ -289,7 +289,7 @@ Actual: 快照、Agent bridge、项目 API 与工厂质量汇总回归 52 passed
 - Create: `tests/test_v2_reset.py`
 - Modify: `tests/api/test_api_projects.py`
 
-- [ ] **Step 1: 写失败的安全边界测试**
+- [x] **Step 1: 写失败的安全边界测试**
 
 覆盖：
 
@@ -300,12 +300,12 @@ Actual: 快照、Agent bridge、项目 API 与工厂质量汇总回归 52 passed
 - 重置只清理目标项目运行时目录
 - 初始化后 schema version 为 2，项目仍可正常打开
 
-- [ ] **Step 2: 实现备份与重置服务**
+- [x] **Step 2: 实现备份与重置服务**
 
 提供“仅备份”和“备份后重置”两个显式动作；先生成可验证 zip，再在项目锁内
 重建数据库和最小目录。任何失败都不修改原项目。
 
-- [ ] **Step 3: 提供 API**
+- [x] **Step 3: 提供 API**
 
 ```text
 POST /api/projects/{project_id}/backup
@@ -314,12 +314,14 @@ POST /api/projects/{project_id}/reset-v2
 
 确认词必须包含目标 project id，避免误操作。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 ```powershell
 py -3.12 -m pytest tests/test_v2_reset.py tests/api/test_api_projects.py tests/test_security_regressions.py -q --tb=short
 git commit -m "feat: add explicit v2 backup and reset flow"
 ```
+
+Actual: 重置服务、项目 API 与安全回归 51 passed；Ruff 全量检查通过，并覆盖中途失败回滚。
 
 ## Task 7：Phase 1 全量验收
 

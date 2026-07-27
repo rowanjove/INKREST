@@ -235,6 +235,15 @@ class ProjectCreateRequest(BaseModel):
     platform: Optional[str] = "qidian"
 
 
+class ProjectMaintenanceRequest(BaseModel):
+    confirmation: str = Field(
+        ...,
+        min_length=1,
+        max_length=160,
+        description="Exact project-scoped confirmation phrase.",
+    )
+
+
 class ComposeRequest(BaseModel):
     channel: str = "general"
     theme: str
