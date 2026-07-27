@@ -98,10 +98,10 @@
 - Modify: `web/frontend/src/styles/tokens.css`
 - Modify: `web/frontend/src/styles/global-surfaces.css`
 
-- [ ] 补齐 spacing、layout、focus、motion、z-index 与状态令牌。
-- [ ] 页面头、空状态、错误状态和状态徽标使用统一可访问结构。
-- [ ] 控件具备可见 focus，尊重 `prefers-reduced-motion`。
-- [ ] 共享 UI 不发业务请求。
+- [x] 补齐 spacing、layout、focus、motion、z-index 与状态令牌。
+- [x] 页面头、空状态、错误状态和状态徽标使用统一可访问结构。
+- [x] 控件具备可见 focus，尊重 `prefers-reduced-motion`。
+- [x] 共享 UI 不发业务请求。
 
 ## Task 7：验证、视觉 QA 与阶段提交
 
