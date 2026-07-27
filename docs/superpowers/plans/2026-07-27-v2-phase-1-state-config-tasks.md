@@ -329,7 +329,7 @@ Actual: 重置服务、项目 API 与安全回归 51 passed；Ruff 全量检查�
 
 - Modify: `docs/superpowers/plans/2026-07-27-v2-phase-1-state-config-tasks.md`
 
-- [ ] **Step 1: 后端全量**
+- [x] **Step 1: 后端全量**
 
 ```powershell
 py -3.12 -m ruff check novel_agent web tests
@@ -337,7 +337,7 @@ py -3.12 -m pytest tests/ --ignore=tests/smoke -q --tb=short
 py -3.12 scripts/perf_api_baseline.py --check
 ```
 
-- [ ] **Step 2: 前端与 Electron**
+- [x] **Step 2: 前端与 Electron**
 
 ```powershell
 npm run test:unit --prefix web/frontend
@@ -348,8 +348,19 @@ npm run check:bundle --prefix web/frontend
 npm run audit:prod --prefix web/frontend
 ```
 
-- [ ] **Step 3: 记录实际结果并提交**
+- [x] **Step 3: 记录实际结果并提交**
 
 ```powershell
 git commit -m "docs: record v2 phase 1 verification"
 ```
+
+Actual:
+
+- Ruff 全量通过；
+- 后端 804 passed、4 skipped、10 subtests passed；
+- API p95 性能基线通过；
+- Vue 23 files / 143 tests passed；
+- Electron 6 tests passed；
+- Vue 与 Electron 生产构建通过；
+- bundle 50 个 JS chunks、1,357,221 bytes，低于预算；
+- production dependency audit 为 0 vulnerabilities。
