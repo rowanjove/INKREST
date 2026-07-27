@@ -147,7 +147,7 @@ def agent_snapshot(
     project_id: Optional[str] = Query(None),
     session: ProjectSession = Depends(get_project_session),
 ) -> Dict[str, Any]:
-    """Combined status for external AI agents."""
+    """Canonical V2 project state plus live integration-only diagnostics."""
     try:
         if project_id:
             ws_server._validate_id(project_id, "project_id")
@@ -169,7 +169,9 @@ def agent_snapshot(
         snap["runtime_logs"] = tail_runtime_logs(40)
     except Exception:
         snap["runtime_logs"] = []
-    snap["tasks_hint"] = "GET /api/chapters/tasks for chapter task list"
+    snap["tasks_hint"] = (
+        "active_tasks is canonical; GET /api/chapters/tasks includes retained task logs"
+    )
     return snap
 
 

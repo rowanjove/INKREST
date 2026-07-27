@@ -13,7 +13,12 @@ from starlette.background import BackgroundTask
 import httpx
 import web.context as ws_server
 import web.helpers as ws_helpers
-from web.deps import ProjectSession, current_project_info, get_project_session
+from web.deps import (
+    ProjectSession,
+    RequireProjectDep,
+    current_project_info,
+    get_project_session,
+)
 from web.llm_errors import model_provider_http_error
 import logging
 
@@ -45,6 +50,7 @@ from novel_agent.control.chapter_window import build_pacing_report, normalize_ch
 from novel_agent.control.genre_genes import ensure_genre_genes
 from novel_agent.pipeline import load_project_pipeline_file, write_pipeline_file
 from novel_agent.control.outline_structure import normalize_macro_outline
+from novel_agent.services.project_snapshot import build_project_snapshot
 
 
 router = APIRouter()
@@ -73,6 +79,37 @@ def pin_project(pid: str, req: ProjectPinRequest) -> Dict[str, Any]:
 @router.get("/api/projects/current")
 def get_current_project(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
     return current_project_info(session)
+
+
+def _registered_project_info(project_id: str) -> Dict[str, Any]:
+    registry = ws_server.project_manager._read_registry()
+    info = registry.get("projects", {}).get(project_id)
+    return dict(info) if isinstance(info, dict) else {}
+
+
+@router.get("/api/projects/current/snapshot")
+def get_current_project_snapshot(
+    session: ProjectSession = RequireProjectDep,
+):
+    return build_project_snapshot(
+        session.root_dir,
+        project_id=session.project_id or session.root_dir.name,
+        project_info=_registered_project_info(session.project_id or ""),
+    )
+
+
+@router.get("/api/projects/{project_id}/snapshot")
+def get_project_snapshot(project_id: str):
+    ws_server._validate_id(project_id, "project_id")
+    project_root = ws_server.BASE_DIR / "projects" / project_id
+    info = _registered_project_info(project_id)
+    if not project_root.is_dir() or not info:
+        raise HTTPException(404, f"Project {project_id} not found")
+    return build_project_snapshot(
+        project_root,
+        project_id=project_id,
+        project_info=info,
+    )
 
 
 _SENSITIVE_LOG_KEYS = frozenset({

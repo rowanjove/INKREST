@@ -61,9 +61,9 @@ def test_build_agent_snapshot_minimal(tmp_path):
     from novel_agent.integrations.agent_bridge import build_agent_snapshot
 
     snap = build_agent_snapshot(proj, project_id="p1")
-    assert snap["project_id"] == "p1"
-    assert snap["outline_title"] == "测试书名"
-    assert "progress_summary" in snap
+    assert snap["project"]["id"] == "p1"
+    assert snap["outline_progress"]["title"] == "测试书名"
+    assert "chapter_progress" in snap
     assert "readiness" in snap
 
 
@@ -104,11 +104,29 @@ def test_agent_api_snapshot_route(tmp_path, monkeypatch):
         json.dumps({"status": "paused", "pause_reason": "test"}),
         encoding="utf-8",
     )
+    (tmp_path / "projects.json").write_text(
+        json.dumps(
+            {
+                "active_id": "p1",
+                "projects": {
+                    "p1": {
+                        "name": "X",
+                        "description": "",
+                        "created_at": "2026-07-27T00:00:00",
+                        "updated_at": "2026-07-27T00:00:00",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
 
     import web.context as ctx
+    from web.project_manager import ProjectManager
 
     monkeypatch.setattr(ctx, "BASE_DIR", tmp_path)
     monkeypatch.setattr(ctx, "_active_project_id", "p1")
+    monkeypatch.setattr(ctx, "project_manager", ProjectManager(tmp_path))
 
     from fastapi.testclient import TestClient
     from web.app import app
@@ -117,8 +135,15 @@ def test_agent_api_snapshot_route(tmp_path, monkeypatch):
     resp = client.get("/api/agent/snapshot")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["outline_title"] == "X"
-    assert body["batch"]["paused"] is True
+    assert body["outline_progress"]["title"] == "X"
+    assert body["chapter_progress"]["batch_paused"] is True
+
+    current = client.get("/api/projects/current/snapshot")
+    explicit = client.get("/api/projects/p1/snapshot")
+    assert current.status_code == 200
+    assert explicit.status_code == 200
+    assert current.json()["project"]["id"] == "p1"
+    assert explicit.json()["project"]["name"] == "X"
 
 
 def test_agent_settings_roundtrip(tmp_path, monkeypatch):

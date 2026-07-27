@@ -248,17 +248,17 @@ Actual: 配置与相关 API/模型/项目回归 128 passed；Ruff 全量检查�
 - Modify: `tests/test_agent_bridge.py`
 - Modify: `tests/api/test_api_projects.py`
 
-- [ ] **Step 1: 写失败的快照聚合测试**
+- [x] **Step 1: 写失败的快照聚合测试**
 
 使用临时项目创建大纲、章节索引、任务、质量与费用数据，断言所有一级字段
 存在、时间为 ISO 8601、active tasks 只含活跃状态、next actions 可执行。
 
-- [ ] **Step 2: 实现单一聚合服务**
+- [x] **Step 2: 实现单一聚合服务**
 
 聚合现有 readiness、progress summary、outline、任务仓储、质量报告和费用
 统计。字段缺失应返回稳定空结构；配置无效则进入 blocking issues，不能静默。
 
-- [ ] **Step 3: 接入 HTTP 与 agent bridge**
+- [x] **Step 3: 接入 HTTP 与 agent bridge**
 
 新增：
 
@@ -270,12 +270,14 @@ GET /api/projects/{project_id}/snapshot
 `/api/agent/snapshot` 在保留日志提示的同时复用同一项目快照，不再重复拼装
 业务状态。
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 ```powershell
 py -3.12 -m pytest tests/test_project_snapshot.py tests/test_agent_bridge.py tests/api/test_api_projects.py -q --tb=short
 git commit -m "feat: expose a unified project snapshot"
 ```
+
+Actual: 快照、Agent bridge、项目 API 与工厂质量汇总回归 52 passed；Ruff 全量检查通过。
 
 ## Task 6：实现显式、安全的 V2 数据重置
 

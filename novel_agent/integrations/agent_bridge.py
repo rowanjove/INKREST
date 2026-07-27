@@ -136,45 +136,18 @@ def build_agent_snapshot(
     *,
     project_id: str = "",
 ) -> Dict[str, Any]:
-    """Single JSON bundle: progress, readiness, pending, batch, outline hint."""
-    from novel_agent.services.arc_queue import load_arc_progress, load_workspace_arcs
-    from novel_agent.services.novel_run_guard import build_readiness_report
-    from novel_agent.services.pipeline_pending import summarize_pipeline_pending
-    from novel_agent.services.progress_summary import build_progress_summary
+    """Return the same canonical project state consumed by the product UI."""
+    from novel_agent.services.project_snapshot import build_project_snapshot
 
-    outline_path = root_dir / "workspace" / "outline.json"
-    outline_title = ""
-    if outline_path.is_file():
-        try:
-            outline = json.loads(outline_path.read_text(encoding="utf-8"))
-            outline_title = str(outline.get("chosen_title") or "")
-        except (json.JSONDecodeError, OSError):
-            outline_title = ""
-
-    progress = load_arc_progress(root_dir)
-    summary = build_progress_summary(root_dir)
-    pending = summarize_pipeline_pending(root_dir)
-    readiness = build_readiness_report(root_dir)
-
-    return {
-        "project_id": project_id,
-        "root_dir": str(root_dir),
-        "outline_title": outline_title,
-        "batch": {
-            "status": progress.get("status", "idle"),
-            "paused": progress.get("status") == "paused",
-            "pause_reason": progress.get("pause_reason", ""),
-            "last_arc_id": progress.get("last_arc_id", ""),
-            "last_chapter_id": progress.get("last_chapter_id", ""),
-            "fail_streak": progress.get("fail_streak", 0),
-        },
-        "progress_summary": summary,
-        "pending": pending,
-        "readiness": readiness,
-        "arc_count": len(load_workspace_arcs(root_dir)),
-        "agent_hints": [
-            "全书续跑与熔断以 progress_summary.authoritative_completed 为准",
-            "待处理章节见 pending；修完再 continue",
-            "实时流水线日志需连接运行中后端 GET /api/runtime-logs",
-        ],
-    }
+    resolved_id = project_id or Path(root_dir).name
+    project_info: Dict[str, Any] = {}
+    registry = list_projects(default_base_dir())
+    for item in registry.get("projects", []):
+        if item.get("id") == resolved_id:
+            project_info = item
+            break
+    return build_project_snapshot(
+        root_dir,
+        project_id=resolved_id,
+        project_info=project_info,
+    ).model_dump(mode="json")
