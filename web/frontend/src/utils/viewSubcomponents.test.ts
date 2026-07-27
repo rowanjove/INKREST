@@ -58,15 +58,17 @@ describe('refactored view subcomponents', () => {
     const source = read('views/LibraryView.vue')
     expect(source).toContain('LibraryBookGrid')
     expect(source).toContain('LibraryDialogs')
-    expect(source).toContain('EmptyStatePanel')
+    expect(source).toContain("shared/ui/EmptyState.vue")
+    expect(source).toContain('PageShell')
   })
 
-  it('LibraryBookGrid keeps spine and pending badge markup', () => {
+  it('LibraryBookGrid keeps comparable metadata and one unified menu', () => {
     const source = read('components/library/LibraryBookGrid.vue')
-    expect(source).toContain('book-spine-shadow')
-    expect(source).toContain('book-spine')
-    expect(source).toContain('pending-badge')
-    expect(source).toContain('book-author-label')
+    expect(source).toContain('project-cover')
+    expect(source).toContain('project-meta')
+    expect(source).toContain('el-dropdown-menu')
+    expect(source).toContain('重命名')
+    expect(source).toContain('未解决风险')
     expect(source).toContain('aria-hidden="true"')
   })
 

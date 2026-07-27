@@ -175,6 +175,49 @@ class ApiProjectsTests(ApiTestBase):
             web_server._active_project_id = original_active
             web_server.BASE_DIR = original_base
 
+    def test_rename_project_updates_registry_and_rejects_blank_name(self):
+        original_base = web_server.BASE_DIR
+        original_manager = web_server.project_manager
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            pid = "rename-book"
+            (self.tmpdir / "projects" / pid).mkdir(parents=True)
+            (self.tmpdir / "projects.json").write_text(
+                json.dumps(
+                    {
+                        "active_id": pid,
+                        "projects": {
+                            pid: {
+                                "name": "旧书名",
+                                "created_at": "2026-07-01T00:00:00",
+                                "updated_at": "2026-07-01T00:00:00",
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            web_server.project_manager = web_server.ProjectManager(self.tmpdir)
+            client = TestClient(web_app)
+
+            response = client.patch(
+                f"/api/projects/{pid}/name",
+                json={"name": "  新书名  "},
+            )
+            blank = client.patch(
+                f"/api/projects/{pid}/name",
+                json={"name": "   "},
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["name"], "新书名")
+            self.assertEqual(blank.status_code, 400)
+            listed = client.get("/api/projects").json()
+            self.assertEqual(listed[0]["name"], "新书名")
+        finally:
+            web_server.BASE_DIR = original_base
+            web_server.project_manager = original_manager
+
     def test_create_project_saves_resolved_scale_profile(self):
         original_active = web_server._active_project_id
         original_base = web_server.BASE_DIR

@@ -68,6 +68,10 @@ class ProjectPinRequest(BaseModel):
     pinned: bool = True
 
 
+class ProjectRenameRequest(BaseModel):
+    name: str
+
+
 MAX_PROJECT_ZIP_BYTES = 50 * 1024 * 1024
 MAX_PROJECT_ZIP_FILES = 5000
 MAX_PROJECT_ZIP_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
@@ -82,6 +86,25 @@ def list_projects() -> List[Dict[str, Any]]:
 def pin_project(pid: str, req: ProjectPinRequest) -> Dict[str, Any]:
     ws_server._validate_id(pid, "project_id")
     return ws_server.project_manager.set_pinned(pid, req.pinned)
+
+
+@router.patch("/api/projects/{pid}/name")
+def rename_project(pid: str, req: ProjectRenameRequest) -> Dict[str, Any]:
+    ws_server._validate_id(pid, "project_id")
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(400, "作品名称不能为空")
+    if len(name) > 120:
+        raise HTTPException(400, "作品名称不能超过 120 个字符")
+    with ws_server._project_lock:
+        registry = ws_server.project_manager._read_registry()
+        projects = registry.get("projects", {})
+        if pid not in projects:
+            raise HTTPException(404, f"Project {pid} not found")
+        projects[pid]["name"] = name
+        projects[pid]["updated_at"] = datetime.now().isoformat()
+        ws_server.project_manager._write_registry(registry)
+    return {"id": pid, "name": name, "status": "updated"}
 
 
 @router.get("/api/projects/current")

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, inject, onMounted, ref } from 'vue'
+import { defineAsyncComponent, inject, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Document, MagicStick, Plus, Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { apiErrorMessage, importDemoProject } from '../api'
-import EmptyStatePanel from '../components/EmptyStatePanel.vue'
+import PageShell from '../shared/ui/PageShell.vue'
+import EmptyState from '../shared/ui/EmptyState.vue'
 import LibraryBookGrid from '../components/library/LibraryBookGrid.vue'
 import LibraryDialogs from '../components/library/LibraryDialogs.vue'
 const StudioProductionBoard = defineAsyncComponent(
@@ -20,13 +21,6 @@ const projectStore = useProjectStore()
 const libraryTab = ref<'books' | 'studio'>('books')
 const importingDemo = ref(false)
 const openAppTour = inject<(() => void) | undefined>('openAppTour', undefined)
-
-const emptyLibraryActions = computed(() => [
-  { label: '导入示例书', type: 'primary' as const, icon: MagicStick, onClick: importDemo },
-  { label: '新建小说', type: 'success' as const, plain: true, icon: Plus, onClick: goCreate },
-  { label: '导入项目包', type: 'warning' as const, plain: true, icon: Upload, onClick: triggerUpload },
-  { label: '安装向导', type: 'default' as const, plain: true, onClick: goOnboarding },
-])
 
 async function importDemo() {
   importingDemo.value = true
@@ -45,10 +39,6 @@ async function importDemo() {
   }
 }
 
-function goOnboarding() {
-  router.push('/onboarding')
-}
-
 const {
   searchQuery,
   pinningId,
@@ -65,6 +55,7 @@ const {
   openPendingMaintenance,
   openProject,
   openDetails,
+  handleRename,
   goCreate,
   handleDelete,
   handleRead,
@@ -131,12 +122,13 @@ void fileInput
 </script>
 
 <template>
-  <section class="library-page">
-    <header class="page-head" data-tour="library-header">
-      <div class="page-title-area">
-        <h1>我的书库</h1>
-        <p>选择项目继续创作；首次使用可先导入示例书，约 1 分钟跑通工厂流程。</p>
-      </div>
+  <PageShell
+    title="我的书库"
+    description="选择作品继续创作，或切换到制片看板查看全部项目的生产状态。"
+    eyebrow="作品"
+    data-tour="library-header"
+  >
+    <template #actions>
       <div class="header-actions">
         <el-input
           v-if="projectStore.projects.length > 0"
@@ -166,24 +158,29 @@ void fileInput
           @change="handleImportZip"
         />
       </div>
-    </header>
+    </template>
 
     <el-tabs v-model="libraryTab" class="library-tabs">
       <el-tab-pane label="书库" name="books" />
-      <el-tab-pane label="工作室看板" name="studio" />
+      <el-tab-pane label="制片看板" name="studio" />
     </el-tabs>
 
     <StudioProductionBoard v-if="libraryTab === 'studio'" />
 
     <template v-else>
-    <EmptyStatePanel
+    <EmptyState
       v-if="projectStore.projects.length === 0"
       class="empty-library"
-      :icon="Document"
       title="书库还是空的"
-      description="推荐先导入示例书体验工厂全流程；也可走安装向导配置环境，或直接新建作品。"
-      :actions="emptyLibraryActions"
-    />
+      description="可以导入示例书熟悉工作流，也可以直接创建自己的第一部作品。"
+    >
+      <template #icon><el-icon><Document /></el-icon></template>
+      <template #actions>
+        <el-button type="primary" :loading="importingDemo" @click="importDemo">导入示例书</el-button>
+        <el-button type="success" plain @click="goCreate">新建作品</el-button>
+        <el-button plain @click="triggerUpload">导入项目包</el-button>
+      </template>
+    </EmptyState>
 
     <p
       v-if="projectStore.projects.length > 0 && searchQuery.trim()"
@@ -207,6 +204,7 @@ void fileInput
       :on-toggle-pin="togglePin"
       :on-open-pending-maintenance="openPendingMaintenance"
       :on-open-details="openDetails"
+      :on-rename="handleRename"
       :on-handle-read="handleRead"
       :on-handle-delete="handleDelete"
       :on-handle-export-format="handleExportFormat"
@@ -256,37 +254,12 @@ void fileInput
       :on-touch-move="handleTouchMove"
       :on-save-cover="handleSaveCover"
     />
-  </section>
+  </PageShell>
 </template>
 
 <style scoped>
 .library-tabs {
   margin-top: -4px;
-}
-
-.library-page {
-  display: grid;
-  grid-template-rows: auto auto 1fr;
-  align-content: start;
-  gap: 16px;
-  min-height: calc(100vh - 120px);
-  padding: 40px 42px 46px;
-  margin-top: 15px;
-  background:
-    repeating-linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.34) 0 1px,
-      rgba(186, 151, 102, 0.06) 1px 8px,
-      rgba(255, 255, 255, 0.12) 8px 14px
-    ),
-    linear-gradient(135deg, #fbfaf6 0%, #f2eee6 100%);
-  border-radius: 12px;
-  border: 1px solid #e0d2bf;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.58),
-    inset 0 26px 42px rgba(255, 255, 255, 0.5),
-    0 16px 34px rgba(82, 58, 34, 0.1);
-  position: relative;
 }
 
 .library-search {
@@ -320,15 +293,6 @@ void fileInput
 }
 
 .empty-library {
-  min-height: 360px;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 12px;
-  border: 1px dashed #cfd7e3;
-  border-radius: 8px;
-  background: var(--color-bg-surface);
-  color: #7b8494;
-  z-index: 10;
+  min-height: 320px;
 }
 </style>

@@ -9,6 +9,7 @@ import {
   getProjectCoverUrl,
   getOutline,
   pinProject,
+  renameProject,
   apiErrorMessage,
 } from '../api'
 import type { Project } from '../stores/project'
@@ -119,6 +120,31 @@ export function useLibraryProjects() {
   const openDetails = (project: Project) => {
     selectedProject.value = project
     detailsVisible.value = true
+  }
+
+  const handleRename = async (project: Project) => {
+    try {
+      const { value } = await ElMessageBox.prompt(
+        '输入新的作品名称',
+        '重命名作品',
+        {
+          inputValue: project.name,
+          inputPattern: /\S+/,
+          inputErrorMessage: '作品名称不能为空',
+          confirmButtonText: '保存',
+          cancelButtonText: '取消',
+        },
+      )
+      const name = value.trim()
+      if (name === project.name) return
+      await renameProject(project.id, name)
+      await projectStore.fetchProjects()
+      ElMessage.success('作品已重命名')
+    } catch (error: any) {
+      if (error !== 'cancel' && error !== 'close') {
+        ElMessage.error(apiErrorMessage(error, '重命名失败'))
+      }
+    }
   }
 
   const goCreate = async () => {
@@ -239,6 +265,7 @@ export function useLibraryProjects() {
     openPendingMaintenance,
     openProject,
     openDetails,
+    handleRename,
     goCreate,
     handleDelete,
     handleRead,

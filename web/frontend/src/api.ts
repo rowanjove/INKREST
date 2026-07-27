@@ -175,6 +175,9 @@ export const switchProject = (id: string) =>
 export const pinProject = (id: string, pinned: boolean) =>
   api.put(`/projects/${id}/pin`, { pinned })
 
+export const renameProject = (id: string, name: string) =>
+  api.patch(`/projects/${id}/name`, { name })
+
 // ---- Novel Chat (AI-guided creation) ----
 
 export const novelChatStep = (data: {
