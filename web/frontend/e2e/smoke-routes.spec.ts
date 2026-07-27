@@ -13,6 +13,29 @@ test.describe('route smoke coverage', () => {
     await expect(page.locator('.config-nav .nav-chip').first()).toBeVisible()
   })
 
+  test('project maintenance exposes named keyboard-safe backup controls', async ({
+    page,
+    request,
+  }) => {
+    const seed = await openWithActiveProject(page, request, '/config?section=system-data')
+    await expect(page.getByRole('heading', { name: '项目数据维护' })).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect(page.getByText(`${seed.project_name} · ${seed.project_id}`)).toBeVisible()
+
+    const backup = page.getByRole('button', { name: '创建项目备份' })
+    const reset = page.getByRole('button', { name: '重置当前项目' })
+    await expect(backup).toBeEnabled()
+    await expect(reset).toBeEnabled()
+    await backup.focus()
+    await page.keyboard.press('Enter')
+    const dialog = page.getByRole('dialog', { name: '备份当前项目' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByPlaceholder(`BACKUP ${seed.project_id}`)).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+  })
+
   test('production center renders the unified task workspace', async ({ page, request }) => {
     await openWithActiveProject(page, request, '/production?tab=runs')
     await expect(page.getByRole('heading', { name: '生产中心' })).toBeVisible({ timeout: 15_000 })
