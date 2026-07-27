@@ -7,6 +7,7 @@ import { useProjectSnapshotStore } from '../../stores/projectSnapshot'
 import type { BackendStatus } from '../bootstrap/useDesktopLifecycle'
 import CommandPalette from '../commands/CommandPalette.vue'
 import { useCommandPalette } from '../commands/useCommandPalette'
+import DiagnosticsDrawer from '../diagnostics/DiagnosticsDrawer.vue'
 import AppSidebar from './AppSidebar.vue'
 import AppTopbar from './AppTopbar.vue'
 
@@ -74,7 +75,11 @@ onBeforeUnmount(() => {
       </main>
     </section>
     <CommandPalette v-model="commandOpen" />
-    <span v-if="diagnosticsRequested" class="shell-placeholder" hidden>diagnostics pending</span>
+    <DiagnosticsDrawer
+      v-model="diagnosticsRequested"
+      :backend-status="backendStatus"
+      :backend-unreachable="backendUnreachable"
+    />
   </div>
 </template>
 

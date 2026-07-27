@@ -81,10 +81,10 @@
 - Create: `web/frontend/src/app/diagnostics/diagnostics.test.ts`
 - Modify: `web/frontend/src/app/shell/AppShell.vue`
 
-- [ ] 运行状态由 `ProjectSnapshot` 与后端 health 构造，不再发散请求七个接口。
-- [ ] 正常状态只显示侧栏底部小指示器；点击后打开抽屉。
-- [ ] 抽屉展示阻断、警告、活跃任务、成本和可执行下一步。
-- [ ] 内部枚举映射为中文标签，不直接展示 `missing/low/stable`。
+- [x] 运行状态由 `ProjectSnapshot` 与后端 health 构造，不再发散请求七个接口。
+- [x] 正常状态只显示侧栏底部小指示器；点击后打开抽屉。
+- [x] 抽屉展示阻断、警告、活跃任务、成本和可执行下一步。
+- [x] 内部枚举映射为中文标签，不直接展示 `missing/low/stable`。
 
 ## Task 6：共享页面原语与令牌
 

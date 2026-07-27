@@ -3,6 +3,7 @@ import { computed } from 'vue'
 
 import { useProjectSnapshotStore } from '../../stores/projectSnapshot'
 import type { BackendStatus } from '../bootstrap/useDesktopLifecycle'
+import { buildDiagnosticsSummary } from '../diagnostics/diagnostics'
 
 const props = defineProps<{
   backendStatus: BackendStatus
@@ -13,25 +14,18 @@ defineEmits<{ open: [] }>()
 
 const snapshotStore = useProjectSnapshotStore()
 
-const tone = computed(() => {
-  if (props.backendStatus !== 'online' || props.backendUnreachable) return 'danger'
-  if (snapshotStore.status === 'loading' || snapshotStore.status === 'idle') return 'checking'
-  if (snapshotStore.status === 'error') return 'danger'
-  if (snapshotStore.snapshot?.blocking_issues.length) return 'warning'
-  return 'ready'
+const summary = computed(() => {
+  const value = buildDiagnosticsSummary(
+    snapshotStore.snapshot,
+    props.backendStatus,
+    props.backendUnreachable,
+  )
+  return snapshotStore.status === 'error' && props.backendStatus === 'online'
+    ? { ...value, tone: 'danger' as const, label: '项目状态不可用' }
+    : value
 })
-
-const label = computed(() => {
-  if (props.backendStatus === 'restarting') return '服务重启中'
-  if (props.backendStatus !== 'online' || props.backendUnreachable) return '服务离线'
-  if (snapshotStore.status === 'loading' || snapshotStore.status === 'idle') return '正在检查'
-  if (snapshotStore.status === 'error') return '状态不可用'
-  const snapshot = snapshotStore.snapshot
-  if (!snapshot) return '等待项目'
-  if (snapshot.active_tasks.length) return `${snapshot.active_tasks.length} 个任务进行中`
-  if (snapshot.blocking_issues.length) return `${snapshot.blocking_issues.length} 项待处理`
-  return '运行正常'
-})
+const tone = computed(() => summary.value.tone)
+const label = computed(() => summary.value.label)
 </script>
 
 <template>
