@@ -17,6 +17,7 @@ from novel_agent.config.schema import (
     PipelineDocument,
     pipeline_json_schema,
 )
+from novel_agent.pipeline import PipelineConfig, load_pipeline_settings
 
 
 def test_default_pipeline_document_uses_v2_schema():
@@ -57,6 +58,27 @@ def test_missing_environment_variable_is_not_replaced_with_empty_text(tmp_path, 
 
     with pytest.raises(ConfigEnvironmentError, match="V2_MISSING_API_KEY"):
         load_pipeline_document(path)
+
+
+def test_generic_settings_preserve_placeholder_but_runtime_resolution_fails(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("V2_RUNTIME_API_KEY", raising=False)
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "pipeline.yaml").write_text(
+        "llm:\n"
+        "  provider: openai\n"
+        "  api_key: ${V2_RUNTIME_API_KEY}\n"
+        "embedding:\n  provider: stub\n",
+        encoding="utf-8",
+    )
+
+    settings = load_pipeline_settings(tmp_path)
+
+    assert settings["llm"]["api_key"] == "${V2_RUNTIME_API_KEY}"
+    with pytest.raises(ConfigEnvironmentError, match="V2_RUNTIME_API_KEY"):
+        PipelineConfig.from_config(tmp_path)
 
 
 def test_atomic_write_adds_schema_version_and_preserves_original_on_replace_failure(

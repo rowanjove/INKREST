@@ -35,7 +35,11 @@ ROUTE_EXCLUSIONS: dict[str, tuple[str, ...]] = {
     "web/routes/database.py": ("get_runtime_logs", "clear_runtime_logs_api"),
     "web/routes/chapters/extras.py": ("save_feedback", "list_feedback", "golden_check"),
     "web/routes/chapters/chat.py": ("novel_chat_intro",),
-    "web/routes/config.py": ("update_global_defaults", "get_setup_status"),
+    "web/routes/config.py": (
+        "update_global_defaults",
+        "get_setup_status",
+        "get_config_schema",
+    ),
     "web/routes/assets.py": (
         "list_assets",
         "list_presets",

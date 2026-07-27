@@ -88,7 +88,10 @@ def resolve_global_config_dir(root_dir: Path) -> Optional[Path]:
 
 
 def _load_yaml_pipeline(path: Path) -> Dict[str, Any]:
-    return load_pipeline_document(path)
+    # Generic config reads must preserve placeholders so project switching,
+    # status pages, and editing work before credentials are configured.
+    # Paid/runtime client construction resolves them explicitly below.
+    return load_pipeline_document(path, resolve_environment=False)
 
 
 def _merge_pipeline_section(settings: Dict[str, Any], section: str, values: Any) -> None:
@@ -315,7 +318,13 @@ class PipelineConfig:
     @classmethod
     def from_config(cls, root_dir: Path) -> "PipelineConfig":
         settings = load_pipeline_settings(root_dir)
-        llm_settings = settings.get("llm", {"provider": "static"})
+        llm_settings = resolve_environment_values(
+            settings.get("llm", {"provider": "static"})
+        )
+        resolved_embedding = resolve_environment_values(
+            settings.get("embedding", {"provider": "stub"})
+        )
+        settings = {**settings, "embedding": resolved_embedding}
         default_config, overrides = _resolve_llm_config(dict(llm_settings))
 
         if "provider" not in default_config:
