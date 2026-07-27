@@ -2,6 +2,155 @@
  * 全站表面与 Element 暗色补全（B 延伸）
  */
 
+html {
+  font-size: 15px;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 1100px;
+  margin: 0;
+  background: var(--color-bg-app);
+  font-size: 15px;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--color-text-subtle);
+}
+
+.fold-card,
+.panel {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.fold-head,
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.fold-head {
+  padding: 15px 18px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.fold-head:hover {
+  background: var(--color-bg-surface-muted);
+}
+
+.head-left {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.collapse-arrow {
+  color: var(--color-text-subtle);
+  font-size: 12px;
+  transition: transform 0.18s ease;
+}
+
+.collapse-arrow.open {
+  transform: rotate(90deg);
+}
+
+.fold-head h2,
+.panel-title {
+  margin: 0;
+  color: var(--color-text-strong);
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.fold-head p {
+  margin: 4px 0 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.fold-body {
+  display: grid;
+  gap: 14px;
+  padding: 0 18px 18px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.fold-action {
+  flex: none;
+  border-color: var(--color-primary) !important;
+  background: var(--color-primary) !important;
+  color: var(--color-bg-surface) !important;
+}
+
+.panel {
+  box-shadow: var(--shadow-panel);
+}
+
+.panel-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.metric {
+  min-height: 102px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.metric-label {
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.metric-value {
+  margin-top: 8px;
+  color: var(--color-primary);
+  font-size: 30px;
+  font-weight: 800;
+}
+
+@media (max-width: 1200px) {
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 html[data-theme='dark'] .el-popover.el-popper {
   --el-popover-bg-color: var(--color-bg-surface);
   --el-popover-border-color: var(--color-border);
