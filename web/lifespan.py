@@ -16,7 +16,7 @@ logger = logging.getLogger("web.lifespan")
 async def lifespan(app: FastAPI):
     """Lifespan event handler for FastAPI app startup and shutdown."""
     from web.security import enforce_remote_auth_at_startup
-    from novel_agent.logging_config import setup_logging
+    from novel_agent.logging_config import setup_logging, shutdown_logging
 
     enforce_remote_auth_at_startup()
     setup_logging(context.BASE_DIR / "logs")
@@ -52,7 +52,9 @@ async def lifespan(app: FastAPI):
 
     broadcast_task = start_task_broadcast_loop()
 
-    yield
-
-    broadcast_task.cancel()
-    logger.info("FastAPI web service shutdown complete")
+    try:
+        yield
+    finally:
+        broadcast_task.cancel()
+        logger.info("FastAPI web service shutdown complete")
+        shutdown_logging()
