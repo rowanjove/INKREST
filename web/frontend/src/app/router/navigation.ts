@@ -58,9 +58,9 @@ export const PROJECT_NAV_ITEMS: readonly NavigationItem[] = [
   {
     id: 'publishing',
     label: '发布',
-    path: '/reader',
+    path: '/publishing',
     icon: 'publishing',
-    match: ['/reader'],
+    match: ['/publishing', '/reader'],
   },
 ]
 

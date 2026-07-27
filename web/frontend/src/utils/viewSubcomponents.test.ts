@@ -195,19 +195,25 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain("redirect: '/create?source=template'")
   })
 
-  it('ReaderView shell wires toolbar, catalog, and content pane', () => {
-    const source = read('views/ReaderView.vue')
-    expect(source).toContain('ReaderToolbar')
-    expect(source).toContain('ReaderCatalogDrawer')
-    expect(source).toContain('ReaderContentPane')
-    expect(source).toContain('useReaderView')
+  it('PublishingCenter unifies preview, platform feedback, and export', () => {
+    const source = read('views/PublishingCenter.vue')
+    expect(source).toContain('PublicationPreview')
+    expect(source).toContain('PublishingPlatformPanel')
+    expect(source).toContain('PublishingExportPanel')
+    expect(source).toContain('usePublishingWorkspace')
   })
 
-  it('ReaderContentPane keeps bottom chapter navigation cards', () => {
-    const source = read('components/reader/ReaderContentPane.vue')
-    expect(source).toContain('bottom-navigator')
-    expect(source).toContain('去写作页改稿')
-    expect(source).toContain('novel-content-sheet')
+  it('PublicationPreview keeps catalog, database revision, and chapter navigation', () => {
+    const source = read('components/publishing/PublicationPreview.vue')
+    expect(source).toContain('publication-reader-scroll')
+    expect(source).toContain('返回正文修改')
+    expect(source).toContain('文稿修订 R')
+  })
+
+  it('legacy reader route redirects into the publishing center', () => {
+    const source = read('router.ts')
+    expect(source).toContain("{ path: '/reader', redirect: '/publishing'")
+    expect(source).toContain("path: '/publishing', name: 'publishing'")
   })
 
   it('legacy chapter routes redirect into the manuscript center', () => {

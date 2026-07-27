@@ -11,6 +11,7 @@ from novel_agent.domain.tasks import TaskStatus
 from novel_agent.services.arc_queue import record_novel_batch_paused
 from novel_agent.services.batch_retry_queue import record_batch_retry
 from novel_agent.services.outline_sync import mark_arcs_synced_with_outline
+from novel_agent.services.manuscript_documents import plain_text_to_tiptap
 from novel_agent.state.sqlite_store import SQLiteStateStore, safe_connection
 from tests.helpers.seed_engine import seed_usable_daily_model
 
@@ -92,13 +93,14 @@ def _seed_manuscript_chapters(root: Path) -> None:
             gate_status="failed" if chapter_id == "003" else "ready",
             indexed_at=time.time(),
         )
-    with safe_connection(store.db_path) as conn:
-        with conn:
-            conn.execute(
-                "delete from document_revisions where chapter_id in ('001', '002', '003')"
-            )
-            conn.execute(
-                "delete from documents where chapter_id in ('001', '002', '003')"
+        if store.get_manuscript_document(chapter_id) is None:
+            store.create_manuscript_document(
+                chapter_id=chapter_id,
+                title=title,
+                content_json=plain_text_to_tiptap(text),
+                plain_text=text,
+                markdown_text=text,
+                source="e2e_fixture",
             )
 
 

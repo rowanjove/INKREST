@@ -4,6 +4,7 @@ export { default as api } from './api/client'
 export * from './api/factory'
 export * from './api/chapters'
 export * from './api/projectSnapshot'
+export * from './api/publishing'
 
 import api from './api/client'
 import type { PlanningWorkspace } from './entities/planning/planningWorkspace'

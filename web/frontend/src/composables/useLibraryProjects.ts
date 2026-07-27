@@ -171,7 +171,7 @@ export function useLibraryProjects() {
   const handleRead = async (id: string) => {
     try {
       await projectStore.switchProject(id)
-      router.push('/reader')
+      router.push('/publishing')
     } catch (error: any) {
       ElMessage.error(apiErrorMessage(error, '打开阅读失败'))
     }
