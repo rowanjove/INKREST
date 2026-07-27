@@ -77,11 +77,6 @@ export const updatePrompt = (role: string, content: string) =>
 export const resetPrompt = (role: string) =>
   api.post(`/prompts/${role}/reset`)
 
-// ---- Database ----
-
-export const clearDatabase = () =>
-  api.post('/database/clear', { confirm: true })
-
 // ---- Dashboard ----
 
 export const getDashboard = () =>
@@ -182,6 +177,29 @@ export const pinProject = (id: string, pinned: boolean) =>
 
 export const renameProject = (id: string, name: string) =>
   api.patch(`/projects/${id}/name`, { name })
+
+export interface ProjectBackupResult {
+  path: string
+  name: string
+  sha256: string
+  size_bytes: number
+  file_count: number
+  created_at: string
+}
+
+export const backupProject = (id: string) =>
+  api.post<{ status: 'backed_up'; backup: ProjectBackupResult }>(
+    `/projects/${id}/backup`,
+    { confirmation: `BACKUP ${id}` },
+  )
+
+export const resetProjectToV2 = (id: string, confirmation: string) =>
+  api.post<{
+    status: 'reset'
+    backup: ProjectBackupResult
+    schema_version: number
+    cleared_roots: string[]
+  }>(`/projects/${id}/reset-v2`, { confirmation })
 
 // ---- Novel Chat (AI-guided creation) ----
 

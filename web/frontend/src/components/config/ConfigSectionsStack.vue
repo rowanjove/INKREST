@@ -3,7 +3,7 @@ import { Connection, Lock, Setting } from '@element-plus/icons-vue'
 
 import AgentBridgeConfig from '../AgentBridgeConfig.vue'
 import AppearanceConfig from '../AppearanceConfig.vue'
-import DataManager from '../DataManager.vue'
+import ProjectDataMaintenance from '../ProjectDataMaintenance.vue'
 import EmbeddingConfig from '../EmbeddingConfig.vue'
 import LLMConfig from '../LLMConfig.vue'
 import ModelLibrary from '../ModelLibrary.vue'
@@ -87,10 +87,10 @@ import ConfigTaskGroup from './ConfigTaskGroup.vue'
     id="system-data"
     eyebrow="06 / System"
     title="系统与数据"
-    description="管理界面外观和当前项目数据。清理操作不可逆，执行前会要求二次确认。"
+    description="管理界面外观与当前项目数据。项目重置会先创建可校验备份，并要求输入项目专属确认语。"
   >
     <AppearanceConfig />
-    <DataManager />
+    <ProjectDataMaintenance />
   </ConfigTaskGroup>
 </template>
 

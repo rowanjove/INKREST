@@ -85,8 +85,9 @@ describe('refactored view subcomponents', () => {
 
   it('keeps the existing outline editor available inside planning', () => {
     const shell = read('views/OutlineView.vue')
-    const source = read('views/OutlineEditorLegacy.vue')
-    expect(shell).toContain('OutlineEditorLegacy')
+    const source = read('views/OutlineEditor.vue')
+    expect(shell).toContain('OutlineEditor')
+    expect(shell).not.toContain('OutlineEditorLegacy')
     expect(source).toContain('OutlineMindmapPane')
     expect(source).toContain('OutlineClassicPane')
     expect(source).toContain('OutlineDialogs')
@@ -268,9 +269,21 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('generation-quality')
     expect(source).toContain('writing-layout')
     expect(source).toContain('system-data')
+    expect(source).toContain('ProjectDataMaintenance')
     expect(source).toContain('advanced-zone')
     expect(source).toContain('to="/plugins"')
+    expect(source).not.toContain('DataManager')
     expect(source).not.toContain('DeveloperNovelApiPanel')
+  })
+
+  it('project maintenance is backup-first and project-scoped', () => {
+    const source = read('components/ProjectDataMaintenance.vue')
+    expect(source).toContain('backupProject')
+    expect(source).toContain('resetProjectToV2')
+    expect(source).toContain('RESET V2')
+    expect(source).toContain('SHA-256')
+    expect(source).toContain('配置、提示词、素材与插件不会被删除')
+    expect(source).not.toContain('clearDatabase')
   })
 
   it('ProductionCenter unifies runs, reviews, costs, and logs', () => {

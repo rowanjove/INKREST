@@ -11,7 +11,7 @@ import StatusBadge from '../shared/ui/StatusBadge.vue'
 import { PLANNING_KIND_LABELS } from '../entities/planning/planningWorkspace'
 import { usePlanningWorkspace } from '../composables/usePlanningWorkspace'
 
-const OutlineEditorLegacy = defineAsyncComponent(() => import('./OutlineEditorLegacy.vue'))
+const OutlineEditor = defineAsyncComponent(() => import('./OutlineEditor.vue'))
 const viewMode = ref<'editor' | 'cards' | 'relations' | 'timeline'>('cards')
 const advanced = ref(false)
 const {
@@ -86,7 +86,7 @@ function selectById(id: string) {
       </nav>
 
       <div v-if="viewMode === 'editor'" class="legacy-editor">
-        <OutlineEditorLegacy />
+        <OutlineEditor />
       </div>
 
       <Splitpanes v-else class="planning-split" :dbl-click-splitter="false">
