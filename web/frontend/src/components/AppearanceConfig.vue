@@ -45,11 +45,6 @@ const onChange = (mode: ThemeMode) => setThemeMode(mode)
           <span class="theme-hint">{{ opt.hint }}</span>
         </label>
       </el-radio-group>
-      <p class="restore-hint">
-        主题不满意可参照
-        <code>docs/RESTORE-theme-snapshot.txt</code>
-        从 <code>backups/theme-before-abc-complete-2026-06-03</code> 回滚前端样式。
-      </p>
     </div>
   </section>
 </template>
@@ -105,17 +100,6 @@ const onChange = (mode: ThemeMode) => setThemeMode(mode)
   font-size: 12px;
   color: var(--color-text-muted);
   line-height: 1.35;
-}
-
-.restore-hint {
-  margin: 14px 0 0;
-  font-size: 12px;
-  color: var(--color-text-muted);
-  line-height: 1.5;
-}
-
-.restore-hint code {
-  font-size: 11px;
 }
 
 @media (max-width: 720px) {

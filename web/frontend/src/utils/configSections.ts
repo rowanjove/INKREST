@@ -1,11 +1,20 @@
 export type ConfigSection = { id: string; label: string }
 
 export const CONFIG_SECTIONS: ConfigSection[] = [
-  { id: 'appearance', label: '外观' },
-  { id: 'models', label: '模型库' },
-  { id: 'embedding-config', label: '向量嵌入' },
-  { id: 'pipeline-runtime', label: '流水线' },
-  { id: 'llm-routing', label: 'Agent 路由' },
-  { id: 'writing-rules', label: '写作规范' },
-  { id: 'agent-bridge', label: 'Agent 接入' },
+  { id: 'models-providers', label: '模型与提供方' },
+  { id: 'memory', label: '记忆' },
+  { id: 'generation-quality', label: '生成与质量' },
+  { id: 'writing-layout', label: '写作与排版' },
+  { id: 'extensions', label: '扩展' },
+  { id: 'system-data', label: '系统与数据' },
 ]
+
+export const CONFIG_SECTION_ALIASES: Record<string, string> = {
+  appearance: 'system-data',
+  models: 'models-providers',
+  'embedding-config': 'memory',
+  'pipeline-runtime': 'generation-quality',
+  'llm-routing': 'models-providers',
+  'writing-rules': 'writing-layout',
+  'agent-bridge': 'extensions',
+}

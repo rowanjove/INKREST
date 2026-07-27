@@ -11,6 +11,7 @@ const { sections, scrollTo } = useConfigNavigation()
     <header class="page-head">
       <div class="page-title-area">
         <h1>设置</h1>
+        <p>按创作任务组织常用配置；高风险与内部选项集中收纳在高级区域。</p>
       </div>
       <ConfigPageNav :sections="sections" :on-scroll-to="scrollTo" />
     </header>
@@ -23,9 +24,20 @@ const { sections, scrollTo } = useConfigNavigation()
 .config-page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  max-width: 1080px;
+  gap: 28px;
+  width: min(100%, 1120px);
   padding-bottom: 48px;
+}
+
+.page-head {
+  display: grid;
+  gap: 14px;
+}
+
+.page-title-area p {
+  margin: 4px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
 }
 
 .config-page > * {
@@ -66,14 +78,4 @@ const { sections, scrollTo } = useConfigNavigation()
   padding: 16px 18px 18px;
 }
 
-#system-readiness,
-#appearance,
-#models,
-#embedding-config,
-#pipeline-runtime,
-#llm-routing,
-#writing-rules,
-#agent-bridge {
-  scroll-margin-top: 16px;
-}
 </style>

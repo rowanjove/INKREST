@@ -256,6 +256,17 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('.config-page :deep(.fold-head)')
   })
 
+  it('settings stack groups tasks and isolates advanced controls', () => {
+    const source = read('components/config/ConfigSectionsStack.vue')
+    expect(source).toContain('models-providers')
+    expect(source).toContain('generation-quality')
+    expect(source).toContain('writing-layout')
+    expect(source).toContain('system-data')
+    expect(source).toContain('advanced-zone')
+    expect(source).toContain('to="/plugins"')
+    expect(source).not.toContain('DeveloperNovelApiPanel')
+  })
+
   it('ProductionCenter unifies runs, reviews, costs, and logs', () => {
     const source = read('views/ProductionCenter.vue')
     expect(source).toContain('ProductionTaskWorkspace')

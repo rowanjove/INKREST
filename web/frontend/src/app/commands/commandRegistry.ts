@@ -29,7 +29,7 @@ const SETTINGS_COMMANDS: readonly AppCommand[] = [
     label: 'Embedding 与记忆',
     description: '配置语义检索和向量索引',
     group: '设置',
-    path: '/config#embedding-config',
+    path: '/config#memory',
     keywords: ['向量', '记忆', 'embedding'],
     executeMode: 'navigate',
   },

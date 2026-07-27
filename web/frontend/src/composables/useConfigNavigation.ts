@@ -1,6 +1,6 @@
 import { onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { CONFIG_SECTIONS } from '../utils/configSections'
+import { CONFIG_SECTION_ALIASES, CONFIG_SECTIONS } from '../utils/configSections'
 
 export function useConfigNavigation() {
   const route = useRoute()
@@ -14,8 +14,9 @@ export function useConfigNavigation() {
 
   const hashSection = () => {
     const raw = (route.hash || '').replace(/^#/, '')
-    if (raw && CONFIG_SECTIONS.some((s) => s.id === raw)) {
-      requestAnimationFrame(() => scrollTo(raw))
+    const target = CONFIG_SECTION_ALIASES[raw] || raw
+    if (target && CONFIG_SECTIONS.some((s) => s.id === target)) {
+      requestAnimationFrame(() => scrollTo(target))
     }
   }
 
