@@ -38,6 +38,7 @@ export default defineConfig(async () => {
           manualChunks(id: string) {
             if (id.includes('node_modules/element-plus')) return 'element-plus'
             if (id.includes('node_modules/axios')) return 'axios'
+            if (id.includes('node_modules/@vue-flow')) return 'vue-flow'
             if (
               id.includes('node_modules/vue') ||
               id.includes('node_modules/vue-router') ||

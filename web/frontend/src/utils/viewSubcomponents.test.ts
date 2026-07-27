@@ -72,22 +72,28 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('aria-hidden="true"')
   })
 
-  it('OutlineView shell keeps progress help above queue status', () => {
+  it('OutlineView provides one three-pane planning workspace', () => {
     const source = read('views/OutlineView.vue')
-    const templateStart = source.search(/<template[\s>]/)
-    expect(templateStart).toBeGreaterThan(-1)
-    const template = source.slice(templateStart)
-    const helpIdx = template.indexOf('<NovelProgressHelp')
-    const queueIdx = template.indexOf('<OutlineQueueStatus')
-    expect(helpIdx).toBeGreaterThan(-1)
-    expect(queueIdx).toBeGreaterThan(helpIdx)
+    expect(source).toContain('Splitpanes')
+    expect(source).toContain('PlanningEntityTree')
+    expect(source).toContain('PlanningCanvas')
+    expect(source).toContain('PlanningInspector')
   })
 
-  it('OutlineView delegates viewport to mindmap and classic panes', () => {
-    const source = read('views/OutlineView.vue')
+  it('keeps the existing outline editor available inside planning', () => {
+    const shell = read('views/OutlineView.vue')
+    const source = read('views/OutlineEditorLegacy.vue')
+    expect(shell).toContain('OutlineEditorLegacy')
     expect(source).toContain('OutlineMindmapPane')
     expect(source).toContain('OutlineClassicPane')
     expect(source).toContain('OutlineDialogs')
+  })
+
+  it('PlanningInspector separates configured facts from current story state', () => {
+    const source = read('components/planning/PlanningInspector.vue')
+    expect(source).toContain('<h3>设定</h3>')
+    expect(source).toContain('<h3>当前状态</h3>')
+    expect(source).toContain('相关章节')
   })
 
   it('AssetEditor shell wires sidebar, panel, and dialogs', () => {

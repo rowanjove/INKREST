@@ -6,6 +6,10 @@ export * from './api/chapters'
 export * from './api/projectSnapshot'
 
 import api from './api/client'
+import type { PlanningWorkspace } from './entities/planning/planningWorkspace'
+
+export const getPlanningWorkspace = () =>
+  api.get<PlanningWorkspace>('/planning/workspace')
 
 // ---- State ----
 

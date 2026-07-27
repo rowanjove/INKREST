@@ -11,7 +11,7 @@ const router = createRouter({
     { path: '/create', name: 'create', component: () => import('./views/CreateWizard.vue'), meta: { scope: 'global', title: '新建作品', navId: 'create' } },
     { path: '/reader', name: 'reader', component: () => import('./views/ReaderView.vue'), meta: { scope: 'project', title: '发布', navId: 'publishing', fullBleed: true } },
     { path: '/workspace', name: 'dashboard', component: () => import('./views/Dashboard.vue'), meta: { scope: 'project', title: '概览', navId: 'overview' } },
-    { path: '/outline', name: 'outline', component: () => import('./views/OutlineView.vue'), meta: { scope: 'project', title: '策划', navId: 'planning' } },
+    { path: '/outline', name: 'outline', component: () => import('./views/OutlineView.vue'), meta: { scope: 'project', title: '策划', navId: 'planning', fullBleed: true } },
     {
       path: '/chapters',
       component: () => import('./views/ChaptersLayout.vue'),
