@@ -50,7 +50,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.12"
       - name: Install frontend deps
         working-directory: web/frontend
         run: npm ci

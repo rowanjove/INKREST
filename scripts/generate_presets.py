@@ -8,7 +8,7 @@ all individual component files under presets/.
 import json
 from pathlib import Path
 
-PRESETS_DIR = Path(__file__).parent / "presets"
+PRESETS_DIR = Path(__file__).resolve().parents[1] / "presets"
 
 
 def generate_component_files(base_dir: Path, component_type: str, components: list):

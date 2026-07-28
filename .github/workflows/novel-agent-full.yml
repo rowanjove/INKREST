@@ -1,10 +1,6 @@
 name: Novel Agent Full Tests
 
 on:
-  push:
-    branches: [master, main]
-  pull_request:
-    branches: [master, main]
   schedule:
     - cron: "0 18 * * *"
   workflow_dispatch:
@@ -40,7 +36,7 @@ jobs:
           python-version: "3.11"
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.12"
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
