@@ -135,12 +135,12 @@ npm run check:bundle
 
 ## 项目文档
 
-- [项目指南](PROJECT.md)
-- [代码结构](PROJECT_STRUCTURE.md)
+- [架构与代码结构](docs/ARCHITECTURE.md)
 - [贡献与本地验证](CONTRIBUTING.md)
-- [状态真源](docs/STATE-SOURCES.md)
-- [插件规范](PLUGIN_SPECIFICATION.md)
-- [公开前检查清单](docs/公开前检查清单.md)
+- [插件作者指南](docs/plugins/PLUGIN_AUTHOR.md)
+- [Agent 集成](docs/AGENT-INTEGRATION.md)
+- [V2 数据备份与重置](docs/V2-DATA-RESET.md)
+- [远程部署安全](docs/remote-deployment-security.md)
 
 ## 当前授权状态
 

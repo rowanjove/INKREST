@@ -90,5 +90,7 @@ python scripts/chaos_long_run.py --help
 
 ## 文档
 
-- 产品双车道：[docs/PLAN-全书链路与人机协同.md](docs/PLAN-全书链路与人机协同.md)
-- 工程路线图：[docs/IMPROVEMENT-ROADMAP-2026Q2.md](docs/IMPROVEMENT-ROADMAP-2026Q2.md)
+- 架构、目录和数据真源：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- 插件开发：[docs/plugins/PLUGIN_AUTHOR.md](docs/plugins/PLUGIN_AUTHOR.md)
+- Agent 集成：[docs/AGENT-INTEGRATION.md](docs/AGENT-INTEGRATION.md)
+- 数据重置：[docs/V2-DATA-RESET.md](docs/V2-DATA-RESET.md)

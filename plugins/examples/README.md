@@ -18,7 +18,7 @@
 
 ## 类型对照
 
-完整类型与接口见根目录 `PLUGIN_SPECIFICATION.md`。常见类型：
+完整类型、权限和打包方式见 `docs/plugins/PLUGIN_AUTHOR.md`。常见类型：
 
 - `pipeline_hook` — 流水线阶段前后
 - `quality_guard` — 统一门禁

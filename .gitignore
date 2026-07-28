@@ -1,16 +1,13 @@
-# 密钥和敏感配置
+# 密钥与本地配置
 .env
 .env.local
 config/pipeline.yaml
 config/models.json
 
-# 本地数据、模型与安装包 (体积大，不入库)
-data/py_deps/
-data/models/
-data/novel.sqlite*
-data/.local_access_token
-novel_agent.db
+# 本地项目、运行数据与备份
+data/
 *.db
+*.sqlite*
 projects.json
 workspace/
 !assets/demo_projects/demo-factory-novel/workspace/
@@ -18,58 +15,51 @@ workspace/
 projects/
 logs/
 backups/
-build/
-dist-portable/
-.cursor/
-terminals/
 *.log
 
-# Python
+# Python 缓存与本地打包描述
 __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
 .pytest_cache/
+.ruff_cache/
 /*.spec
 
-# Node & Build Outputs
+# Node 与构建产物
 node_modules/
+build/
+dist/
+dist-portable/
 web/frontend/dist/
 web/frontend/dist-electron/
 web/frontend/dist-desktop/
 web/frontend/test-results/
 web/frontend/win-unpacked/
-dist/
-build/
 !web/frontend/build/
 !web/frontend/build/icon.png
 !web/frontend/build/icon.ico
 !web/frontend/build/tray_icon.png
 NovelAgent-Portable/
 
-# IDE
+# 编辑器与系统文件
+.cursor/
 .vscode/
 .idea/
-
-# OS
 .DS_Store
 Thumbs.db
 
-# Local dev scratch (debug scripts, temp images)
+# 本地开发临时目录
 scratch/
-dist-portable/
 terminals/
 agent-tools/
 .worktrees/
-
-# Dev workspace roots (runtime data, not source)
 /state/
 /dashboard/
-data/
 test_async_workspace/
 
-# Legacy electron tree (canonical: web/frontend/electron)
+# Electron 旧源码副本；唯一构建源是 web/frontend/electron/
 electron_version/
 
-# Duplicate pet asset sources (canonical: web/frontend/src/assets/pet/shanshan)
+# 杉杉素材的本地重复源
 山山/
