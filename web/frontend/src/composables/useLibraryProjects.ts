@@ -13,6 +13,7 @@ import {
   apiErrorMessage,
 } from '../api'
 import type { Project } from '../stores/project'
+import { isMessageBoxDismissal } from '../utils/elementPlusServices'
 import { channelLabel } from '../utils/libraryFormatters'
 
 export const MAX_PINNED = 10
@@ -141,7 +142,7 @@ export function useLibraryProjects() {
       await projectStore.fetchProjects()
       ElMessage.success('作品已重命名')
     } catch (error: any) {
-      if (error !== 'cancel' && error !== 'close') {
+      if (!isMessageBoxDismissal(error)) {
         ElMessage.error(apiErrorMessage(error, '重命名失败'))
       }
     }
@@ -164,7 +165,9 @@ export function useLibraryProjects() {
         detailsVisible.value = false
       }
     } catch (error: any) {
-      if (error !== 'cancel') ElMessage.error(apiErrorMessage(error, '删除失败'))
+      if (!isMessageBoxDismissal(error)) {
+        ElMessage.error(apiErrorMessage(error, '删除失败'))
+      }
     }
   }
 

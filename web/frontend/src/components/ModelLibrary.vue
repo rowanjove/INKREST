@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Connection, Delete, Edit, Plus } from '@element-plus/icons-vue'
+import { isMessageBoxDismissal } from '../utils/elementPlusServices'
 import { deleteModel, listModels, saveModel, setModelSlot, testModel } from '../api'
 import {
   MODEL_SLOT_OPTIONS,
@@ -295,7 +296,7 @@ const removePreset = async (preset: ModelLibraryPreset) => {
     saveHiddenPresets()
     ElMessage.success('预设已移除')
   } catch (error) {
-    if (error !== 'cancel') ElMessage.error('移除预设失败')
+    if (!isMessageBoxDismissal(error)) ElMessage.error('移除预设失败')
   }
 }
 
@@ -349,7 +350,7 @@ const handleDelete = async (id: string, name: string) => {
     ElMessage.success('已删除')
     await fetchModels()
   } catch (error: any) {
-    if (error !== 'cancel') ElMessage.error(error.message || '删除失败')
+    if (!isMessageBoxDismissal(error)) ElMessage.error(error.message || '删除失败')
   }
 }
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { isMessageBoxDismissal } from '../utils/elementPlusServices'
 
 import {
   apiErrorMessage,
@@ -52,7 +53,7 @@ async function createBackup() {
     lastBackup.value = data.backup
     ElMessage.success(`备份已创建：${data.backup.name}`)
   } catch (error: any) {
-    if (error !== 'cancel' && error?.action !== 'cancel') {
+    if (!isMessageBoxDismissal(error)) {
       ElMessage.error(apiErrorMessage(error, '项目备份失败'))
     }
   } finally {
@@ -86,7 +87,7 @@ async function resetProject() {
     await snapshotStore.refresh(projectId, { force: true })
     ElMessage.success(`项目已重置到 V2，备份：${data.backup.name}`)
   } catch (error: any) {
-    if (error !== 'cancel' && error?.action !== 'cancel') {
+    if (!isMessageBoxDismissal(error)) {
       ElMessage.error(apiErrorMessage(error, '项目重置失败'))
     }
   } finally {

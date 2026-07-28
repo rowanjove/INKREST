@@ -1,5 +1,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { isMessageBoxDismissal } from '../utils/elementPlusServices'
 import {
   listPlugins,
   listUntrustedPlugins,
@@ -183,7 +184,7 @@ export function usePluginManager() {
       ElMessage.success(`${plugin.display_name} 已删除`)
       await fetchPlugins()
     } catch (error: any) {
-      if (error !== 'cancel') {
+      if (!isMessageBoxDismissal(error)) {
         ElMessage.error('删除失败: ' + (error.response?.data?.detail || error.message))
       }
     }

@@ -38,8 +38,8 @@ def test_shanshan_question_marks_keep_left_side_dots() -> None:
     upper_left_dot = alpha.crop((31, 58, 56, 64))
     middle_left_dot = alpha.crop((33, 98, 47, 104))
 
-    assert sum(value > 10 for value in upper_left_dot.getdata()) >= 40
-    assert sum(value > 10 for value in middle_left_dot.getdata()) >= 40
+    assert sum(value > 10 for value in upper_left_dot.get_flattened_data()) >= 40
+    assert sum(value > 10 for value in middle_left_dot.get_flattened_data()) >= 40
 
 
 def test_shanshan_sprite_uses_directional_assets_and_status_badges() -> None:

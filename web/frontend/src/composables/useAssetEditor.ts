@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document } from '@element-plus/icons-vue'
+import { isMessageBoxDismissal } from '../utils/elementPlusServices'
 import {
   createAsset,
   generateAsset,
@@ -306,7 +307,7 @@ export function useAssetEditor() {
       await loadAssets()
       await loadAsset('terminology')
     } catch (error: any) {
-      if (error !== 'cancel') ElMessage.error(error.message || '导入失败')
+      if (!isMessageBoxDismissal(error)) ElMessage.error(error.message || '导入失败')
     }
   }
 
@@ -330,7 +331,7 @@ export function useAssetEditor() {
       }
       await loadAssets()
     } catch (error: any) {
-      if (error !== 'cancel') ElMessage.error(error.message || '删除失败')
+      if (!isMessageBoxDismissal(error)) ElMessage.error(error.message || '删除失败')
     } finally {
       loading.value = false
     }
@@ -366,7 +367,7 @@ export function useAssetEditor() {
         }
         await loadAssets()
       } catch (error: any) {
-        if (error !== 'cancel') ElMessage.error(error.message || '删除失败')
+        if (!isMessageBoxDismissal(error)) ElMessage.error(error.message || '删除失败')
       }
     }
   }

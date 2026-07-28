@@ -2,6 +2,7 @@ import { computed, onMounted, ref, watch, type Ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { isMessageBoxDismissal } from '../utils/elementPlusServices'
 import {
   deleteCharacterRelation,
   getCharacterRelations,
@@ -219,7 +220,7 @@ export function useStateViewChronicle(deps: {
       dialogVisible.value = false
       await refreshRelations()
     } catch (error: any) {
-      if (error !== 'cancel') {
+      if (!isMessageBoxDismissal(error)) {
         ElMessage.error(error.message || '删除关系失败')
       }
     }

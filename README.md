@@ -143,6 +143,7 @@ py -3.12 main.py serve --no-browser
 ```
 
 然后访问 `http://127.0.0.1:8000`。
+如果 `python` 已指向 Python 3.11/3.12，也可使用 `python main.py serve --no-browser`。
 
 ### 构建桌面端
 
@@ -179,6 +180,9 @@ py -3.12 main.py run-chapter `
 ```powershell
 py -3.12 -m pytest tests/ --ignore=tests/smoke -q --tb=short
 ```
+
+如果 `python` 已指向 Python 3.11/3.12，等价命令为
+`python -m pytest tests/ --ignore=tests/smoke -q --tb=short`。
 
 前端：
 

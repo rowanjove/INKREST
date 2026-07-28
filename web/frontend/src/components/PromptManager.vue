@@ -1,6 +1,7 @@
 ﻿<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { isMessageBoxDismissal } from '../utils/elementPlusServices'
 import { getPrompt, listPrompts, resetPrompt, updatePrompt } from '../api'
 
 interface PromptItem {
@@ -83,7 +84,7 @@ const handleReset = async (role: string) => {
     }
     await loadPrompts()
   } catch (error: any) {
-    if (error !== 'cancel') ElMessage.error(error.message || '重置失败')
+    if (!isMessageBoxDismissal(error)) ElMessage.error(error.message || '重置失败')
   }
 }
 
