@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import zipfile
 from pathlib import Path
@@ -59,12 +60,20 @@ def test_backup_excludes_secrets_logs_plugins_and_external_symlinks(
 
     with zipfile.ZipFile(result.path) as archive:
         names = set(archive.namelist())
+        manifest = json.loads(archive.read("manifest.json"))
         text = "\n".join(
             archive.read(name).decode("utf-8", errors="ignore")
             for name in names
             if not name.endswith(".sqlite")
         )
+        for item in manifest["files"]:
+            payload = archive.read(item["path"])
+            assert item["size_bytes"] == len(payload)
+            assert item["sha256"] == hashlib.sha256(payload).hexdigest()
     assert "workspace/outline.json" in names
+    assert "data/novel.sqlite" in names
+    assert "data/novel.sqlite-wal" not in names
+    assert "data/novel.sqlite-shm" not in names
     assert "config/pipeline.yaml" not in names
     assert "config/models.json" not in names
     assert not any(name.startswith("logs/") for name in names)

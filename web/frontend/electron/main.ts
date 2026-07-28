@@ -153,6 +153,7 @@ function registerIpcHandlers() {
 let watchdogTimer: NodeJS.Timeout | null = null;
 let consecutiveFailures = 0;
 let isRestarting = false;
+let watchdogCheckInFlight = false;
 
 function sendBackendStatus(state: BackendState): void {
   mainWindow?.webContents.send('backend:status', backendStatusSnapshot(state));
@@ -162,39 +163,45 @@ function startWatchdog() {
   if (watchdogTimer) clearInterval(watchdogTimer);
   
   watchdogTimer = setInterval(async () => {
-    if ((app as any).isQuitting || isRestarting) return;
-    
+    if ((app as any).isQuitting || isRestarting || watchdogCheckInFlight) return;
+    watchdogCheckInFlight = true;
     try {
-      const res = await fetch(`http://127.0.0.1:${apiPort}/api/health`);
-      if (res.ok) {
-        consecutiveFailures = 0;
-        return;
-      }
-    } catch (err) {
-      // Fetch failed
-    }
-    
-    consecutiveFailures++;
-    console.warn(`[Watchdog] Backend health check failed (${consecutiveFailures}/3)`);
-    
-    if (consecutiveFailures >= 3) {
-      console.error(`[Watchdog] Backend unresponsive. Triggering automatic restart...`);
-      isRestarting = true;
-      consecutiveFailures = 0;
-      
-      sendBackendStatus('restarting');
-      
       try {
-        await pythonBridge?.stopServer();
-        await pythonBridge?.startServer(apiPort);
-        isRestarting = false;
-        sendBackendStatus('online');
-        console.log(`[Watchdog] Backend successfully restarted.`);
-      } catch (restartErr: any) {
-        isRestarting = false;
-        sendBackendStatus('offline');
-        console.error(`[Watchdog] Failed to restart backend: ${restartErr.message}`);
+        const res = await fetch(`http://127.0.0.1:${apiPort}/api/health`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (res.ok) {
+          consecutiveFailures = 0;
+          return;
+        }
+      } catch (err) {
+        // Fetch failed
       }
+      
+      consecutiveFailures++;
+      console.warn(`[Watchdog] Backend health check failed (${consecutiveFailures}/3)`);
+
+      if (consecutiveFailures >= 3) {
+        console.error(`[Watchdog] Backend unresponsive. Triggering automatic restart...`);
+        isRestarting = true;
+        consecutiveFailures = 0;
+
+        sendBackendStatus('restarting');
+
+        try {
+          await pythonBridge?.stopServer();
+          await pythonBridge?.startServer(apiPort);
+          isRestarting = false;
+          sendBackendStatus('online');
+          console.log(`[Watchdog] Backend successfully restarted.`);
+        } catch (restartErr: any) {
+          isRestarting = false;
+          sendBackendStatus('offline');
+          console.error(`[Watchdog] Failed to restart backend: ${restartErr.message}`);
+        }
+      }
+    } finally {
+      watchdogCheckInFlight = false;
     }
   }, 5000);
 }

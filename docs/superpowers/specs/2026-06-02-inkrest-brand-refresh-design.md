@@ -28,7 +28,7 @@
 
 桌面候选源文件位于：
 
-`C:\Users\26241\Desktop\小说软件品牌候选方案\01-候选方案\01-栖墨-INKREST\icon.svg`
+`D:\design-assets\品牌候选方案\01-栖墨\icon.svg`
 
 实施时从 SVG 导出：
 
@@ -107,7 +107,7 @@
 
 旧名称、旧 favicon、旧桌面 PNG、旧桌面 ICO 和品牌相关源码已备份到：
 
-`C:\Users\26241\Desktop\小说软件品牌候选方案\00-旧品牌备份`
+`D:\design-assets\品牌候选方案\旧品牌备份`
 
 ## 验证标准
 
@@ -119,4 +119,3 @@
 4. Electron TypeScript 构建通过。
 5. 源码品牌入口不再显示 `NovelAgent`，技术兼容标识除外。
 6. 山山相关名称、素材和助手功能保持不变。
-

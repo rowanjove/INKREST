@@ -4,7 +4,8 @@ import asyncio
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from web.context import _get_task_manager
+from web.context import _get_task_manager, get_root_dir
+from web.project_task_registry import ProjectTaskRegistry
 from web.task_ws_hub import register_client, unregister_client
 
 
@@ -14,7 +15,10 @@ async def handle_websocket_tasks(ws: WebSocket, *, accepted: bool = False):
         await ws.accept()
     await register_client(ws)
     try:
-        tasks = _get_task_manager().list_tasks()
+        manager = ProjectTaskRegistry.shared().peek(get_root_dir())
+        if manager is None:
+            manager = _get_task_manager()
+        tasks = manager.list_tasks()
         await ws.send_json(tasks)
         while True:
             try:

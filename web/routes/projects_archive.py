@@ -23,6 +23,19 @@ BLOCKED_PROJECT_ARCHIVE_SUFFIXES = {
     ".py", ".pyc", ".pyo", ".pyd", ".dll", ".exe", ".bat", ".cmd",
     ".com", ".msi", ".ps1", ".sh", ".js", ".vbs", ".jar",
 }
+SENSITIVE_PROJECT_ARCHIVE_PARTS = {"logs", ".git"}
+SENSITIVE_PROJECT_ARCHIVE_PATHS = {
+    "config/models.json",
+    "config/pipeline.yaml",
+    "config/pipeline.yml",
+}
+SENSITIVE_PROJECT_ARCHIVE_NAMES = {
+    "credentials.json",
+    "secrets.json",
+    "id_rsa",
+    "id_ed25519",
+}
+SENSITIVE_PROJECT_ARCHIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx"}
 
 
 def _copy_upload_with_limit(source, destination, limit: int) -> None:
@@ -52,6 +65,32 @@ def _is_executable_archive_member(filename: str) -> bool:
         return False
     except HTTPException:
         return True
+
+
+def _is_sensitive_archive_member(filename: str) -> bool:
+    member = Path(filename.replace("\\", "/"))
+    parts = tuple(part.lower() for part in member.parts)
+    normalized = "/".join(parts)
+    name = member.name.lower()
+    if set(parts) & SENSITIVE_PROJECT_ARCHIVE_PARTS:
+        return True
+    if normalized in SENSITIVE_PROJECT_ARCHIVE_PATHS:
+        return True
+    if name == ".env" or name.startswith(".env."):
+        return True
+    if name in SENSITIVE_PROJECT_ARCHIVE_NAMES:
+        return True
+    if member.suffix.lower() in SENSITIVE_PROJECT_ARCHIVE_SUFFIXES:
+        return True
+    return False
+
+
+def _should_export_project_member(filename: str) -> bool:
+    return not (
+        filename == "project_info.json"
+        or _is_executable_archive_member(filename)
+        or _is_sensitive_archive_member(filename)
+    )
 
 
 def _extract_and_validate_zip(tmp_path: Path, project_dir: Path) -> None:
@@ -183,7 +222,7 @@ def batch_export_projects_zip(req: BatchExportRequest) -> FileResponse:
                     except ValueError:
                         continue
                     rel_path = path.relative_to(project_dir).as_posix()
-                    if rel_path == "project_info.json" or _is_executable_archive_member(rel_path):
+                    if not _should_export_project_member(rel_path):
                         continue
                     zf.write(str(path), f"{pid}/{rel_path}")
     except Exception as exc:
@@ -234,7 +273,7 @@ def export_project_zip(pid: str) -> FileResponse:
                         continue
                     rel_path = path.relative_to(project_dir)
                     rel_posix = rel_path.as_posix()
-                    if rel_posix == "project_info.json" or _is_executable_archive_member(rel_posix):
+                    if not _should_export_project_member(rel_posix):
                         continue
                     zf.write(str(path), rel_posix)
     except Exception as exc:

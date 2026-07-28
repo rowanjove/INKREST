@@ -656,7 +656,7 @@ Expected: `web/frontend/dist-desktop/win-unpacked/NovelAgent.exe` and `web/front
 Run:
 
 ```powershell
-Start-Process "F:\AI\vibecoding\小说生成agent\web\frontend\dist-desktop\win-unpacked\NovelAgent.exe"
+Start-Process "D:\path\to\novel-agent\web\frontend\dist-desktop\win-unpacked\NovelAgent.exe"
 ```
 
 Verify:

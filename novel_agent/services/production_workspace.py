@@ -75,6 +75,25 @@ _AUDIT_STEPS = {
 }
 
 
+def _manuscript_conflict_warnings(result: dict[str, Any]) -> list[str]:
+    """Surface generation vs editor conflicts without demoting a successful task."""
+    warnings: list[str] = []
+    if str(result.get("manuscript_sync") or "") == "conflict":
+        warnings.append("正文在生成期间被编辑，已保留人工稿，生成结果未覆盖")
+    conflicts = result.get("manuscript_conflicts")
+    if isinstance(conflicts, list):
+        labels = "、".join(str(item) for item in conflicts if item)
+        if labels:
+            warnings.append(f"部分章节未写入正文（人工稿优先）：{labels}")
+    raw_warnings = result.get("warnings")
+    if isinstance(raw_warnings, list):
+        for item in raw_warnings:
+            text = str(item or "").strip()
+            if text and text not in warnings:
+                warnings.append(text)
+    return warnings
+
+
 def _task_view(task: TaskRecord) -> dict[str, Any]:
     payload = dict(task.payload_json)
     checkpoint = dict(task.checkpoint or {})
@@ -135,6 +154,7 @@ def _task_view(task: TaskRecord) -> dict[str, Any]:
         "status_reason": task.status_reason,
         "failure_code": failure_code or None,
         "failure_message": failure_message or None,
+        "warnings": _manuscript_conflict_warnings(result),
         "recovery_action": recovery_action,
         "heartbeat_at": task.heartbeat_at,
         "lease_expires_at": task.lease_expires_at,

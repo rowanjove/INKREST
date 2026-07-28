@@ -15,7 +15,7 @@
 
 ```bash
 # 列出项目
-python cli.py agent projects --novel-root F:\AI\vibecoding\小说生成agent
+python cli.py agent projects --novel-root D:\path\to\novel-agent
 
 # 离线快照（进度、pending、readiness）
 python cli.py agent snapshot --novel-root ... --project-id <id>

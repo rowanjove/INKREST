@@ -572,7 +572,7 @@ class TaskRepository:
             conn.execute("begin immediate")
             rows = conn.execute(
                 """
-                select id, status, lease_expires_at
+                select id, status, lease_expires_at, attempt, max_attempts
                 from tasks where status in (?, ?)
                 """,
                 (TaskStatus.CLAIMED.value, TaskStatus.RUNNING.value),
@@ -588,22 +588,29 @@ class TaskRepository:
                 if expires_at > reference:
                     continue
                 source = TaskStatus(row["status"])
+                exhausted = int(row["attempt"]) >= int(row["max_attempts"])
+                target = TaskStatus.FAILED if exhausted else TaskStatus.PENDING
                 assert_task_transition(
                     source,
-                    TaskStatus.PENDING,
-                    attempt=0,
-                    max_attempts=1,
+                    target,
+                    attempt=int(row["attempt"]),
+                    max_attempts=int(row["max_attempts"]),
                 )
                 conn.execute(
                     """
                     update tasks set
                       status = ?, claim_token = null, lease_expires_at = null,
-                      status_reason = ?
+                      status_reason = ?, finished_at = ?
                     where id = ? and status = ?
                     """,
                     (
-                        TaskStatus.PENDING.value,
-                        "lease_expired",
+                        target.value,
+                        (
+                            "lease_expired_attempts_exhausted"
+                            if exhausted
+                            else "lease_expired"
+                        ),
+                        reference.isoformat() if exhausted else None,
                         row["id"],
                         source.value,
                     ),
@@ -612,8 +619,12 @@ class TaskRepository:
                     conn,
                     row["id"],
                     source,
-                    TaskStatus.PENDING,
-                    reason="lease_expired",
+                    target,
+                    reason=(
+                        "lease_expired_attempts_exhausted"
+                        if exhausted
+                        else "lease_expired"
+                    ),
                 )
                 recovered.append(row["id"])
         return recovered

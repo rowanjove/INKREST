@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 import web.context as ws_server
 import web.helpers as ws_helpers
-from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, task_manager_for
 
 ws_server._validate_id = ws_helpers._validate_id
 
@@ -25,7 +25,7 @@ def get_state_candidates(
 ) -> List[Dict[str, Any]]:
     session = coerce_project_session(session)
     ws_server._validate_id(chapter_id, "chapter_id")
-    store = ws_server._get_task_manager().store
+    store = task_manager_for(session).store
     return store.list_state_change_candidates(chapter_id=chapter_id)
 
 
@@ -36,7 +36,7 @@ def approve_all_candidates(
 ) -> Dict[str, Any]:
     session = coerce_project_session(session)
     ws_server._validate_id(chapter_id, "chapter_id")
-    store = ws_server._get_task_manager().store
+    store = task_manager_for(session).store
     store.accept_chapter_candidates(chapter_id)
     return {"status": "success", "message": f"Approved all state candidates for chapter {chapter_id}"}
 
@@ -48,7 +48,7 @@ def action_on_candidate(
     session: ProjectSession = RequireProjectDep,
 ) -> Dict[str, Any]:
     session = coerce_project_session(session)
-    store = ws_server._get_task_manager().store
+    store = task_manager_for(session).store
     if req.action == "accept":
         store.accept_candidate(candidate_id)
         return {"status": "success", "message": f"Candidate {candidate_id} accepted and synced"}

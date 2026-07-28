@@ -21,6 +21,7 @@ from novel_agent.services.manuscript_documents import (
     validate_tiptap_document,
 )
 from novel_agent.state.sqlite_store import SQLiteStateStore
+from novel_agent.state.manuscript_repository import DocumentConflictError
 
 
 def _safe_json(path: Path) -> Dict[str, Any]:
@@ -224,6 +225,98 @@ def save_manuscript_document(
         source=source,
     )
     _project_document(Path(root_dir), document, store)
+    return document
+
+
+def apply_plain_text_to_manuscript(
+    root_dir: Path,
+    *,
+    chapter_id: str,
+    plain_text: str,
+    title: Optional[str] = None,
+    expected_revision: Optional[int] = None,
+    source: str = "manual",
+) -> Dict[str, Any]:
+    """Write plain text through the authoritative document + projection path."""
+    store = SQLiteStateStore(root_dir)
+    current = ensure_manuscript_document(root_dir, chapter_id, store=store)
+    revision = int(current["revision"] if expected_revision is None else expected_revision)
+    resolved_title = (
+        (title or "").strip()
+        or str(current.get("title") or "")
+        or f"第 {chapter_id} 章"
+    )
+    return save_manuscript_document(
+        root_dir,
+        chapter_id=chapter_id,
+        title=resolved_title,
+        content_json=plain_text_to_tiptap(plain_text),
+        expected_revision=revision,
+        source=source,
+    )
+
+
+def sync_generated_manuscript_document(
+    root_dir: Path,
+    *,
+    chapter_id: str,
+    final_path: Path,
+    expected_revision: Optional[int],
+    source: str = "generation",
+) -> Dict[str, Any]:
+    """Commit generated text into the authoritative document and its projection."""
+    root = Path(root_dir)
+    chapter_dir = root / "workspace" / "chapters" / f"chapter_{chapter_id}"
+    resolved_final = Path(final_path).resolve()
+    expected_final = (chapter_dir / "chapter_final.txt").resolve()
+    if resolved_final != expected_final:
+        raise ValueError("Generated manuscript path does not match the requested chapter")
+    plain_text = resolved_final.read_text(encoding="utf-8")
+    plan = _safe_json(chapter_dir / "plan.json")
+    title = str(plan.get("chapter_title") or f"第 {chapter_id} 章")
+    content_json = plain_text_to_tiptap(plain_text)
+    derived_plain, markdown_text = derive_document_text(content_json)
+    store = SQLiteStateStore(root)
+
+    current = store.get_manuscript_document(chapter_id)
+    if current is None and expected_revision in (None, 0):
+        created = store.create_manuscript_document(
+            chapter_id=chapter_id,
+            title=title,
+            content_json=content_json,
+            plain_text=derived_plain,
+            markdown_text=markdown_text,
+            source=source,
+        )
+        if (
+            created["plain_text"] != derived_plain
+            or created["title"] != title
+        ):
+            _project_document(root, created, store)
+            raise DocumentConflictError(created)
+        _project_document(root, created, store)
+        return created
+
+    if current is None:
+        current = ensure_manuscript_document(root, chapter_id, store=store)
+    revision = int(
+        current["revision"] if expected_revision is None else expected_revision
+    )
+    try:
+        document = store.save_manuscript_document(
+            chapter_id=chapter_id,
+            title=title,
+            content_json=content_json,
+            plain_text=derived_plain,
+            markdown_text=markdown_text,
+            expected_revision=revision,
+            source=source,
+        )
+    except DocumentConflictError as exc:
+        # SQLite is authoritative. Restore its latest text over the stale pipeline projection.
+        _project_document(root, exc.current, store)
+        raise
+    _project_document(root, document, store)
     return document
 
 

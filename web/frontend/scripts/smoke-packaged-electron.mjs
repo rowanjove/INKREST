@@ -30,6 +30,52 @@ try {
   if (!page) throw new Error('Packaged Electron main renderer was not found')
   mainPage = page
 
+  const petPage = pages.find(
+    (candidate) => new URL(candidate.url()).pathname === '/pet',
+  )
+  if (!petPage) throw new Error('Packaged pet renderer was not found')
+  const petHitArea = petPage.locator('.pet-hit-area')
+  await petHitArea.waitFor({ state: 'visible' })
+  const boundsBeforeDrag = await petPage.evaluate(
+    () => window.electronAPI?.getPetWindowBounds?.() ?? null,
+  )
+  if (!boundsBeforeDrag) throw new Error('Packaged pet IPC bridge was not available')
+
+  await petHitArea.click()
+  let bubblePage = null
+  for (let attempt = 0; attempt < 30 && !bubblePage; attempt += 1) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100))
+    bubblePage = context
+      .pages()
+      .find((candidate) => new URL(candidate.url()).pathname === '/pet-bubble') ?? null
+  }
+  if (!bubblePage) throw new Error('Clicking the packaged pet did not open its bubble')
+  await bubblePage.locator('.bubble-shell').waitFor({ state: 'visible' })
+
+  const petBox = await petHitArea.boundingBox()
+  if (!petBox) throw new Error('Packaged pet hit area had no screen bounds')
+  await petPage.mouse.move(
+    petBox.x + petBox.width / 2,
+    petBox.y + petBox.height / 2,
+  )
+  await petPage.mouse.down()
+  await petPage.mouse.move(
+    petBox.x + petBox.width / 2 - 36,
+    petBox.y + petBox.height / 2 - 24,
+    { steps: 6 },
+  )
+  await petPage.mouse.up()
+  const boundsAfterDrag = await petPage.evaluate(
+    () => window.electronAPI?.getPetWindowBounds?.() ?? null,
+  )
+  if (
+    !boundsAfterDrag ||
+    (boundsAfterDrag.x === boundsBeforeDrag.x &&
+      boundsAfterDrag.y === boundsBeforeDrag.y)
+  ) {
+    throw new Error('Dragging the packaged pet did not move its window')
+  }
+
   await page.waitForLoadState('domcontentloaded')
   await page.waitForFunction(() => Boolean(localStorage.getItem('novel-agent-access-token')))
   const seed = await page.evaluate(async () => {
@@ -96,6 +142,11 @@ try {
         export_status: response.status(),
         export_bytes: exported.length,
         no_horizontal_overflow: noHorizontalOverflow,
+        pet_click_opened_bubble: true,
+        pet_drag_delta: {
+          x: boundsAfterDrag.x - boundsBeforeDrag.x,
+          y: boundsAfterDrag.y - boundsBeforeDrag.y,
+        },
         screenshot: screenshotPath,
       },
       null,

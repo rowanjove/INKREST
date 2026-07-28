@@ -510,8 +510,8 @@ def _preserve_outline_identity(generated: Dict[str, Any], existing: Dict[str, An
     return merged
 
 
-def get_outline() -> Dict[str, Any]:
-    outline_path = get_root_dir() / "workspace" / "outline.json"
+def get_outline(root_dir: Optional[Path] = None) -> Dict[str, Any]:
+    outline_path = Path(root_dir or get_root_dir()) / "workspace" / "outline.json"
     if not outline_path.exists():
         return {}
     return _read_json(outline_path)

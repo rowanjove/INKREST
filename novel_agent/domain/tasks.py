@@ -83,12 +83,16 @@ def assert_task_transition(
     destination = _coerce_status(target)
     if source in _TERMINAL_STATUSES:
         raise TaskTransitionError(f"Task status {source.value!r} is terminal")
-    if source is TaskStatus.FAILED and destination is TaskStatus.CLAIMED:
+    if destination is TaskStatus.CLAIMED and source in {
+        TaskStatus.PENDING,
+        TaskStatus.FAILED,
+    }:
         if attempt >= max_attempts:
             raise TaskTransitionError(
                 f"Task exhausted its attempt budget ({attempt}/{max_attempts})"
             )
-        return
+        if source is TaskStatus.FAILED:
+            return
     if destination not in _ALLOWED_TRANSITIONS[source]:
         raise TaskTransitionError(
             f"Illegal task transition: {source.value} -> {destination.value}"

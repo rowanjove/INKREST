@@ -195,6 +195,75 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _write_backup_member(
+    archive: zipfile.ZipFile,
+    source: Path,
+    relative: Path,
+) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    size = 0
+    with source.open("rb") as input_stream, archive.open(
+        relative.as_posix(),
+        mode="w",
+    ) as output_stream:
+        for chunk in iter(lambda: input_stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+            size += len(chunk)
+            output_stream.write(chunk)
+    return {
+        "path": relative.as_posix(),
+        "size_bytes": size,
+        "sha256": digest.hexdigest(),
+    }
+
+
+def _snapshot_sqlite_database(source: Path, destination: Path) -> None:
+    source_connection: sqlite3.Connection | None = None
+    destination_connection: sqlite3.Connection | None = None
+    try:
+        source_connection = sqlite3.connect(
+            source.resolve().as_uri() + "?mode=ro",
+            uri=True,
+            timeout=30,
+        )
+        destination_connection = sqlite3.connect(destination)
+        source_connection.backup(destination_connection)
+    finally:
+        if destination_connection is not None:
+            destination_connection.close()
+        if source_connection is not None:
+            source_connection.close()
+
+
+def _verify_backup_manifest(
+    archive: zipfile.ZipFile,
+    manifest: dict[str, Any],
+    *,
+    project_id: str,
+) -> None:
+    if manifest.get("project_id") != project_id:
+        raise V2ResetError("Backup manifest verification failed")
+    for item in manifest.get("files") or []:
+        path = str(item.get("path") or "")
+        digest = hashlib.sha256()
+        size = 0
+        try:
+            with archive.open(path, mode="r") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                    size += len(chunk)
+        except KeyError as exc:
+            raise V2ResetError(f"Backup member missing: {path}") from exc
+        try:
+            expected_size = int(item["size_bytes"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise V2ResetError(f"Backup member size missing: {path}") from exc
+        if size != expected_size:
+            raise V2ResetError(f"Backup member size mismatch: {path}")
+        if digest.hexdigest() != str(item.get("sha256") or ""):
+            raise V2ResetError(f"Backup member hash mismatch: {path}")
+
+
 def create_v2_backup(
     *,
     projects_root: Path,
@@ -223,8 +292,25 @@ def create_v2_backup(
         os.close(descriptor)
         temporary = Path(temporary_name)
         files = _iter_backup_files(project)
+        sqlite_relative = Path("data") / "novel.sqlite"
+        sqlite_snapshot = temporary.with_suffix(".sqlite")
+        sqlite_source = project / sqlite_relative
         manifest_files: list[dict[str, Any]] = []
         try:
+            if sqlite_source.is_file():
+                _snapshot_sqlite_database(sqlite_source, sqlite_snapshot)
+                files = [
+                    (source, relative)
+                    for source, relative in files
+                    if relative
+                    not in {
+                        sqlite_relative,
+                        Path("data") / "novel.sqlite-wal",
+                        Path("data") / "novel.sqlite-shm",
+                    }
+                ]
+                files.append((sqlite_snapshot, sqlite_relative))
+                files.sort(key=lambda item: item[1].as_posix())
             with zipfile.ZipFile(
                 temporary,
                 mode="w",
@@ -232,15 +318,8 @@ def create_v2_backup(
                 compresslevel=6,
             ) as archive:
                 for source, relative in files:
-                    digest = _file_sha256(source)
-                    size = source.stat().st_size
-                    archive.write(source, relative.as_posix())
                     manifest_files.append(
-                        {
-                            "path": relative.as_posix(),
-                            "size_bytes": size,
-                            "sha256": digest,
-                        }
+                        _write_backup_member(archive, source, relative)
                     )
                 archive.writestr(
                     "manifest.json",
@@ -262,12 +341,17 @@ def create_v2_backup(
                 if archive.testzip() is not None:
                     raise V2ResetError("Backup archive failed CRC verification")
                 manifest = json.loads(archive.read("manifest.json"))
-                if manifest.get("project_id") != project_id:
-                    raise V2ResetError("Backup manifest verification failed")
+                _verify_backup_manifest(
+                    archive,
+                    manifest,
+                    project_id=project_id,
+                )
             os.replace(temporary, target)
         except Exception:
             temporary.unlink(missing_ok=True)
             raise
+        finally:
+            sqlite_snapshot.unlink(missing_ok=True)
         return BackupResult(
             path=target,
             sha256=_file_sha256(target),

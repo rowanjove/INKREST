@@ -28,7 +28,7 @@ from web.models import (
     SaveChapterRequest,
 )
 from novel_agent.scripts.count_chars import count_chinese_chars, wordcount_report
-from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, task_manager_for
 
 router = APIRouter()
 
@@ -39,7 +39,7 @@ def get_scrapbook(
     session: ProjectSession = RequireProjectDep,
 ) -> List[Dict[str, Any]]:
     session = coerce_project_session(session)
-    store = ws_server._get_task_manager().store
+    store = task_manager_for(session).store
     return store.search_scrapbook(query=query, chapter_id=chapter_id)
 
 

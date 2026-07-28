@@ -68,6 +68,14 @@ def touch_project_activity(session: ProjectSession) -> None:
         ctx.project_manager.touch_activity(session.project_id)
 
 
+def task_manager_for(session: ProjectSession):
+    """Return the task manager bound to this request's captured project root."""
+    captured_root = Path(session.root_dir).resolve()
+    if captured_root == Path(get_root_dir()).resolve():
+        return ctx._get_task_manager()
+    return ctx._task_registry.get(captured_root)
+
+
 def current_project_info(session: ProjectSession) -> Dict[str, Any]:
     """Resolve {id, name} for the active project (or nulls when none)."""
     if not session.project_id:

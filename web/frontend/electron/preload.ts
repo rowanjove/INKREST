@@ -1,9 +1,25 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type { PetSettings } from './pet-settings';
-import {
-  parseBackendStatusSnapshot,
-  type BackendStatusSnapshot,
-} from './security';
+
+type BackendState = 'online' | 'offline' | 'restarting';
+
+interface BackendStatusSnapshot {
+  state: BackendState;
+}
+
+function parseBackendStatusSnapshot(value: unknown): BackendStatusSnapshot {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('backend status must be an object');
+  }
+  const input = value as Record<string, unknown>;
+  if (Object.keys(input).some((key) => key !== 'state')) {
+    throw new TypeError('backend status contains unsupported fields');
+  }
+  if (!['online', 'offline', 'restarting'].includes(String(input.state))) {
+    throw new TypeError('backend status state is invalid');
+  }
+  return { state: input.state as BackendState };
+}
 
 export interface ElectronAPI {
   // Pet assistant

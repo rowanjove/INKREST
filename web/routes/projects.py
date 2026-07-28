@@ -443,9 +443,12 @@ def switch_project(pid: str) -> Dict[str, Any]:
 
 
 @router.post("/api/novel/analyze-intro")
-def analyze_novel_intro(req: AnalyzeIntroRequest) -> Dict[str, Any]:
+def analyze_novel_intro(
+    req: AnalyzeIntroRequest,
+    session: ProjectSession = Depends(get_project_session),
+) -> Dict[str, Any]:
     from novel_agent.pipeline import PipelineConfig
-    root = ws_server.get_root_dir()
+    root = session.root_dir
     config = PipelineConfig.from_config(root)
     
     llm = config.get_llm("chief_editor")

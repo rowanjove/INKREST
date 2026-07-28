@@ -34,17 +34,17 @@ Phase 7 相对计划起点共修改 49 个文件，新增 1,939 行、删除 3,2
 
 | 项目 | 备份 | 文件数 / 大小 | SHA-256 |
 | --- | --- | ---: | --- |
-| `6cbc2f72` 枪线之上 | `C:\Users\26241\AppData\Roaming\novel-agent-desktop\backups\v2-reset\6cbc2f72-20260727T110833722682Z.zip` | 367 / 1,011,966 bytes | `ca351754e3c136c7cdb2e684257b3ab50666c5ddbe7cf7bea8dfd5aa6d7a3feb` |
-| `451d8f6f` 《心之所向》 | `C:\Users\26241\AppData\Roaming\novel-agent-desktop\backups\v2-reset\451d8f6f-20260727T110835120543Z.zip` | 109 / 472,121 bytes | `b6d0184984b23ea214f60d3ae25fd980e9cf05ca4e13c6f4ed7e1f67efd70c35` |
-| `59429c36` 死局之外 | `C:\Users\26241\AppData\Roaming\novel-agent-desktop\backups\v2-reset\59429c36-20260727T110835766317Z.zip` | 345 / 1,410,460 bytes | `dc76e457b9e948195bcf37b4f01cdef2d64aab9f7ac556c5485583a5003f5898` |
+| `project-a` 私人项目 A | `%APPDATA%\novel-agent-desktop\backups\v2-reset\project-a.zip` | 367 / 1,011,966 bytes | 已校验，摘要已从公开文档移除 |
+| `project-b` 私人项目 B | `%APPDATA%\novel-agent-desktop\backups\v2-reset\project-b.zip` | 109 / 472,121 bytes | 已校验，摘要已从公开文档移除 |
+| `project-c` 私人项目 C | `%APPDATA%\novel-agent-desktop\backups\v2-reset\project-c.zip` | 345 / 1,410,460 bytes | 已校验，摘要已从公开文档移除 |
 
 仓库根级旧运行时也在清理前完成受控备份：
 
 | 数据卷 | 备份 | 大小 | SHA-256 |
 | --- | --- | ---: | --- |
-| 主仓库 | `F:\AI\vibecoding\小说生成agent\backups\legacy-root\root-runtime-20260727T190947136.zip` | 121,043 bytes / 273 entries | `559ad8613a0bbd2fdfa287785218ee8252b570af8cccbd546d0d3b2620027b1a` |
-| V2 worktree | `F:\AI\vibecoding\小说生成agent\.worktrees\v2-refactor\backups\legacy-root\root-runtime-20260727T190951611.zip` | 293 bytes / 2 entries | `1339759dda83c1a556cc640a0a84a5b24ef0f55f4cd3a80c1619c0d762d60c92` |
-| 桌面数据卷 | `C:\Users\26241\AppData\Roaming\novel-agent-desktop\backups\legacy-root\root-runtime-20260727T190951665.zip` | 5,481 bytes / 3 entries | `7909d6dd9b4ae174db49438cb49d8db075d2f8d9246909156572964c25c36332` |
+| 主仓库 | `<仓库>\backups\legacy-root\root-runtime.zip` | 121,043 bytes / 273 entries | 已校验，摘要已从公开文档移除 |
+| V2 worktree | `<工作树>\backups\legacy-root\root-runtime.zip` | 293 bytes / 2 entries | 已校验，摘要已从公开文档移除 |
+| 桌面数据卷 | `%APPDATA%\novel-agent-desktop\backups\legacy-root\root-runtime.zip` | 5,481 bytes / 3 entries | 已校验，摘要已从公开文档移除 |
 
 初次清理移除了主仓库 158 个、V2 worktree 72 个、桌面数据卷 6 个未注册测试/孤儿项目。最终回归后又移除了 V2 worktree 的 3 个已注册 E2E 测试项目和 11 个测试孤儿目录；这些测试数据不可恢复，但可通过重跑 E2E 重新生成。最终三处数据卷复扫结果均为 0 个孤儿项目、0 个根级旧运行目录；桌面三个真实项目和全部备份保留。
 

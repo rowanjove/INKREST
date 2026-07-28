@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 import web.context as ws_server
 from web.llm_errors import model_provider_http_error
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
 
 router = APIRouter()
 
@@ -34,10 +35,14 @@ class InlineExpandResponse(BaseModel):
 # ---- API Endpoints ----
 
 @router.post("/api/assistant/inline-rewrite", response_model=InlineRewriteResponse)
-async def inline_rewrite(req: InlineRewriteRequest) -> InlineRewriteResponse:
+async def inline_rewrite(
+    req: InlineRewriteRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> InlineRewriteResponse:
     """Rewrite a selected text block based on user instructions."""
     import web.routes.assistant as assistant_module
-    llm = assistant_module._get_assistant_llm()
+    session = coerce_project_session(session)
+    llm = assistant_module._get_assistant_llm(session.root_dir)
     if not llm:
         raise HTTPException(503, "Assistant LLM not configured")
 
@@ -72,10 +77,14 @@ async def inline_rewrite(req: InlineRewriteRequest) -> InlineRewriteResponse:
 
 
 @router.post("/api/assistant/inline-expand", response_model=InlineExpandResponse)
-async def inline_expand(req: InlineExpandRequest) -> InlineExpandResponse:
+async def inline_expand(
+    req: InlineExpandRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> InlineExpandResponse:
     """Expand or continue writing from the current cursor context."""
     import web.routes.assistant as assistant_module
-    llm = assistant_module._get_assistant_llm()
+    session = coerce_project_session(session)
+    llm = assistant_module._get_assistant_llm(session.root_dir)
     if not llm:
         raise HTTPException(503, "Assistant LLM not configured")
 

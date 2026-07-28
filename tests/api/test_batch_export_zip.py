@@ -35,6 +35,17 @@ class BatchExportZipTests(ApiTestBase):
             json.dumps({"chosen_title": "导出测试书"}, ensure_ascii=False),
             encoding="utf-8",
         )
+        (project_dir / "config").mkdir()
+        (project_dir / "config" / "pipeline.yaml").write_text(
+            "api_key: batch-secret",
+            encoding="utf-8",
+        )
+        (project_dir / ".env").write_text("TOKEN=batch-secret", encoding="utf-8")
+        (project_dir / "logs").mkdir()
+        (project_dir / "logs" / "novel_agent.log").write_text(
+            "private runtime log",
+            encoding="utf-8",
+        )
 
     def tearDown(self):
         web_server._active_project_id = self.original_active
@@ -58,6 +69,9 @@ class BatchExportZipTests(ApiTestBase):
             names = set(zf.namelist())
             self.assertIn("batch_export_manifest.json", names)
             self.assertIn("book01/project_info.json", names)
+            self.assertNotIn("book01/config/pipeline.yaml", names)
+            self.assertNotIn("book01/.env", names)
+            self.assertNotIn("book01/logs/novel_agent.log", names)
             manifest = json.loads(zf.read("batch_export_manifest.json").decode("utf-8"))
             self.assertEqual(manifest["project_ids"], ["book01"])
             self.assertEqual(manifest["count"], 1)

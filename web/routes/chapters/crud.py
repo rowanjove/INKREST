@@ -6,7 +6,13 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, touch_project_activity
+from web.deps import (
+    ProjectSession,
+    RequireProjectDep,
+    coerce_project_session,
+    task_manager_for,
+    touch_project_activity,
+)
 from pydantic import BaseModel, Field
 
 import web.context as ws_server
@@ -31,6 +37,12 @@ from web.models import (
 )
 from novel_agent.state.sqlite_store import SQLiteStateStore
 from novel_agent.services.chapter_index_sync import sync_chapters_from_disk
+from novel_agent.services.manuscript_documents import plain_text_to_tiptap
+from novel_agent.services.manuscript_workspace import (
+    ensure_manuscript_document,
+    save_manuscript_document,
+)
+from novel_agent.state.manuscript_repository import DocumentConflictError
 from novel_agent.scripts.count_chars import count_chinese_chars, wordcount_report
 
 router = APIRouter()
@@ -222,9 +234,11 @@ def create_new_chapter(req: CreateChapterRequest, session: ProjectSession = Requ
     }
     (reports_dir / "wordcount.json").write_text(json.dumps(wordcount, ensure_ascii=False, indent=2), encoding="utf-8")
     
+    store = task_manager_for(session).store
+    ensure_manuscript_document(session.root_dir, safe_id, store=store)
+
     # 新建默认活跃分支记录
     try:
-        store = ws_server._get_task_manager().store
         store.save_chapter_version(
             chapter_id=safe_id,
             version_name="版本 A",
@@ -269,39 +283,51 @@ def save_chapter(chapter_id: str, req: SaveChapterRequest, session: ProjectSessi
     if not chapter_dir.exists():
         raise HTTPException(404, f"Chapter {chapter_id} not found")
 
-    final_txt_path = chapter_dir / "chapter_final.txt"
-    final_txt_path.write_text(req.final_text, encoding="utf-8")
-
     plan_path = chapter_dir / "plan.json"
-    plan = {}
-    if plan_path.exists():
-        plan = ws_server._read_json(plan_path)
-    if req.title is not None:
-        plan["chapter_title"] = req.title
-        plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    target_chars = plan.get("target_chars") if isinstance(plan.get("target_chars"), list) else []
-    target_min = int(target_chars[0]) if len(target_chars) > 0 and str(target_chars[0]).isdigit() else 0
-    target_max = int(target_chars[1]) if len(target_chars) > 1 and str(target_chars[1]).isdigit() else 0
-
-    new_report = wordcount_report(req.final_text, target_min, target_max)
-    reports_dir = chapter_dir / "reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    (reports_dir / "wordcount.json").write_text(
-        json.dumps(new_report, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    plan = ws_server._read_json(plan_path) if plan_path.exists() else {}
+    store = task_manager_for(session).store
+    current = ensure_manuscript_document(
+        session.root_dir,
+        chapter_id,
+        store=store,
     )
+    expected_revision = req.expected_revision or int(current["revision"])
+    title = (
+        req.title
+        or str(current.get("title") or plan.get("chapter_title") or f"第 {chapter_id} 章")
+    )
+    try:
+        document = save_manuscript_document(
+            session.root_dir,
+            chapter_id=chapter_id,
+            title=title,
+            content_json=plain_text_to_tiptap(req.final_text),
+            expected_revision=expected_revision,
+            source="manual",
+        )
+    except DocumentConflictError as exc:
+        raise HTTPException(
+            409,
+            {
+                "code": "DOCUMENT_CONFLICT",
+                "message": "正文已在其他窗口更新，请刷新后重试。",
+                "current": exc.current,
+            },
+        ) from exc
+    plan = ws_server._read_json(plan_path) if plan_path.exists() else plan
 
     try:
-        title = plan.get("chapter_title", f"第 {chapter_id} 章")
         create_chapter_snapshot(
-            session.root_dir, chapter_id, title, req.final_text, is_manual=False
+            session.root_dir,
+            chapter_id,
+            str(document["title"]),
+            str(document["plain_text"]),
+            is_manual=False,
         )
     except Exception as e:
         ws_server.logger.warning("Failed to create automatic snapshot: %s", e)
 
     try:
-        store = ws_server._get_task_manager().store
         versions = store.list_chapter_versions(chapter_id)
         active_version = next((v for v in versions if v.get("is_active") == 1), None)
         if active_version:
@@ -336,5 +362,9 @@ def save_chapter(chapter_id: str, req: SaveChapterRequest, session: ProjectSessi
 
     touch_project_activity(session)
 
-    return {"status": "saved", "chapter_id": chapter_id}
+    return {
+        "status": "saved",
+        "chapter_id": chapter_id,
+        "revision": int(document["revision"]),
+    }
 

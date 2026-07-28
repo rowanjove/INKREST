@@ -37,7 +37,7 @@ from web.routes.manuscript import router as manuscript_router
 from web.routes.production import router as production_router
 from web.routes.publishing import router as publishing_router
 
-app = FastAPI(title="Novel Agent API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Novel Agent API", version="2.0.0", lifespan=lifespan)
 app.add_middleware(AccessTokenMiddleware)
 
 _logger = logging.getLogger("web.app")

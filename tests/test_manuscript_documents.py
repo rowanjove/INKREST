@@ -6,6 +6,11 @@ from novel_agent.services.manuscript_documents import (
     derive_document_text,
     plain_text_to_tiptap,
 )
+from novel_agent.services.manuscript_workspace import (
+    ensure_manuscript_document,
+    save_manuscript_document,
+    sync_generated_manuscript_document,
+)
 from novel_agent.state.manuscript_repository import DocumentConflictError
 from novel_agent.state.sqlite_store import SQLiteStateStore
 
@@ -165,3 +170,121 @@ def test_document_payload_is_stored_as_json_not_python_repr(tmp_path):
 
     assert document["content_json"] == content
     assert json.loads(json.dumps(document["content_json"], ensure_ascii=False)) == content
+
+
+def test_generated_text_updates_authoritative_document(tmp_path):
+    chapter_dir = tmp_path / "workspace" / "chapters" / "chapter_001"
+    chapter_dir.mkdir(parents=True)
+    final_path = chapter_dir / "chapter_final.txt"
+    final_path.write_text("旧正文", encoding="utf-8")
+    (chapter_dir / "plan.json").write_text(
+        json.dumps({"chapter_title": "第一章"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    current = ensure_manuscript_document(tmp_path, "001")
+    final_path.write_text("生成后的正文", encoding="utf-8")
+
+    updated = sync_generated_manuscript_document(
+        tmp_path,
+        chapter_id="001",
+        final_path=final_path,
+        expected_revision=current["revision"],
+    )
+
+    assert updated["plain_text"] == "生成后的正文"
+    assert updated["revision"] == 2
+    assert updated["source"] == "generation"
+    assert SQLiteStateStore(tmp_path).get_manuscript_document("001")["plain_text"] == "生成后的正文"
+
+
+def test_generated_text_does_not_overwrite_a_concurrent_manual_edit(tmp_path):
+    chapter_dir = tmp_path / "workspace" / "chapters" / "chapter_001"
+    chapter_dir.mkdir(parents=True)
+    final_path = chapter_dir / "chapter_final.txt"
+    final_path.write_text("旧正文", encoding="utf-8")
+    (chapter_dir / "plan.json").write_text(
+        json.dumps({"chapter_title": "第一章"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    current = ensure_manuscript_document(tmp_path, "001")
+    manual = save_manuscript_document(
+        tmp_path,
+        chapter_id="001",
+        title="第一章",
+        content_json=plain_text_to_tiptap("人工新稿"),
+        expected_revision=current["revision"],
+        source="manual",
+    )
+    final_path.write_text("迟到的生成稿", encoding="utf-8")
+
+    with pytest.raises(DocumentConflictError):
+        sync_generated_manuscript_document(
+            tmp_path,
+            chapter_id="001",
+            final_path=final_path,
+            expected_revision=current["revision"],
+        )
+
+    assert SQLiteStateStore(tmp_path).get_manuscript_document("001")["revision"] == manual["revision"]
+    assert final_path.read_text(encoding="utf-8") == "人工新稿"
+
+
+def test_apply_plain_text_updates_authoritative_document(tmp_path):
+    from novel_agent.services.manuscript_workspace import apply_plain_text_to_manuscript
+
+    chapter_dir = tmp_path / "workspace" / "chapters" / "chapter_003"
+    chapter_dir.mkdir(parents=True)
+    (chapter_dir / "chapter_final.txt").write_text("旧稿", encoding="utf-8")
+    (chapter_dir / "plan.json").write_text(
+        json.dumps({"chapter_title": "第三章"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    ensure_manuscript_document(tmp_path, "003")
+
+    document = apply_plain_text_to_manuscript(
+        tmp_path,
+        chapter_id="003",
+        plain_text="回滚稿",
+        title="第三章·回滚",
+        source="restore",
+    )
+
+    assert document["plain_text"] == "回滚稿"
+    assert document["title"] == "第三章·回滚"
+    assert (chapter_dir / "chapter_final.txt").read_text(encoding="utf-8") == "回滚稿"
+
+
+def test_task_manager_sync_reports_conflict_without_raising(tmp_path):
+    from web.tasks import TaskManager
+
+    chapter_dir = tmp_path / "workspace" / "chapters" / "chapter_001"
+    chapter_dir.mkdir(parents=True)
+    final_path = chapter_dir / "chapter_final.txt"
+    final_path.write_text("旧正文", encoding="utf-8")
+    (chapter_dir / "plan.json").write_text(
+        json.dumps({"chapter_title": "第一章"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    current = ensure_manuscript_document(tmp_path, "001")
+    save_manuscript_document(
+        tmp_path,
+        chapter_id="001",
+        title="第一章",
+        content_json=plain_text_to_tiptap("人工新稿"),
+        expected_revision=current["revision"],
+        source="manual",
+    )
+    final_path.write_text("迟到的生成稿", encoding="utf-8")
+
+    manager = TaskManager(tmp_path)
+    try:
+        status = manager._sync_task_chapter_version(
+            "001",
+            str(final_path),
+            current["revision"],
+        )
+    finally:
+        manager.shutdown()
+
+    assert status == "conflict"
+    assert final_path.read_text(encoding="utf-8") == "人工新稿"

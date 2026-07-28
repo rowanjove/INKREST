@@ -75,9 +75,17 @@ async def _broadcast_loop() -> None:
         if not _clients:
             continue
         try:
-            from web.context import _get_task_manager
+            from web.context import get_root_dir
+            from web.project_task_registry import ProjectTaskRegistry
 
-            tasks = _get_task_manager().list_tasks()
+            # Always broadcast the currently active project's task list.
+            # Never spawn a manager just to answer a WS poll for an idle root.
+            manager = ProjectTaskRegistry.shared().peek(get_root_dir())
+            if manager is None:
+                from web.context import _get_task_manager
+
+                manager = _get_task_manager()
+            tasks = manager.list_tasks()
         except Exception:
             continue
         dead: list[WebSocket] = []

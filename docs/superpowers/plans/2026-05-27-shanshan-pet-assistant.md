@@ -16,7 +16,7 @@
 - Create: `web/frontend/src/assets/pet/shanshan/**`
 - Create: `web/frontend/src/assets/pet/shanshan/pet.json`
 
-- [ ] Copy generated assets from `F:\AI\vibecoding\小说生成agent\山山` into `web/frontend/src/assets/pet/shanshan`.
+- [ ] Copy generated assets from `D:\path\to\novel-agent\山山` into `web/frontend/src/assets/pet/shanshan`.
 - [ ] Add `pet.json` declaring `idle`, `working`, `success`, and `error` animation files plus static fallback files.
 - [ ] Verify files exist and WebP/PNG dimensions match the generated outputs.
 

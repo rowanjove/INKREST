@@ -27,6 +27,7 @@ async function startApp() {
   const app = createApp(ThemeRoot)
   app.use(createPinia())
   app.use(router)
+  await router.isReady()
   app.mount('#app')
 }
 

@@ -40,6 +40,29 @@ class ProjectTaskRegistry:
                 manager.sync_concurrency_limit()
             return manager
 
+    def peek(self, root_dir: Path) -> Optional[TaskManager]:
+        """Return an existing manager without creating one."""
+        key = self._key(root_dir)
+        with self._lock:
+            return self._managers.get(key)
+
+    def count_running_tasks(self, root_dir: Path) -> int:
+        """Count pending/running tasks for a root without spawning a manager."""
+        manager = self.peek(root_dir)
+        if manager is None:
+            return 0
+        try:
+            tasks = manager.list_tasks()
+        except Exception:
+            return 0
+        return len(
+            [
+                task
+                for task in tasks
+                if task.get("status") in ("pending", "running", "claimed")
+            ]
+        )
+
     def has_active_tasks(self, root_dir: Path) -> bool:
         key = self._key(root_dir)
         with self._lock:

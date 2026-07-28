@@ -25,6 +25,7 @@ const task = (overrides: Partial<ProductionTask>): ProductionTask => ({
   status_reason: null,
   failure_code: null,
   failure_message: null,
+  warnings: [],
   recovery_action: 'cancel',
   heartbeat_at: null,
   lease_expires_at: null,

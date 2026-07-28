@@ -291,7 +291,7 @@ web/server.py 兼容 re-export
 当前山山资源已有：
 
 ```txt
-F:\AI\vibecoding\小说生成agent\山山
+D:\path\to\novel-agent\山山
 ```
 
 实施时应复制到：

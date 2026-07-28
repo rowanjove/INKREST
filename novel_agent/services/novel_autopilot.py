@@ -37,6 +37,7 @@ class AutopilotResult:
     stopped_reason: str = ""
     paused: bool = False
     round_summaries: List[Dict[str, Any]] = field(default_factory=list)
+    chapter_ids: List[str] = field(default_factory=list)
 
 
 def resolve_autopilot_settings(root_dir: Path) -> Dict[str, int]:
@@ -200,6 +201,11 @@ async def run_novel_autopilot(
             )
 
         n = len(batch)
+        outcome.chapter_ids.extend(
+            str(getattr(item, "chapter_id", "") or "")
+            for item in batch
+            if getattr(item, "chapter_id", None)
+        )
         tokens_used = 0
         if isinstance(orchestrator, NovelOrchestrator):
             tokens_used = orchestrator.consume_round_tokens()

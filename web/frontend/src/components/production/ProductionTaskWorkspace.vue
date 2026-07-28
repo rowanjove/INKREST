@@ -132,6 +132,13 @@ function formatTime(value: string | null | undefined) {
           <p>{{ selected.failure_message }}</p>
         </div>
 
+        <div v-if="selected.warnings?.length" class="warning-card" role="status">
+          <strong>正文同步提醒</strong>
+          <p v-for="(warning, index) in selected.warnings" :key="`${selected.id}-warn-${index}`">
+            {{ warning }}
+          </p>
+        </div>
+
         <dl class="task-metadata">
           <div><dt>当前步骤</dt><dd>{{ selected.step_label || '尚未进入流水线' }}</dd></div>
           <div><dt>恢复点</dt><dd>{{ selected.checkpoint.resumable_from ? productionStepLabel(selected.checkpoint.resumable_from) : '无明确恢复点' }}</dd></div>
@@ -218,9 +225,11 @@ function formatTime(value: string | null | undefined) {
 .detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .detail-head small { color: var(--color-text-muted); font-size: 10px; }
 .detail-head h2 { margin: 3px 0; color: var(--color-text-strong); font-size: 19px; }
-.detail-head p, .failure-card p { margin: 0; color: var(--color-text-muted); font-size: 11px; line-height: 1.6; }
+.detail-head p, .failure-card p, .warning-card p { margin: 0; color: var(--color-text-muted); font-size: 11px; line-height: 1.6; }
 .failure-card { display: grid; gap: 5px; margin-top: 16px; padding: 12px; border: 1px solid var(--color-alert-danger-border); border-radius: 9px; background: var(--color-alert-danger-bg); }
 .failure-card strong { color: var(--color-danger); font-size: 11px; }
+.warning-card { display: grid; gap: 5px; margin-top: 16px; padding: 12px; border: 1px solid var(--color-alert-warning-border, #e6c20055); border-radius: 9px; background: var(--color-alert-warning-bg, #fff8e1); }
+.warning-card strong { color: var(--color-warning, #b38600); font-size: 11px; }
 .task-metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 16px 0; overflow: hidden; border: 1px solid var(--color-border); border-radius: 9px; background: var(--color-border); }
 .task-metadata > div { display: grid; gap: 4px; padding: 10px 12px; background: var(--color-bg-surface); }
 .task-metadata dt { color: var(--color-text-muted); font-size: 9px; }

@@ -54,6 +54,9 @@ export interface TaskSummary {
     retryable?: boolean
     user_action?: string
     resumable_from?: string
+    manuscript_sync?: string
+    manuscript_conflicts?: string[]
+    warnings?: string[]
   }
   failure_kind?: string
   error_code?: string
@@ -126,6 +129,26 @@ function formatProgressLogMessage(entry: ProgressEntry): string {
   return `${stepLabel} · ${status}`
 }
 
+/** Build a user-facing hint when generation finished but did not overwrite a human edit. */
+export function manuscriptConflictHint(
+  result: TaskSummary['result'] | undefined,
+): string | null {
+  if (!result) return null
+  if (result.manuscript_sync === 'conflict') {
+    return '正文在生成期间被编辑，已保留人工稿，生成结果未覆盖'
+  }
+  const conflicts = result.manuscript_conflicts
+  if (Array.isArray(conflicts) && conflicts.length) {
+    return `部分章节未写入正文（人工稿优先）：${conflicts.join('、')}`
+  }
+  const warnings = result.warnings
+  if (Array.isArray(warnings)) {
+    const hit = warnings.find((item) => String(item).includes('人工稿'))
+    if (hit) return String(hit)
+  }
+  return null
+}
+
 const QUEUE_PROGRESS_STEPS = new Set(['ensure_queue', 'managing_editor', 'novel_batch', 'novel_autopilot'])
 
 const PIPELINE_ORDER = [
@@ -159,6 +182,8 @@ export const useTasksStore = defineStore('tasks', () => {
   const currentTaskId = ref<string>('')
   const isRunning = ref(false)
   const lastTaskFailure = ref<{ task_id: string; hint: string; code: string } | null>(null)
+  const lastTaskWarning = ref<{ task_id: string; hint: string } | null>(null)
+  const notifiedManuscriptConflicts = new Set<string>()
 
   function addLog(entry: LogEntry) {
     const next = [...logs.value, entry]
@@ -406,6 +431,18 @@ export const useTasksStore = defineStore('tasks', () => {
           }
           isRunning.value = true
         } else if (task.status === 'succeeded') {
+          const conflictHint = manuscriptConflictHint(task.result)
+          if (conflictHint && !notifiedManuscriptConflicts.has(task.task_id)) {
+            notifiedManuscriptConflicts.add(task.task_id)
+            lastTaskWarning.value = { task_id: task.task_id, hint: conflictHint }
+            addLog({
+              timestamp: Date.now(),
+              step: 'complete',
+              message: conflictHint,
+              level: 'warn',
+              chapter_id: task.chapter_id,
+            })
+          }
           if (task.task_id === currentTaskId.value) {
             if (task.chapter_id) {
               progress.value.forEach(p => {
@@ -541,6 +578,7 @@ export const useTasksStore = defineStore('tasks', () => {
     currentTaskId,
     isRunning,
     lastTaskFailure,
+    lastTaskWarning,
     addLog,
     addProgress,
     markComplete,

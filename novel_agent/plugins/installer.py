@@ -21,6 +21,11 @@ from novel_agent.plugins.manifest import (
 logger = get_logger("plugins.installer")
 
 MAX_ZIP_BYTES = 20 * 1024 * 1024
+MAX_ZIP_FILES = 2000
+MAX_ZIP_UNCOMPRESSED_BYTES = 200 * 1024 * 1024
+MAX_ZIP_MEMBER_BYTES = 50 * 1024 * 1024
+MAX_ZIP_COMPRESSION_RATIO = 200
+MIN_ZIP_RATIO_CHECK_BYTES = 1024 * 1024
 INSTALL_RECORD = ".inkrest-install.json"
 
 
@@ -46,10 +51,29 @@ def _normalize_zip_root(staging: Path) -> Path:
     return staging
 
 
+def _validate_zip_members(infos: List[zipfile.ZipInfo]) -> None:
+    files = [info for info in infos if not info.is_dir()]
+    if len(files) > MAX_ZIP_FILES:
+        raise ManifestError(f"ZIP 文件数量超过上限（{MAX_ZIP_FILES}）")
+    total = sum(max(0, int(info.file_size)) for info in files)
+    if total > MAX_ZIP_UNCOMPRESSED_BYTES:
+        raise ManifestError("ZIP 解压后总大小超过上限")
+    for info in files:
+        if info.file_size > MAX_ZIP_MEMBER_BYTES:
+            raise ManifestError(f"ZIP 单个文件过大: {info.filename}")
+        if info.file_size >= MIN_ZIP_RATIO_CHECK_BYTES:
+            compressed = max(1, int(info.compress_size))
+            if info.file_size / compressed > MAX_ZIP_COMPRESSION_RATIO:
+                raise ManifestError(f"ZIP 压缩率异常: {info.filename}")
+
+
 def _extract_zip_safe(zip_path: Path, dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(zip_path, "r") as zf:
-        for info in zf.infolist():
+        infos = zf.infolist()
+        _validate_zip_members(infos)
+        written_total = 0
+        for info in infos:
             name = info.filename.replace("\\", "/")
             if not name or name.endswith("/"):
                 continue
@@ -57,8 +81,19 @@ def _extract_zip_safe(zip_path: Path, dest: Path) -> None:
                 raise ManifestError(f"ZIP 含非法路径: {name}")
             target = _safe_join(dest, *name.split("/"))
             target.parent.mkdir(parents=True, exist_ok=True)
+            member_written = 0
             with zf.open(info) as src, open(target, "wb") as out:
-                shutil.copyfileobj(src, out)
+                while True:
+                    chunk = src.read(64 * 1024)
+                    if not chunk:
+                        break
+                    member_written += len(chunk)
+                    written_total += len(chunk)
+                    if member_written > MAX_ZIP_MEMBER_BYTES:
+                        raise ManifestError(f"ZIP 单个文件过大: {info.filename}")
+                    if written_total > MAX_ZIP_UNCOMPRESSED_BYTES:
+                        raise ManifestError("ZIP 解压后总大小超过上限")
+                    out.write(chunk)
 
 
 def _extract_nested_zip(zip_path: Path, dest: Path) -> None:

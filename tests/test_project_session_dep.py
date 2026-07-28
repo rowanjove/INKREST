@@ -93,6 +93,7 @@ def test_deps_exports_session_helpers() -> None:
         "touch_project_activity",
         "current_project_info",
         "coerce_project_session",
+        "task_manager_for",
         "ACTOR_HEADER",
         "actor_id",
     ):

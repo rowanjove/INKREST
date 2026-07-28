@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 
 import web.context as ws_server
 import web.helpers as ws_helpers
-from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, task_manager_for
 from novel_agent.control.calibration import build_calibration_report
 
 ws_server.get_outline = ws_helpers.get_outline
@@ -265,7 +265,7 @@ def collect_debt(
 @router.get("/api/control/calibration")
 def get_calibration_report(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
-    outline = ws_server.get_outline()
+    outline = ws_server.get_outline(session.root_dir)
     root = session.root_dir
     store = SQLiteStateStore(root)
     if store.count_chapters_indexed() == 0:
@@ -287,7 +287,7 @@ def get_calibration_report(session: ProjectSession = RequireProjectDep) -> Dict[
 @router.get("/api/control/scale-profile")
 def get_scale_profile(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
-    outline = ws_server.get_outline()
+    outline = ws_server.get_outline(session.root_dir)
     root = session.root_dir
     store = SQLiteStateStore(root)
     if store.count_chapters_indexed() == 0:
@@ -333,8 +333,8 @@ async def clear_runtime_logs_api(
 
 @router.get("/api/llm-logs")
 async def get_llm_logs(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
-    coerce_project_session(session)
-    tasks = await ws_server._get_task_manager().list_tasks_async()
+    session = coerce_project_session(session)
+    tasks = await task_manager_for(session).list_tasks_async()
     all_logs = []
     for task in tasks:
         logs = task.get("llm_logs", [])

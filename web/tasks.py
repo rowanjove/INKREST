@@ -18,6 +18,11 @@ from web.task_progress import handle_progress_message
 from novel_agent.progress import progress_handlers
 from novel_agent.state.sqlite_store import SQLiteStateStore
 from novel_agent.state.task_repository import TaskConflictError
+from novel_agent.state.manuscript_repository import DocumentConflictError
+from novel_agent.services.manuscript_workspace import (
+    ensure_manuscript_document,
+    sync_generated_manuscript_document,
+)
 
 task_id_var = contextvars.ContextVar("task_id", default=None)
 logger = get_logger("tasks")
@@ -445,6 +450,11 @@ class TaskManager:
         dry_run: bool = False,
     ) -> str:
         task_id = str(uuid.uuid4())[:8]
+        manuscript_revision = await asyncio.get_running_loop().run_in_executor(
+            None,
+            self._capture_manuscript_revision,
+            chapter_id,
+        )
         
         async with self._submission_lock_for_loop():
             # Check and reserve the chapter atomically across concurrent requests.
@@ -471,6 +481,7 @@ class TaskManager:
                     "goal": goal,
                     "dry_run": dry_run,
                     "mode": "standard",
+                    "manuscript_revision": manuscript_revision,
                 },
             )
             await asyncio.get_running_loop().run_in_executor(
@@ -489,6 +500,11 @@ class TaskManager:
     async def submit_chapter_gate_only(self, chapter_id: str) -> str:
         task_id = str(uuid.uuid4())[:8]
         goal = f"gate_only:{chapter_id}"
+        manuscript_revision = await asyncio.get_running_loop().run_in_executor(
+            None,
+            self._capture_manuscript_revision,
+            chapter_id,
+        )
 
         async with self._submission_lock_for_loop():
             if chapter_id in self._running_chapters:
@@ -509,6 +525,7 @@ class TaskManager:
                     "goal": goal,
                     "dry_run": False,
                     "mode": "gate_only",
+                    "manuscript_revision": manuscript_revision,
                 },
             )
             self._running_chapters[chapter_id] = task_id
@@ -542,10 +559,31 @@ class TaskManager:
             None, self._update_task_status, task_id, "running"
         )
         try:
+            task_record = self.task_repository.get_task(task_id)
+            stored_revision = (
+                (task_record.payload_json if task_record else {}).get(
+                    "manuscript_revision"
+                )
+            )
+            expected_revision = (
+                int(stored_revision)
+                if stored_revision is not None
+                else self._capture_manuscript_revision(chapter_id)
+            )
             await self._ensure_llm_ready(False)
             config = PipelineConfig.from_config(self.root_dir)
             orchestrator = NovelOrchestrator(config)
             result = await orchestrator.arun_gate_only(chapter_id)
+            sync_status = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._sync_task_chapter_version,
+                chapter_id,
+                str(result.final_path),
+                expected_revision,
+            )
+            warnings = list(getattr(result, "warnings", []) or [])
+            if sync_status == "conflict":
+                warnings.append("正文在生成期间被编辑，已保留人工稿，生成结果未覆盖")
             await asyncio.get_running_loop().run_in_executor(
                 None,
                 self._update_task_status,
@@ -555,16 +593,11 @@ class TaskManager:
                     "chapter_id": result.chapter_id,
                     "final_path": str(result.final_path),
                     "gate_only": True,
-                    "warnings": getattr(result, "warnings", []),
+                    "manuscript_sync": sync_status,
+                    "warnings": warnings,
                 },
                 None,
                 config.get_call_log(),
-            )
-            await asyncio.get_running_loop().run_in_executor(
-                None,
-                self._sync_task_chapter_version,
-                chapter_id,
-                str(result.final_path),
             )
         except Exception as exc:
             logger.exception("Gate-only task %s failed", task_id)
@@ -591,6 +624,37 @@ class TaskManager:
             if str(record.payload_json.get("chapter_id") or "") == chapter_id:
                 return self._task_to_dict(record)
         return None
+
+    def _capture_manuscript_revisions(self) -> Dict[str, int]:
+        revisions: Dict[str, int] = {}
+        chapters_root = self.root_dir / "workspace" / "chapters"
+        if not chapters_root.is_dir():
+            return revisions
+        for chapter_dir in chapters_root.glob("chapter_*"):
+            if not chapter_dir.is_dir():
+                continue
+            chapter_id = chapter_dir.name.removeprefix("chapter_")
+            try:
+                document = ensure_manuscript_document(
+                    self.root_dir,
+                    chapter_id,
+                    store=self.store,
+                )
+                revisions[chapter_id] = int(document["revision"])
+            except (KeyError, OSError, ValueError):
+                continue
+        return revisions
+
+    def _capture_manuscript_revision(self, chapter_id: str) -> int:
+        try:
+            document = ensure_manuscript_document(
+                self.root_dir,
+                chapter_id,
+                store=self.store,
+            )
+            return int(document["revision"])
+        except (KeyError, OSError, ValueError):
+            return 0
 
     def is_aborted(self, task_id: str) -> bool:
         return task_id in self._aborted_tasks
@@ -628,11 +692,38 @@ class TaskManager:
         )
         return True
 
-    def _sync_task_chapter_version(self, chapter_id: str, final_path: str) -> None:
+    def _sync_task_chapter_version(
+        self,
+        chapter_id: str,
+        final_path: str,
+        expected_revision: Optional[int] = None,
+    ) -> str:
+        """Sync generated text into the manuscript store.
+
+        Returns:
+            ``"synced"`` on success, ``"conflict"`` when a concurrent manual edit wins.
+        """
+        p = Path(final_path)
+        if not p.exists():
+            raise FileNotFoundError(final_path)
+        sync_status = "synced"
         try:
-            p = Path(final_path)
+            sync_generated_manuscript_document(
+                self.root_dir,
+                chapter_id=chapter_id,
+                final_path=p,
+                expected_revision=expected_revision,
+            )
+        except DocumentConflictError:
+            # SQLite is authoritative; projection already restored by the service.
+            logger.warning(
+                "Manuscript conflict while syncing chapter %s; keeping human edit",
+                chapter_id,
+            )
+            sync_status = "conflict"
+        try:
+            content = p.read_text(encoding="utf-8")
             if p.exists():
-                content = p.read_text(encoding="utf-8")
                 plan_path = p.parent / "plan.json"
                 plan_str = "{}"
                 if plan_path.exists():
@@ -663,7 +754,58 @@ class TaskManager:
                         note="AI 写作自动同步"
                     )
         except Exception as exc:
-            logger.warning("Failed to sync AI chapter content to version DB: %s", exc)
+            logger.warning("Failed to sync AI chapter content to legacy version DB: %s", exc)
+        return sync_status
+
+    def _expected_revision_for_sync(
+        self,
+        chapter_id: str,
+        revisions: Dict[str, int],
+    ) -> int:
+        if chapter_id in revisions:
+            return int(revisions[chapter_id])
+        # Chapter appeared after the pre-run snapshot: only create if no document yet.
+        return 0
+
+    def _sync_generation_results(
+        self,
+        results: List[Any],
+        revisions: Dict[str, int],
+    ) -> List[str]:
+        conflicts: List[str] = []
+        for result in results:
+            chapter_id = str(result.chapter_id)
+            status = self._sync_task_chapter_version(
+                chapter_id,
+                str(result.final_path),
+                self._expected_revision_for_sync(chapter_id, revisions),
+            )
+            if status == "conflict":
+                conflicts.append(chapter_id)
+        return conflicts
+
+    def _sync_generated_chapter_ids(
+        self,
+        chapter_ids: List[str],
+        revisions: Dict[str, int],
+    ) -> List[str]:
+        conflicts: List[str] = []
+        for chapter_id in dict.fromkeys(str(item) for item in chapter_ids if item):
+            final_path = (
+                self.root_dir
+                / "workspace"
+                / "chapters"
+                / f"chapter_{chapter_id}"
+                / "chapter_final.txt"
+            )
+            status = self._sync_task_chapter_version(
+                chapter_id,
+                str(final_path),
+                self._expected_revision_for_sync(chapter_id, revisions),
+            )
+            if status == "conflict":
+                conflicts.append(chapter_id)
+        return conflicts
 
     async def get_task_async(self, task_id: str) -> Optional[Dict[str, Any]]:
         return await asyncio.get_running_loop().run_in_executor(
@@ -853,6 +995,17 @@ class TaskManager:
 
         config = None
         try:
+            task_record = self.task_repository.get_task(task_id)
+            stored_revision = (
+                (task_record.payload_json if task_record else {}).get(
+                    "manuscript_revision"
+                )
+            )
+            expected_revision = (
+                int(stored_revision)
+                if stored_revision is not None
+                else self._capture_manuscript_revision(chapter_id)
+            )
             await self._ensure_llm_ready(dry_run)
             if dry_run:
                 config = PipelineConfig.dry_run(self.root_dir)
@@ -867,6 +1020,16 @@ class TaskManager:
                 loop = asyncio.get_running_loop()
                 result = await loop.run_in_executor(None, orchestrator.run_chapter, chapter_id, goal)
 
+            sync_status = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._sync_task_chapter_version,
+                chapter_id,
+                str(result.final_path),
+                expected_revision,
+            )
+            warnings = list(getattr(result, "warnings", []) or [])
+            if sync_status == "conflict":
+                warnings.append("正文在生成期间被编辑，已保留人工稿，生成结果未覆盖")
             await asyncio.get_running_loop().run_in_executor(
                 None,
                 self._update_task_status,
@@ -876,19 +1039,13 @@ class TaskManager:
                     "chapter_id": result.chapter_id,
                     "final_path": str(result.final_path),
                     "risk_level": result.audit.get("risk_level", ""),
-                    "warnings": getattr(result, "warnings", []),
+                    "manuscript_sync": sync_status,
+                    "warnings": warnings,
                 },
                 None,
                 config.get_call_log()
             )
             
-            # Sync generated content to version DB
-            await asyncio.get_running_loop().run_in_executor(
-                None,
-                self._sync_task_chapter_version,
-                chapter_id,
-                str(result.final_path)
-            )
         except asyncio.CancelledError:
             logger.info("Task %s cancelled", task_id)
             await asyncio.get_running_loop().run_in_executor(
@@ -1046,6 +1203,10 @@ class TaskManager:
             None, self._update_task_status, task_id, "running"
         )
         try:
+            revisions = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._capture_manuscript_revisions,
+            )
             await self._ensure_llm_ready(dry_run)
             config = PipelineConfig.dry_run(self.root_dir) if dry_run else PipelineConfig.from_config(self.root_dir)
             orchestrator = NovelOrchestrator(config)
@@ -1057,6 +1218,12 @@ class TaskManager:
                 resume=resume,
                 max_chapters=cap,
             )
+            conflicts = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._sync_generation_results,
+                results,
+                revisions,
+            )
             await asyncio.get_running_loop().run_in_executor(
                 None,
                 self._update_task_status,
@@ -1064,6 +1231,7 @@ class TaskManager:
                 "completed",
                 {
                     "chapters_completed": len(results),
+                    "manuscript_conflicts": conflicts,
                     "chapters": [
                         {"chapter_id": r.chapter_id, "warnings": getattr(r, "warnings", [])}
                         for r in results
@@ -1115,6 +1283,10 @@ class TaskManager:
 
         config = None
         try:
+            revisions = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._capture_manuscript_revisions,
+            )
             await self._ensure_llm_ready(dry_run)
             if dry_run:
                 config = PipelineConfig.dry_run(self.root_dir)
@@ -1141,6 +1313,12 @@ class TaskManager:
                     special_requirements
                 )
 
+            conflicts = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._sync_generation_results,
+                results,
+                revisions,
+            )
             await asyncio.get_running_loop().run_in_executor(
                 None,
                 self._update_task_status,
@@ -1149,6 +1327,7 @@ class TaskManager:
                 {
                     "chapters_completed": len(results),
                     "chapters_requested": target_chapters,
+                    "manuscript_conflicts": conflicts,
                     "chapters": [
                         {
                             "chapter_id": r.chapter_id,

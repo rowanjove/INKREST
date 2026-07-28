@@ -9,6 +9,7 @@ from web.deps import (
     RequireProjectDep,
     coerce_project_session,
     get_project_session,
+    task_manager_for,
     touch_project_activity,
 )
 
@@ -565,7 +566,7 @@ async def run_novel_arc(req: NovelArcRunRequest, session: ProjectSession = Requi
         raise HTTPException(400, "未找到作品大纲，请先生成大纲。")
     if not req.arc_id and not req.arc_ids and not req.start_arc_id:
         raise HTTPException(400, "请指定 arc_id、arc_ids 或 start_arc_id。")
-    task_id = await ws_server._get_task_manager().submit_arc_run(
+    task_id = await task_manager_for(session).submit_arc_run(
         arc_id=req.arc_id,
         arc_ids=req.arc_ids,
         start_arc_id=req.start_arc_id,
@@ -613,7 +614,7 @@ async def continue_novel(req: NovelContinueRequest, session: ProjectSession = Re
         raise HTTPException(400, detail)
 
     try:
-        task_id = await ws_server._get_task_manager().submit_novel_continue(
+        task_id = await task_manager_for(session).submit_novel_continue(
         resume=req.resume,
         max_chapters=req.max_chapters,
         dry_run=req.dry_run,
@@ -658,7 +659,7 @@ async def run_novel(req: NovelRunRequest, session: ProjectSession = RequireProje
     else:
         raise HTTPException(400, "未找到作品大纲，请先生成大纲。")
 
-    task_id = await ws_server._get_task_manager().submit_novel(
+    task_id = await task_manager_for(session).submit_novel(
         theme=req.theme,
         genre=req.genre,
         target_chapters=req.target_chapters,

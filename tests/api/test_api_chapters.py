@@ -434,6 +434,10 @@ class ApiChaptersTests(ApiTestBase):
             
             updated_text = (chapter_dir / "chapter_final.txt").read_text(encoding="utf-8")
             self.assertEqual(updated_text, "这是手动编辑保存后的全新章节正文。")
+            authoritative = SQLiteStateStore(self.tmpdir).get_manuscript_document("001")
+            self.assertEqual(authoritative["plain_text"], updated_text)
+            self.assertEqual(authoritative["title"], "修改后的全新标题")
+            self.assertEqual(authoritative["revision"], res_json["revision"])
             
             # Verify wordcount was recalculated
             wordcount_report_data = json.loads((chapter_dir / "reports" / "wordcount.json").read_text(encoding="utf-8"))

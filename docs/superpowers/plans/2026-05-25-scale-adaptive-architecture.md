@@ -690,7 +690,7 @@ Expected: matches in packaged backend/frontend resources.
 Run:
 
 ```powershell
-$exe = 'F:\AI\vibecoding\小说生成agent\web\frontend\dist-desktop\win-unpacked\NovelAgent.exe'
+$exe = 'D:\path\to\novel-agent\web\frontend\dist-desktop\win-unpacked\NovelAgent.exe'
 Start-Process -FilePath $exe -WindowStyle Hidden
 Start-Sleep -Seconds 8
 Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'NovelAgent|novel-agent-backend' } | Select-Object ProcessId,Name,ExecutablePath

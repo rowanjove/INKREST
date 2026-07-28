@@ -27,6 +27,8 @@ from web.models import (
     SaveChapterRequest,
 )
 from novel_agent.scripts.count_chars import count_chinese_chars, wordcount_report
+from novel_agent.services.manuscript_workspace import apply_plain_text_to_manuscript
+from novel_agent.state.manuscript_repository import DocumentConflictError
 from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
 
 router = APIRouter()
@@ -147,26 +149,29 @@ def rollback_chapter_snapshot(
         snapshot_data = json.loads(snapshot_file.read_text(encoding="utf-8"))
     except Exception:
          raise HTTPException(500, "Failed to read snapshot file")
-         
-    final_txt_path = chapter_dir / "chapter_final.txt"
-    final_txt_path.write_text(snapshot_data.get("final_text", ""), encoding="utf-8")
-    
-    plan_path = chapter_dir / "plan.json"
-    plan = {}
-    if plan_path.exists():
-        plan = ws_server._read_json(plan_path)
-    plan["chapter_title"] = snapshot_data.get("title", plan.get("chapter_title", f"第 {safe_id} 章"))
-    plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
-    
-    target_chars = plan.get("target_chars") if isinstance(plan.get("target_chars"), list) else []
-    target_min = int(target_chars[0]) if len(target_chars) > 0 and str(target_chars[0]).isdigit() else 0
-    target_max = int(target_chars[1]) if len(target_chars) > 1 and str(target_chars[1]).isdigit() else 0
-    
-    from novel_agent.scripts.count_chars import wordcount_report
-    new_report = wordcount_report(snapshot_data.get("final_text", ""), target_min, target_max)
-    reports_dir = chapter_dir / "reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    (reports_dir / "wordcount.json").write_text(json.dumps(new_report, ensure_ascii=False, indent=2), encoding="utf-8")
-    
-    return {"status": "rolled_back", "title": plan["chapter_title"]}
+
+    title = str(snapshot_data.get("title") or f"第 {safe_id} 章")
+    try:
+        document = apply_plain_text_to_manuscript(
+            session.root_dir,
+            chapter_id=safe_id,
+            plain_text=str(snapshot_data.get("final_text") or ""),
+            title=title,
+            source="restore",
+        )
+    except DocumentConflictError as exc:
+        raise HTTPException(
+            409,
+            {
+                "code": "DOCUMENT_CONFLICT",
+                "message": "正文已在其他窗口更新，请刷新后重试。",
+                "current": exc.current,
+            },
+        ) from exc
+
+    return {
+        "status": "rolled_back",
+        "title": str(document.get("title") or title),
+        "revision": int(document["revision"]),
+    }
 

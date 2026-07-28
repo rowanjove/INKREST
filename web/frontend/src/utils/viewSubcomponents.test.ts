@@ -130,6 +130,15 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('bubble-header-bar')
   })
 
+  it('pet entry waits for initial routing and never touches a missing body', () => {
+    const main = read('main.ts')
+    const index = read('../index.html')
+    expect(main).toContain('await router.isReady()')
+    expect(main.indexOf('await router.isReady()')).toBeLessThan(main.indexOf("app.mount('#app')"))
+    expect(index).toContain("document.addEventListener('DOMContentLoaded'")
+    expect(index).not.toContain("document.body.style.background = 'transparent';\n        }")
+  })
+
   it('PetBubbleStatusTab keeps abort and maintenance navigation', () => {
     const source = read('components/pet/PetBubbleStatusTab.vue')
     expect(source).toContain('status-detail-desc')

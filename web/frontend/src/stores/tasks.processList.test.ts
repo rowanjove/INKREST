@@ -58,4 +58,30 @@ describe('tasks processTasksList', () => {
     expect(store.currentChapterId).toBe('001')
     expect(store.taskList[0].resumable_from).toBe('writer')
   })
+
+  it('logs manuscript conflicts once when a succeeded task kept the human edit', async () => {
+    const store = useTasksStore()
+    listTasksMock.mockResolvedValue({
+      data: [
+        {
+          task_id: 'task-conflict-1',
+          chapter_id: '002',
+          status: 'succeeded',
+          result: {
+            manuscript_sync: 'conflict',
+            warnings: ['正文在生成期间被编辑，已保留人工稿，生成结果未覆盖'],
+          },
+        },
+      ],
+    } as any)
+
+    await store.refreshTaskList()
+    await store.refreshTaskList()
+
+    const conflictLogs = store.logs.filter((entry) =>
+      entry.message.includes('已保留人工稿'),
+    )
+    expect(conflictLogs).toHaveLength(1)
+    expect(store.lastTaskWarning?.task_id).toBe('task-conflict-1')
+  })
 })

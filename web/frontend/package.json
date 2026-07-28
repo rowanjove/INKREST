@@ -3,7 +3,7 @@
   "description": "本地优先的智能小说创作、生产与发布工作台",
   "author": "Inkrest Contributors",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "commonjs",
   "scripts": {
     "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:main\"",

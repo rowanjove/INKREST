@@ -586,7 +586,7 @@ npx electron-builder --win dir
 Then launch:
 
 ```powershell
-F:\AI\vibecoding\小说生成agent\web\frontend\dist-desktop\win-unpacked\NovelAgent.exe
+D:\path\to\novel-agent\web\frontend\dist-desktop\win-unpacked\NovelAgent.exe
 ```
 
 Manual smoke:
@@ -596,4 +596,3 @@ Manual smoke:
 - verify new reports are generated after running a chapter
 - verify settings and new-work creation still open
 - verify packaged `/api/health` returns 200
-

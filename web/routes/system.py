@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends
 import web.context as ctx
 import web.helpers as ws_helpers
 from web.context import get_root_dir
-from web.deps import ProjectSession, get_project_session
+from web.deps import ProjectSession, get_project_session, task_manager_for
 
 router = APIRouter(tags=["system"])
 
@@ -53,9 +53,7 @@ def system_readiness(session: ProjectSession = Depends(get_project_session)) -> 
             "pending": report.get("pending") or [],
         }
         try:
-            from web.context import _get_task_manager
-
-            tm = _get_task_manager()
+            tm = task_manager_for(session)
             checks["tasks"] = {
                 "ok": True,
                 "label": "后台任务",
@@ -71,10 +69,18 @@ def system_readiness(session: ProjectSession = Depends(get_project_session)) -> 
         }
 
     try:
-        from web.context import get_plugin_manager
+        from novel_agent.plugins import PluginManager
 
-        pm = get_plugin_manager()
-        catalog = pm.list_plugin_catalog()
+        plugin_root = root if root and root.is_dir() else ctx.BASE_DIR
+        pm = PluginManager(
+            plugin_root,
+            allow_web_extensions=plugin_root == ctx.BASE_DIR,
+        )
+        pm.initialize()
+        try:
+            catalog = pm.list_plugin_catalog()
+        finally:
+            pm.shutdown()
         enabled = sum(1 for p in catalog if p.get("enabled"))
         untrusted_enabled = [
             p["name"]

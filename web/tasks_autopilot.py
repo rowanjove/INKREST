@@ -143,6 +143,10 @@ async def run_novel_autopilot_helper(
         None, task_manager._update_task_status, task_id, "running"
     )
     try:
+        revisions = await asyncio.get_running_loop().run_in_executor(
+            None,
+            task_manager._capture_manuscript_revisions,
+        )
         from novel_agent.services.novel_autopilot import run_novel_autopilot
 
         await task_manager._ensure_llm_ready(dry_run)
@@ -163,6 +167,12 @@ async def run_novel_autopilot_helper(
             full_book=full_book,
             max_rounds=max_rounds,
         )
+        conflicts = await asyncio.get_running_loop().run_in_executor(
+            None,
+            task_manager._sync_generated_chapter_ids,
+            outcome.chapter_ids,
+            revisions,
+        )
         if outcome.paused:
             status = "paused"
             payload = {
@@ -173,6 +183,7 @@ async def run_novel_autopilot_helper(
                 "paused": True,
                 "circuit_breaker": True,
                 "round_summaries": outcome.round_summaries,
+                "manuscript_conflicts": conflicts,
                 "message": "全书自动续跑因批量熔断暂停，请处理章节后于生产中心续跑。",
             }
         else:
@@ -184,6 +195,7 @@ async def run_novel_autopilot_helper(
                 "stopped_reason": outcome.stopped_reason,
                 "paused": False,
                 "round_summaries": outcome.round_summaries,
+                "manuscript_conflicts": conflicts,
             }
         await asyncio.get_running_loop().run_in_executor(
             None,
@@ -230,12 +242,22 @@ async def run_novel_continue_helper(
         None, task_manager._update_task_status, task_id, "running"
     )
     try:
+        revisions = await asyncio.get_running_loop().run_in_executor(
+            None,
+            task_manager._capture_manuscript_revisions,
+        )
         await task_manager._ensure_llm_ready(dry_run)
         config = PipelineConfig.dry_run(task_manager.root_dir) if dry_run else PipelineConfig.from_config(task_manager.root_dir)
         orchestrator = NovelOrchestrator(config)
         cap = int(max_chapters) if max_chapters and max_chapters > 0 else None
         results = await orchestrator.arun_novel_continue(
             resume=resume, max_chapters=cap, full_book=full_book
+        )
+        conflicts = await asyncio.get_running_loop().run_in_executor(
+            None,
+            task_manager._sync_generation_results,
+            results,
+            revisions,
         )
         await asyncio.get_running_loop().run_in_executor(
             None,
@@ -245,6 +267,7 @@ async def run_novel_continue_helper(
             {
                 "chapters_completed": len(results),
                 "full_book": full_book,
+                "manuscript_conflicts": conflicts,
             },
         )
     except Exception as exc:

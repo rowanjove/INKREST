@@ -4,9 +4,24 @@ import json
 from pathlib import Path
 
 from novel_agent.domain.tasks import TaskStatus, TaskType
-from novel_agent.services.production_workspace import build_production_workspace
+from novel_agent.services.production_workspace import (
+    _manuscript_conflict_warnings,
+    build_production_workspace,
+)
 from novel_agent.services.quality_review import build_quality_review_queue
 from novel_agent.state.sqlite_store import SQLiteStateStore
+
+
+def test_manuscript_conflict_warnings_from_task_result():
+    assert _manuscript_conflict_warnings(
+        {
+            "manuscript_sync": "conflict",
+            "warnings": ["正文在生成期间被编辑，已保留人工稿，生成结果未覆盖"],
+        }
+    ) == ["正文在生成期间被编辑，已保留人工稿，生成结果未覆盖"]
+    assert _manuscript_conflict_warnings(
+        {"manuscript_conflicts": ["001", "003"]}
+    ) == ["部分章节未写入正文（人工稿优先）：001、003"]
 
 
 def _seed_project(root: Path) -> None:

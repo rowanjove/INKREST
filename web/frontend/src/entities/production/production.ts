@@ -31,6 +31,8 @@ export interface ProductionTask {
   status_reason: string | null
   failure_code: string | null
   failure_message: string | null
+  /** Soft notices on successful/paused runs (e.g. manuscript conflicts). */
+  warnings: string[]
   recovery_action: 'cancel' | 'resume_audit' | 'open_writer' | 'none'
   heartbeat_at: string | null
   lease_expires_at: string | null

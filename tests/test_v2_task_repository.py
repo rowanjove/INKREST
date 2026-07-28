@@ -175,6 +175,7 @@ def test_expired_claims_are_requeued_but_live_leases_are_untouched(tmp_path):
             project_id="book-1",
             task_type=TaskType.CHAPTER,
             payload={"chapter_id": task_id},
+            max_attempts=2,
         )
         repository.claim_task(task_id, lease_seconds=120)
 
@@ -194,6 +195,34 @@ def test_expired_claims_are_requeued_but_live_leases_are_untouched(tmp_path):
     assert repository.get_task("expired").status is TaskStatus.PENDING
     assert repository.get_task("expired").status_reason == "lease_expired"
     assert repository.get_task("live").status is TaskStatus.CLAIMED
+
+
+def test_expired_lease_cannot_exceed_attempt_budget(tmp_path):
+    store = _new_store(tmp_path)
+    repository = store.task_repository
+    repository.create_task(
+        task_id="bounded",
+        project_id="book-1",
+        task_type=TaskType.CHAPTER,
+        payload={"chapter_id": "001"},
+        max_attempts=2,
+    )
+
+    for expected_attempt in (1, 2):
+        claimed = repository.claim_task("bounded", lease_seconds=1)
+        assert claimed is not None
+        assert claimed.attempt == expected_attempt
+        repository.start_task("bounded", claimed.claim_token or "")
+        repository.recover_expired_leases(
+            now=datetime.now(UTC) + timedelta(minutes=1),
+        )
+
+    exhausted = repository.get_task("bounded")
+    assert exhausted is not None
+    assert exhausted.status is TaskStatus.FAILED
+    assert exhausted.attempt == exhausted.max_attempts == 2
+    assert exhausted.status_reason == "lease_expired_attempts_exhausted"
+    assert repository.claim_task("bounded") is None
 
 
 def test_task_json_fields_round_trip_as_objects(tmp_path):

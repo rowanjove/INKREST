@@ -12,7 +12,7 @@ from pydantic import BaseModel
 import logging
 
 import web.context as ws_server
-from web.deps import ProjectSession, RequireProjectDep, get_project_session
+from web.deps import ProjectSession, RequireProjectDep, get_project_session, task_manager_for
 from web.factory_summaries import (
     build_factory_dashboard,
     summarize_project_book,
@@ -55,24 +55,38 @@ def _write_project_meta(root: Path, meta: Dict[str, Any]) -> None:
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _running_task_count() -> int:
+def _running_task_count(session: ProjectSession) -> int:
+    """Count live tasks for a session root without spawning managers for idle books."""
     try:
-        tasks = ws_server._get_task_manager().list_tasks()
+        root = Path(session.root_dir).resolve()
+        active_root = Path(ws_server.get_root_dir()).resolve()
+        if root == active_root:
+            tasks = task_manager_for(session).list_tasks()
+            return len(
+                [
+                    task
+                    for task in tasks
+                    if task.get("status") in ("pending", "running", "claimed")
+                ]
+            )
+        return ws_server._task_registry.count_running_tasks(root)
     except Exception:
         return 0
-    return len([task for task in tasks if task.get("status") in ("pending", "running")])
 
 
 @router.get("/api/factory/dashboard")
 def get_factory_dashboard(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
-    return build_factory_dashboard(session.root_dir, session.project_id, _running_task_count())
+    return build_factory_dashboard(
+        session.root_dir,
+        session.project_id,
+        _running_task_count(session),
+    )
 
 
 @router.get("/api/factory/studio")
 def get_factory_studio(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
     registry = ws_server.project_manager._read_registry()
     active_id = session.project_id
-    active_running = _running_task_count()
     books: List[Dict[str, Any]] = []
     for pid, info in registry.get("projects", {}).items():
         project_dir = ws_server.BASE_DIR / "projects" / pid
@@ -86,7 +100,9 @@ def get_factory_studio(session: ProjectSession = Depends(get_project_session)) -
             pending_alert_count = 0
         enriched = dict(info)
         enriched["pending_alert_count"] = pending_alert_count
-        running_tasks = active_running if pid == active_id else 0
+        running_tasks = _running_task_count(
+            ProjectSession(project_id=pid, root_dir=project_dir)
+        )
         books.append(
             summarize_project_book(
                 pid,

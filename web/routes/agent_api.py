@@ -179,13 +179,14 @@ def agent_snapshot(
 def agent_logs_tail(
     lines: int = Query(60, ge=1, le=500),
     project_id: Optional[str] = Query(None),
+    session: ProjectSession = Depends(get_project_session),
 ) -> Dict[str, Any]:
     try:
         if project_id:
             ws_server._validate_id(project_id, "project_id")
             root = ws_server.BASE_DIR / "projects" / project_id
         else:
-            root = ws_server.get_root_dir()
+            root = session.root_dir
     except Exception as exc:
         raise HTTPException(400, str(exc)) from exc
     if not root.is_dir():

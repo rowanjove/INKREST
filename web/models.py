@@ -293,6 +293,7 @@ class ModelTestRequest(BaseModel):
 class SaveChapterRequest(BaseModel):
     title: Optional[str] = None
     final_text: str
+    expected_revision: Optional[int] = Field(default=None, ge=1)
 
 
 class AnalyzeIntroRequest(BaseModel):

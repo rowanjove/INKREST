@@ -497,6 +497,56 @@ class ApiProjectsTests(ApiTestBase):
         finally:
             web_server.BASE_DIR = original_base
 
+    def test_zip_export_excludes_local_secrets_and_logs(self):
+        import io
+        import zipfile
+
+        original_base = web_server.BASE_DIR
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            pid = "secret_export"
+            project_dir = self.tmpdir / "projects" / pid
+            (project_dir / "workspace").mkdir(parents=True)
+            (project_dir / "workspace" / "notes.txt").write_text("safe", encoding="utf-8")
+            (project_dir / "config").mkdir()
+            (project_dir / "config" / "pipeline.yaml").write_text(
+                "api_key: leaked",
+                encoding="utf-8",
+            )
+            (project_dir / "config" / "models.json").write_text(
+                '{"api_key":"leaked"}',
+                encoding="utf-8",
+            )
+            (project_dir / ".env.local").write_text("TOKEN=leaked", encoding="utf-8")
+            (project_dir / "logs").mkdir()
+            (project_dir / "logs" / "novel_agent.log").write_text(
+                "private",
+                encoding="utf-8",
+            )
+            (self.tmpdir / "projects.json").write_text(
+                json.dumps(
+                    {
+                        "projects": {pid: {"name": "safe", "description": ""}},
+                        "active_id": pid,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            web_server.project_manager = web_server.ProjectManager(self.tmpdir)
+
+            response = TestClient(web_app).get(f"/api/projects/{pid}/export-zip")
+
+            self.assertEqual(response.status_code, 200)
+            with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+                names = set(archive.namelist())
+                self.assertIn("workspace/notes.txt", names)
+                self.assertNotIn("config/pipeline.yaml", names)
+                self.assertNotIn("config/models.json", names)
+                self.assertNotIn(".env.local", names)
+                self.assertNotIn("logs/novel_agent.log", names)
+        finally:
+            web_server.BASE_DIR = original_base
+
     def test_zip_export_excludes_symlinks_to_files_outside_project(self):
         import io
         import zipfile

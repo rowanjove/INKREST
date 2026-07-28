@@ -1,10 +1,11 @@
 import json
 import re
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 import web.context as ws_server
+from web.deps import ProjectSession, get_project_session
 from novel_agent.persona.shanshan import (
     SHANSHAN_CHAT_PERSONA,
     SHANSHAN_REPLY_LLM_ERROR,
@@ -62,10 +63,13 @@ HANDBOOK = """
 # ---- API Endpoints ----
 
 @router.post("/api/assistant/chat", response_model=AssistantChatResponse)
-async def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
+async def assistant_chat(
+    req: AssistantChatRequest,
+    session: ProjectSession = Depends(get_project_session),
+) -> AssistantChatResponse:
     """AI Assistant Chat Endpoint for pet assistant."""
     import web.routes.assistant as assistant_module
-    llm = assistant_module._get_assistant_llm()
+    llm = assistant_module._get_assistant_llm(session.root_dir)
     
     if not llm:
         return AssistantChatResponse(
@@ -76,10 +80,9 @@ async def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
             ]
         )
         
-    from web.deps import coerce_project_session
     from web.routes.assistant import build_assistant_context
 
-    context_data = await build_assistant_context(coerce_project_session(None))
+    context_data = await build_assistant_context(session)
     
     active_proj = context_data.get("active_project")
     proj_name = active_proj.get("name") if active_proj else "未选择项目"

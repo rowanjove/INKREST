@@ -26,8 +26,9 @@ from web.models import (
     NovelChatRequest,
     SaveChapterRequest,
 )
-from novel_agent.scripts.count_chars import count_chinese_chars, wordcount_report
-from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
+from novel_agent.services.manuscript_workspace import apply_plain_text_to_manuscript
+from novel_agent.state.manuscript_repository import DocumentConflictError
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, task_manager_for
 from web.routes.chapters.snapshots import create_chapter_snapshot
 
 router = APIRouter()
@@ -51,7 +52,7 @@ class CompareVersionsRequest(BaseModel):
 def get_versions(chapter_id: str, session: ProjectSession = RequireProjectDep) -> List[Dict[str, Any]]:
     session = coerce_project_session(session)
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-    store = ws_server._get_task_manager().store
+    store = task_manager_for(session).store
     versions = store.list_chapter_versions(safe_id)
     
     chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
@@ -114,7 +115,7 @@ def create_version(
     session = coerce_project_session(session)
     import json
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-    store = ws_server._get_task_manager().store
+    store = task_manager_for(session).store
     
     content = ""
     plan_str = "{}"
@@ -154,7 +155,7 @@ def update_version(
 ) -> Dict[str, Any]:
     session = coerce_project_session(session)
     import json
-    store = ws_server._get_task_manager().store
+    store = task_manager_for(session).store
     version = store.get_chapter_version(version_id)
     if not version:
         raise HTTPException(404, f"Version {version_id} not found")
@@ -162,7 +163,26 @@ def update_version(
     name = req.version_name if req.version_name is not None else version["version_name"]
     note = req.note if req.note is not None else version["note"]
     content = req.content if req.content is not None else version["content"]
-    
+
+    if version["is_active"] == 1 and req.content is not None:
+        chapter_id = str(version["chapter_id"])
+        try:
+            apply_plain_text_to_manuscript(
+                session.root_dir,
+                chapter_id=chapter_id,
+                plain_text=content,
+                source="version",
+            )
+        except DocumentConflictError as exc:
+            raise HTTPException(
+                409,
+                {
+                    "code": "DOCUMENT_CONFLICT",
+                    "message": "正文已在其他窗口更新，请刷新后重试。",
+                    "current": exc.current,
+                },
+            ) from exc
+
     store.save_chapter_version(
         chapter_id=version["chapter_id"],
         version_name=name,
@@ -172,28 +192,13 @@ def update_version(
         note=note,
         version_id=version_id
     )
-    
-    if version["is_active"] == 1 and req.content is not None:
-        chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{version['chapter_id']}"
-        final_txt_path = chapter_dir / "chapter_final.txt"
-        final_txt_path.write_text(content, encoding="utf-8")
-        
-        plan_path = chapter_dir / "plan.json"
-        plan = ws_server._read_json(plan_path) if plan_path.exists() else {}
-        target_chars = plan.get("target_chars") if isinstance(plan.get("target_chars"), list) else []
-        target_min = int(target_chars[0]) if len(target_chars) > 0 and str(target_chars[0]).isdigit() else 0
-        target_max = int(target_chars[1]) if len(target_chars) > 1 and str(target_chars[1]).isdigit() else 0
-        new_report = wordcount_report(content, target_min, target_max)
-        reports_dir = chapter_dir / "reports"
-        reports_dir.mkdir(parents=True, exist_ok=True)
-        (reports_dir / "wordcount.json").write_text(json.dumps(new_report, ensure_ascii=False, indent=2), encoding="utf-8")
         
     return {"status": "updated"}
 
 @router.delete("/api/chapters/versions/{version_id}")
 def delete_version(version_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
-    store = ws_server._get_task_manager().store
+    store = task_manager_for(session).store
     version = store.get_chapter_version(version_id)
     if not version:
         raise HTTPException(404, f"Version {version_id} not found")
@@ -213,7 +218,7 @@ def activate_version(
     session = coerce_project_session(session)
     import json
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-    store = ws_server._get_task_manager().store
+    store = task_manager_for(session).store
     
     version = store.get_chapter_version(version_id)
     if not version:
@@ -235,31 +240,39 @@ def activate_version(
         )
         
     store.set_active_chapter_version(safe_id, version_id)
-    
+
     chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
-    final_txt_path = chapter_dir / "chapter_final.txt"
-    final_txt_path.write_text(version["content"], encoding="utf-8")
-    
+    title = f"第 {safe_id} 章"
     if version.get("plan"):
         try:
             v_plan = json.loads(version["plan"])
             if isinstance(v_plan, dict):
+                title = str(v_plan.get("chapter_title") or title)
                 plan_path = chapter_dir / "plan.json"
                 plan_path.write_text(json.dumps(v_plan, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
             pass
-            
-    plan_path = chapter_dir / "plan.json"
-    plan = ws_server._read_json(plan_path) if plan_path.exists() else {}
-    target_chars = plan.get("target_chars") if isinstance(plan.get("target_chars"), list) else []
-    target_min = int(target_chars[0]) if len(target_chars) > 0 and str(target_chars[0]).isdigit() else 0
-    target_max = int(target_chars[1]) if len(target_chars) > 1 and str(target_chars[1]).isdigit() else 0
-    new_report = wordcount_report(version["content"], target_min, target_max)
-    reports_dir = chapter_dir / "reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    (reports_dir / "wordcount.json").write_text(json.dumps(new_report, ensure_ascii=False, indent=2), encoding="utf-8")
-    
-    return {"status": "activated", "title": plan.get("chapter_title", f"第 {safe_id} 章")}
+
+    try:
+        document = apply_plain_text_to_manuscript(
+            session.root_dir,
+            chapter_id=safe_id,
+            plain_text=version["content"],
+            title=title,
+            source="version",
+        )
+        title = str(document.get("title") or title)
+    except DocumentConflictError as exc:
+        raise HTTPException(
+            409,
+            {
+                "code": "DOCUMENT_CONFLICT",
+                "message": "正文已在其他窗口更新，请刷新后重试。",
+                "current": exc.current,
+            },
+        ) from exc
+
+    return {"status": "activated", "title": title, "revision": int(document["revision"])}
 
 @router.post("/api/chapters/{chapter_id}/versions/compare")
 def compare_versions(
@@ -269,7 +282,7 @@ def compare_versions(
 ) -> List[Dict[str, str]]:
     session = coerce_project_session(session)
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-    store = ws_server._get_task_manager().store
+    store = task_manager_for(session).store
     v_a = store.get_chapter_version(req.version_id_a)
     v_b = store.get_chapter_version(req.version_id_b)
     if not v_a or not v_b:

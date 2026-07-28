@@ -1,12 +1,20 @@
 """Lightweight assistant context endpoints for the desktop pet."""
 
 import json
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 import web.context as ws_server
-from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, current_project_info, get_project_session
+from web.deps import (
+    ProjectSession,
+    RequireProjectDep,
+    coerce_project_session,
+    current_project_info,
+    get_project_session,
+    task_manager_for,
+)
 
 router = APIRouter()
 
@@ -49,14 +57,18 @@ def _active_project_summary() -> Optional[Dict[str, str]]:
         return None
 
 
-def _get_chapter_goal_fallback(chapter_id: str) -> Optional[str]:
+def _get_chapter_goal_fallback(
+    chapter_id: str,
+    root_dir: Optional[Path] = None,
+) -> Optional[str]:
     """Retrieve the chapter goal using multiple fallback sources to avoid missing data."""
     if not chapter_id:
         return None
     # Fallback 1: SQLite state store
     try:
         from novel_agent.state.sqlite_store import SQLiteStateStore
-        store = SQLiteStateStore(ws_server.get_root_dir())
+        root = Path(root_dir or ws_server.get_root_dir())
+        store = SQLiteStateStore(root)
         for ch in store.get_chapters():
             if str(ch.get("chapter_id")) == str(chapter_id):
                 goal = ch.get("goal") or ch.get("chapter_goal")
@@ -67,7 +79,7 @@ def _get_chapter_goal_fallback(chapter_id: str) -> Optional[str]:
 
     # Fallback 2: outline.json
     try:
-        outline = ws_server.get_outline()
+        outline = ws_server.get_outline(root_dir)
         if outline:
             chapters = outline.get("chapters") or []
             for ch in chapters:
@@ -81,7 +93,8 @@ def _get_chapter_goal_fallback(chapter_id: str) -> Optional[str]:
     # Fallback 3: plan.json
     try:
         safe_id = ws_server._validate_id(chapter_id, "chapter_id")
-        chapter_dir = ws_server.get_root_dir() / "workspace" / "chapters" / f"chapter_{safe_id}"
+        root = Path(root_dir or ws_server.get_root_dir())
+        chapter_dir = root / "workspace" / "chapters" / f"chapter_{safe_id}"
         if chapter_dir.exists():
             plan = ws_server._read_json(chapter_dir / "plan.json")
             goal = (
@@ -98,11 +111,11 @@ def _get_chapter_goal_fallback(chapter_id: str) -> Optional[str]:
     return f"重新生成第 {chapter_id} 章内容"
 
 
-def _get_assistant_llm() -> Any:
+def _get_assistant_llm(root_dir: Optional[Path] = None) -> Any:
     """Resolve and create LLM client for assistant."""
     try:
         from novel_agent.pipeline import load_pipeline_settings
-        root = ws_server.get_root_dir()
+        root = Path(root_dir or ws_server.get_root_dir())
         current = load_pipeline_settings(root)
         
         llm_config = current.get("llm", {}).get("assistant")
@@ -182,7 +195,7 @@ async def build_assistant_context(session: ProjectSession) -> Dict[str, Any]:
     session = coerce_project_session(session)
     tasks: List[Dict[str, Any]] = []
     try:
-        tasks = await ws_server._get_task_manager().list_tasks_async()
+        tasks = await task_manager_for(session).list_tasks_async()
     except Exception:
         tasks = []
 
@@ -349,7 +362,11 @@ async def build_assistant_context(session: ProjectSession) -> Dict[str, Any]:
             from web.factory_summaries import build_factory_dashboard
             from web.routes.factory import _running_task_count
 
-            factory = build_factory_dashboard(root, session.project_id, _running_task_count())
+            factory = build_factory_dashboard(
+                root,
+                session.project_id,
+                _running_task_count(session),
+            )
         except Exception:
             factory = {}
 
@@ -497,7 +514,7 @@ async def get_assistant_diagnose(
             
         # Check Tasks Status
         try:
-            tasks = await ws_server._get_task_manager().list_tasks_async()
+            tasks = await task_manager_for(session).list_tasks_async()
             seen_chapters = set()
             unresolved_failed = []
             for t in tasks:
@@ -515,7 +532,10 @@ async def get_assistant_diagnose(
                 latest = failed_tasks[0]
                 ch_id = latest.get("chapter_id")
                 if ch_id:
-                    goal = latest.get("goal") or _get_chapter_goal_fallback(ch_id)
+                    goal = latest.get("goal") or _get_chapter_goal_fallback(
+                        ch_id,
+                        session.root_dir,
+                    )
                     gate_line = ""
                     try:
                         from novel_agent.services.assistant_snapshot import summarize_unified_gate
@@ -572,7 +592,7 @@ async def execute_assistant_fix(req: FixRequest, session: ProjectSession = Requi
         try:
             from novel_agent.agents.base import OpenAILLM
 
-            client = _get_assistant_llm()
+            client = _get_assistant_llm(session.root_dir)
             if not client:
                 return {
                     "success": False,
@@ -595,7 +615,7 @@ async def execute_assistant_fix(req: FixRequest, session: ProjectSession = Requi
         chapter_id = payload.get("chapter_id")
         goal = payload.get("goal")
         if not goal and chapter_id:
-            goal = _get_chapter_goal_fallback(chapter_id)
+            goal = _get_chapter_goal_fallback(chapter_id, session.root_dir)
         if not chapter_id or not goal:
             raise HTTPException(400, "Missing chapter_id or goal in payload")
             
@@ -610,7 +630,7 @@ async def execute_assistant_fix(req: FixRequest, session: ProjectSession = Requi
                 except OSError as e:
                     ws_server.logger.warning("Failed to delete checkpoint file %s: %s", checkpoint_path, e)
                     
-            task_id = await ws_server._get_task_manager().submit_chapter(
+            task_id = await task_manager_for(session).submit_chapter(
                 chapter_id=safe_id,
                 goal=goal,
                 dry_run=False,
@@ -630,7 +650,7 @@ async def execute_assistant_fix(req: FixRequest, session: ProjectSession = Requi
         try:
             from web.routes.chapters.tasks import rewrite_chapter
 
-            task = await rewrite_chapter(str(chapter_id))
+            task = await rewrite_chapter(str(chapter_id), session)
             return {
                 "success": True,
                 "task_id": task.task_id,
@@ -648,7 +668,7 @@ async def execute_assistant_fix(req: FixRequest, session: ProjectSession = Requi
         try:
             from web.routes.chapters.tasks import rerun_chapter_gate
 
-            task = await rerun_chapter_gate(str(chapter_id))
+            task = await rerun_chapter_gate(str(chapter_id), session)
             return {
                 "success": True,
                 "task_id": task.task_id,
