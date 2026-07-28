@@ -1,0 +1,12 @@
+{
+  "genre": "玄幻",
+  "channel": "male_lead",
+  "target_chapters": 80,
+  "scale": "medium",
+  "scale_label": "中篇",
+  "platform": "qidian",
+  "factory_mode": "newbie_auto",
+  "author_label": "示例作者",
+  "is_demo": true,
+  "demo_id": "demo-factory-novel"
+}

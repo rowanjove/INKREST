@@ -1,0 +1,17 @@
+{
+  "id": "jingying",
+  "name": "经营",
+  "channels": [
+    "general",
+    "male",
+    "female"
+  ],
+  "tags": [
+    "经营",
+    "种田",
+    "领地",
+    "店铺",
+    "家族"
+  ],
+  "description": "经营领地/店铺/家族/宗门，从无到有的成就感"
+}

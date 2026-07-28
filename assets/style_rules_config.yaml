@@ -1,0 +1,56 @@
+rules:
+  anti_ai_abstract_modifier:
+    enabled: true
+    weight: 1.0
+  anti_ai_dialogue_overcomplete:
+    enabled: true
+    weight: 1.0
+  anti_ai_emotion_telling:
+    enabled: true
+    weight: 1.0
+  anti_ai_ending_decision:
+    enabled: true
+    weight: 1.0
+  anti_ai_ending_emotion:
+    enabled: true
+    weight: 1.0
+  anti_ai_ending_sigh:
+    enabled: true
+    weight: 1.0
+  anti_ai_ending_summary:
+    enabled: true
+    weight: 1.0
+  paragraph_layout_limit:
+    enabled: true
+    max_chars: 150
+    weight: 1.0
+  style_action_xi:
+    enabled: true
+    weight: 1.0
+  style_desc_yanzhong:
+    enabled: true
+    weight: 1.0
+  style_desc_zuijiao:
+    enabled: true
+    weight: 1.0
+  style_internal_dao:
+    enabled: true
+    weight: 1.0
+  style_internal_xiang:
+    enabled: true
+    weight: 1.0
+  style_pattern_fangfo:
+    enabled: true
+    weight: 1.0
+  style_pattern_rutong:
+    enabled: true
+    weight: 1.0
+  style_word_bujin:
+    enabled: true
+    weight: 1.0
+  style_word_jingran:
+    enabled: true
+    weight: 1.0
+  style_word_juran:
+    enabled: true
+    weight: 1.0

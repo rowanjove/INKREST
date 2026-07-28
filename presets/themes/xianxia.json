@@ -1,0 +1,17 @@
+{
+  "id": "xianxia",
+  "name": "仙侠",
+  "channels": [
+    "general",
+    "male",
+    "female"
+  ],
+  "tags": [
+    "修仙",
+    "宗门",
+    "长生",
+    "飞升",
+    "因果"
+  ],
+  "description": "修炼体系、长生飞升、宗门秘境、因果道争"
+}

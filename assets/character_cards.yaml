@@ -1,0 +1,15 @@
+characters:
+  - id: protagonist
+    name: 主角
+    fixed_profile:
+      role: 待填写
+      core_motivation: 待填写
+    personality_constraints:
+      - 遇到危险先观察
+      - 不轻易相信陌生人
+    speech_style:
+      - 短句
+      - 少解释
+    must_not:
+      - 不能突然热血演讲
+

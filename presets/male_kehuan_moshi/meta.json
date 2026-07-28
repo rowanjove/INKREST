@@ -1,0 +1,16 @@
+{
+  "id": "male_kehuan_moshi",
+  "name": "末世危机",
+  "channel": "male",
+  "category": "科幻",
+  "subcategory": "末世危机",
+  "tags": [
+    "末世",
+    "丧尸",
+    "生存",
+    "异能",
+    "基地"
+  ],
+  "description": "丧尸、灾变、异兽、秩序崩塌，主角在末世中求生并建立势力",
+  "built_in": true
+}

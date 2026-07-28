@@ -1,0 +1,15 @@
+{
+  "id": "male_xuanyi_guize",
+  "name": "规则怪谈",
+  "channel": "male",
+  "category": "悬疑",
+  "subcategory": "规则怪谈",
+  "tags": [
+    "规则",
+    "怪谈",
+    "生存",
+    "解谜"
+  ],
+  "description": "规则文本、生存禁忌、认知陷阱",
+  "built_in": true
+}

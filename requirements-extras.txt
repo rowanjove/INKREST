@@ -1,0 +1,2 @@
+# Optional integrations are intentionally kept out of the desktop publishing path.
+# TXT, Markdown, DOCX, EPUB and PDF are provided by the production requirements.

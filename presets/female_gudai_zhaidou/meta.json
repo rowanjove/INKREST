@@ -1,0 +1,15 @@
+{
+  "id": "female_gudai_zhaidou",
+  "name": "宅斗",
+  "channel": "female",
+  "category": "古代言情",
+  "subcategory": "宅斗",
+  "tags": [
+    "宅斗",
+    "嫡庶",
+    "家族",
+    "婚姻"
+  ],
+  "description": "家族内宅、嫡庶、继母、姐妹、婚姻斗争",
+  "built_in": true
+}

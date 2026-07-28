@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/main.ts",
+    "src/**/*.test.ts",
+    "electron/main.ts",
+    "electron/preload.ts",
+    "electron/**/*.test.ts",
+    "e2e/**/*.spec.ts",
+    "scripts/**/*.mjs"
+  ],
+  "project": [
+    "src/**/*.{ts,vue}",
+    "electron/**/*.ts",
+    "e2e/**/*.ts",
+    "scripts/**/*.mjs"
+  ],
+  "ignore": [
+    "auto-imports.d.ts",
+    "components.d.ts"
+  ]
+}

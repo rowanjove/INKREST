@@ -1,0 +1,15 @@
+{
+  "id": "male_lishi_jiak",
+  "name": "架空历史",
+  "channel": "male",
+  "category": "历史",
+  "subcategory": "架空历史",
+  "tags": [
+    "穿越",
+    "争霸",
+    "制度建设",
+    "战争"
+  ],
+  "description": "虚构朝代，穿越者用现代知识改变历史进程",
+  "built_in": true
+}

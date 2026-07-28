@@ -1,0 +1,1 @@
+"""Character persona snippets for in-app assistants."""

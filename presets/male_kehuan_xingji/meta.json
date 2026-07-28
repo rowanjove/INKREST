@@ -1,0 +1,15 @@
+{
+  "id": "male_kehuan_xingji",
+  "name": "星际文明",
+  "channel": "male",
+  "category": "科幻",
+  "subcategory": "星际文明",
+  "tags": [
+    "星际",
+    "星舰",
+    "殖民",
+    "宇宙战争"
+  ],
+  "description": "星舰、殖民、外星文明、宇宙战争",
+  "built_in": true
+}

@@ -1,0 +1,131 @@
+{
+  "name": "novel-agent-desktop",
+  "description": "本地优先的智能小说创作、生产与发布工作台",
+  "author": "Inkrest Contributors",
+  "license": "Apache-2.0",
+  "private": true,
+  "version": "2.0.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:main\"",
+    "dev:renderer": "vite",
+    "dev:main": "tsc -p tsconfig.electron.json && electron dist-electron/main.js",
+    "build": "rimraf dist && vue-tsc -b && vite build",
+    "build:analyze": "rimraf dist && vue-tsc -b && npx cross-env ANALYZE=1 vite build",
+    "check:bundle": "python ../../scripts/check_frontend_bundle.py dist",
+    "build:electron": "rimraf dist-electron && tsc -p tsconfig.electron.json",
+    "build:backend": "node ../../scripts/build_desktop_backend.mjs",
+    "sync:python-runtime": "cd ../.. && python scripts/sync_frontend_to_runtime.py",
+    "electron:pack": "npm run build && npm run sync:python-runtime && npm run build:electron && electron-builder --win --dir",
+    "electron:build": "npm run build && npm run build:electron && npm run build:backend && electron-builder --win",
+    "preview": "vite preview",
+    "test:unit": "vitest run",
+    "test:electron": "vitest run --config vitest.electron.config.ts",
+    "test:e2e": "playwright test",
+    "audit:dead-code": "knip --include files,dependencies,unlisted,unresolved --reporter compact",
+    "smoke:electron:packaged": "node scripts/smoke-packaged-electron.mjs",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "dist:win": "npm run electron:build"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "2.3.2",
+    "@tanstack/vue-virtual": "3.13.34",
+    "@tiptap/extension-placeholder": "3.29.0",
+    "@tiptap/pm": "3.29.0",
+    "@tiptap/starter-kit": "3.29.0",
+    "@tiptap/vue-3": "3.29.0",
+    "@vue-flow/background": "1.3.2",
+    "@vue-flow/controls": "1.1.3",
+    "@vue-flow/core": "1.48.2",
+    "@vue-flow/minimap": "1.5.4",
+    "axios": "^1.16.1",
+    "element-plus": "^2.14.0",
+    "pinia": "^3.0.4",
+    "splitpanes": "4.1.2",
+    "vue": "^3.5.34",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^24.12.3",
+    "@vitejs/plugin-vue": "^6.0.6",
+    "@vue/tsconfig": "^0.9.1",
+    "concurrently": "^9.1.0",
+    "cross-env": "^10.1.0",
+    "electron": "^42.2.0",
+    "electron-builder": "^26.0.12",
+    "electron-updater": "^6.3.0",
+    "knip": "6.29.0",
+    "rimraf": "^6.1.3",
+    "rollup-plugin-visualizer": "^7.0.1",
+    "typescript": "^6.0.3",
+    "unplugin-auto-import": "^21.0.0",
+    "unplugin-vue-components": "^32.1.0",
+    "vite": "^8.0.12",
+    "vitest": "^3.2.4",
+    "vue-tsc": "^3.2.8"
+  },
+  "main": "dist-electron/main.js",
+  "build": {
+    "appId": "com.novelagent.desktop",
+    "productName": "栖墨",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "build/icon.png",
+      "build/icon.ico",
+      "build/tray_icon.png",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "build/icon.png",
+      "build/icon.ico",
+      "build/tray_icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "../../LICENSE",
+        "to": "LICENSE.txt"
+      },
+      {
+        "from": "../../NOTICE",
+        "to": "NOTICE.txt"
+      },
+      {
+        "from": "../../build/python-runtime/novel-agent-backend",
+        "to": "python-runtime/novel-agent-backend"
+      },
+      {
+        "from": "../../prompts",
+        "to": "templates/prompts"
+      },
+      {
+        "from": "../../presets",
+        "to": "templates/presets"
+      },
+      {
+        "from": "../../assets",
+        "to": "templates/assets"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "tanxian",
+  "name": "探险解谜",
+  "channels": [
+    "general",
+    "male",
+    "female"
+  ],
+  "tags": [
+    "探险",
+    "解谜",
+    "秘境",
+    "寻宝"
+  ],
+  "description": "探索未知、解开谜团、秘境寻宝"
+}

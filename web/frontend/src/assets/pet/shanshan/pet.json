@@ -1,0 +1,105 @@
+{
+  "id": "shanshan",
+  "name": "山山",
+  "default": true,
+  "size": 180,
+  "static": {
+    "idle": "static/idle_256.png",
+    "fallback": "static/idle_256.png",
+    "avatar": "ui/avatar_128.png",
+    "tray": "ui/tray_icon.ico"
+  },
+  "states": {
+    "idle": {
+      "file": "animations/idle_sheet.webp",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frames": 24,
+      "fps": 12,
+      "loop": true
+    },
+    "working": {
+      "file": "animations/working_sheet.webp",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frames": 24,
+      "fps": 12,
+      "loop": true
+    },
+    "success": {
+      "file": "animations/success_sheet.webp",
+      "badge": "ui/success_badge.png",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frames": 12,
+      "fps": 12,
+      "loop": false
+    },
+    "error": {
+      "file": "animations/error_sheet.webp",
+      "badge": "ui/error_badge.png",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frames": 12,
+      "fps": 12,
+      "loop": false
+    },
+    "offline": {
+      "file": "animations/error_sheet.webp",
+      "badge": "ui/error_badge.png",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frames": 12,
+      "fps": 8,
+      "loop": true
+    },
+    "dragging": {
+      "file": "static/dragging.png",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frames": 1,
+      "fps": 1,
+      "loop": false
+    },
+    "question": {
+      "file": "static/question.png",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frames": 1,
+      "fps": 1,
+      "loop": false
+    },
+    "hide-left": {
+      "file": "static/hide_left.png",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frames": 1,
+      "fps": 1,
+      "loop": false
+    },
+    "hide-right": {
+      "file": "static/hide_right.png",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frames": 1,
+      "fps": 1,
+      "loop": false
+    },
+    "hide-top": {
+      "file": "static/hide_top.png",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frames": 1,
+      "fps": 1,
+      "loop": false
+    },
+    "hide-bottom": {
+      "file": "static/hide_bottom.png",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "frames": 1,
+      "fps": 1,
+      "loop": false
+    }
+  }
+}

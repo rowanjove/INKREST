@@ -1,0 +1,26 @@
+name: Novel Agent LLM Nightly
+
+on:
+  schedule:
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+
+jobs:
+  llm-smoke:
+    runs-on: ubuntu-latest
+    if: vars.NOVEL_AGENT_LLM_SMOKE_ENABLED == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Optional one-chapter LLM smoke
+        env:
+          NOVEL_AGENT_LLM_SMOKE: "1"
+          NOVEL_AGENT_SMOKE_MODEL: ${{ secrets.NOVEL_AGENT_SMOKE_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python -m pytest tests/smoke/test_llm_one_chapter.py -q --tb=short

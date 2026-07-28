@@ -1,0 +1,17 @@
+{
+  "id": "jijian",
+  "name": "基建",
+  "channels": [
+    "general",
+    "male",
+    "female"
+  ],
+  "tags": [
+    "基建",
+    "建设",
+    "领地",
+    "文明",
+    "工业"
+  ],
+  "description": "从零开始建设领地/文明/工业体系"
+}

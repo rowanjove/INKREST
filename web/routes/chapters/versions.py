@@ -1,0 +1,295 @@
+"""Shared imports for chapter route modules."""
+
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+import logging
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+import web.context as ws_server
+import web.helpers as ws_helpers
+
+ws_server._validate_id = ws_helpers._validate_id
+ws_server._read_json = ws_helpers._read_json
+ws_server._read_text = ws_helpers._read_text
+ws_server.get_outline = ws_helpers.get_outline
+ws_server._delete_chapter_dir = ws_helpers._delete_chapter_dir
+ws_server.logger = logging.getLogger("web.server")
+
+from web.models import (
+    ChapterRequest,
+    BatchChapterRequest,
+    TaskStatus,
+    ChapterSummary,
+    ChapterDetail,
+    NovelChatRequest,
+    SaveChapterRequest,
+)
+from novel_agent.services.manuscript_workspace import apply_plain_text_to_manuscript
+from novel_agent.state.manuscript_repository import DocumentConflictError
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, task_manager_for
+from web.routes.chapters.snapshots import create_chapter_snapshot
+
+router = APIRouter()
+
+
+class CreateVersionRequest(BaseModel):
+    version_name: str
+    note: Optional[str] = ""
+    copy_from_active: Optional[bool] = True
+
+class UpdateVersionRequest(BaseModel):
+    version_name: Optional[str] = None
+    note: Optional[str] = None
+    content: Optional[str] = None
+
+class CompareVersionsRequest(BaseModel):
+    version_id_a: str
+    version_id_b: str
+
+@router.get("/api/chapters/{chapter_id}/versions")
+def get_versions(chapter_id: str, session: ProjectSession = RequireProjectDep) -> List[Dict[str, Any]]:
+    session = coerce_project_session(session)
+    safe_id = ws_server._validate_id(chapter_id, "chapter_id")
+    store = task_manager_for(session).store
+    versions = store.list_chapter_versions(safe_id)
+    
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
+    final_txt_path = chapter_dir / "chapter_final.txt"
+    content = ws_server._read_text(final_txt_path)
+    
+    plan_path = chapter_dir / "plan.json"
+    plan_str = "{}"
+    if plan_path.exists():
+        try:
+            plan_str = plan_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+            
+    if not versions:
+        store.save_chapter_version(
+            chapter_id=safe_id,
+            version_name="版本 A",
+            content=content,
+            plan=plan_str,
+            is_active=True,
+            note="历史章节补齐的默认版本"
+        )
+        versions = store.list_chapter_versions(safe_id)
+    else:
+        active_version = next((v for v in versions if v.get("is_active") == 1), None)
+        if active_version:
+            if active_version.get("content") != content:
+                store.save_chapter_version(
+                    chapter_id=safe_id,
+                    version_name=active_version["version_name"],
+                    content=content,
+                    plan=active_version.get("plan") or plan_str,
+                    is_active=True,
+                    note=active_version.get("note") or "同步自 chapter_final.txt",
+                    version_id=active_version["id"]
+                )
+                versions = store.list_chapter_versions(safe_id)
+        else:
+            first_v = versions[0]
+            store.save_chapter_version(
+                chapter_id=safe_id,
+                version_name=first_v["version_name"],
+                content=content,
+                plan=first_v.get("plan") or plan_str,
+                is_active=True,
+                note=first_v.get("note") or "同步自 chapter_final.txt",
+                version_id=first_v["id"]
+            )
+            versions = store.list_chapter_versions(safe_id)
+            
+    return versions
+
+@router.post("/api/chapters/{chapter_id}/versions")
+def create_version(
+    chapter_id: str,
+    req: CreateVersionRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    import json
+    safe_id = ws_server._validate_id(chapter_id, "chapter_id")
+    store = task_manager_for(session).store
+    
+    content = ""
+    plan_str = "{}"
+    
+    if req.copy_from_active:
+        versions = store.list_chapter_versions(safe_id)
+        active_v = next((v for v in versions if v.get("is_active") == 1), None)
+        if active_v:
+            content = active_v.get("content", "")
+            plan_str = active_v.get("plan", "{}")
+        else:
+            chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
+            final_txt_path = chapter_dir / "chapter_final.txt"
+            content = ws_server._read_text(final_txt_path)
+            plan_path = chapter_dir / "plan.json"
+            if plan_path.exists():
+                try:
+                    plan_str = plan_path.read_text(encoding="utf-8")
+                except Exception:
+                    pass
+                
+    v_id = store.save_chapter_version(
+        chapter_id=safe_id,
+        version_name=req.version_name,
+        content=content,
+        plan=plan_str,
+        is_active=False,
+        note=req.note or ""
+    )
+    return {"status": "created", "version_id": v_id}
+
+@router.put("/api/chapters/versions/{version_id}")
+def update_version(
+    version_id: str,
+    req: UpdateVersionRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    import json
+    store = task_manager_for(session).store
+    version = store.get_chapter_version(version_id)
+    if not version:
+        raise HTTPException(404, f"Version {version_id} not found")
+        
+    name = req.version_name if req.version_name is not None else version["version_name"]
+    note = req.note if req.note is not None else version["note"]
+    content = req.content if req.content is not None else version["content"]
+
+    if version["is_active"] == 1 and req.content is not None:
+        chapter_id = str(version["chapter_id"])
+        try:
+            apply_plain_text_to_manuscript(
+                session.root_dir,
+                chapter_id=chapter_id,
+                plain_text=content,
+                source="version",
+            )
+        except DocumentConflictError as exc:
+            raise HTTPException(
+                409,
+                {
+                    "code": "DOCUMENT_CONFLICT",
+                    "message": "正文已在其他窗口更新，请刷新后重试。",
+                    "current": exc.current,
+                },
+            ) from exc
+
+    store.save_chapter_version(
+        chapter_id=version["chapter_id"],
+        version_name=name,
+        content=content,
+        plan=version["plan"],
+        is_active=bool(version["is_active"]),
+        note=note,
+        version_id=version_id
+    )
+        
+    return {"status": "updated"}
+
+@router.delete("/api/chapters/versions/{version_id}")
+def delete_version(version_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    store = task_manager_for(session).store
+    version = store.get_chapter_version(version_id)
+    if not version:
+        raise HTTPException(404, f"Version {version_id} not found")
+        
+    try:
+        store.delete_chapter_version(version_id)
+        return {"status": "deleted"}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+@router.post("/api/chapters/{chapter_id}/versions/{version_id}/activate")
+def activate_version(
+    chapter_id: str,
+    version_id: str,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    import json
+    safe_id = ws_server._validate_id(chapter_id, "chapter_id")
+    store = task_manager_for(session).store
+    
+    version = store.get_chapter_version(version_id)
+    if not version:
+        raise HTTPException(404, f"Version {version_id} not found")
+    if version["chapter_id"] != safe_id:
+        raise HTTPException(400, "Chapter version does not belong to the requested chapter")
+        
+    try:
+        chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
+        final_txt_path = chapter_dir / "chapter_final.txt"
+        current_text = ws_server._read_text(final_txt_path)
+        plan_path = chapter_dir / "plan.json"
+        plan = ws_server._read_json(plan_path) if plan_path.exists() else {}
+        title = plan.get("chapter_title", f"第 {safe_id} 章")
+        create_chapter_snapshot(session.root_dir, safe_id, f"系统自动备份（切换分支前：{title}）", current_text, is_manual=False)
+    except OSError as exc:
+        ws_server.logger.warning(
+            "Failed to create pre-activation backup snapshot: %s", exc
+        )
+        
+    store.set_active_chapter_version(safe_id, version_id)
+
+    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
+    title = f"第 {safe_id} 章"
+    if version.get("plan"):
+        try:
+            v_plan = json.loads(version["plan"])
+            if isinstance(v_plan, dict):
+                title = str(v_plan.get("chapter_title") or title)
+                plan_path = chapter_dir / "plan.json"
+                plan_path.write_text(json.dumps(v_plan, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    try:
+        document = apply_plain_text_to_manuscript(
+            session.root_dir,
+            chapter_id=safe_id,
+            plain_text=version["content"],
+            title=title,
+            source="version",
+        )
+        title = str(document.get("title") or title)
+    except DocumentConflictError as exc:
+        raise HTTPException(
+            409,
+            {
+                "code": "DOCUMENT_CONFLICT",
+                "message": "正文已在其他窗口更新，请刷新后重试。",
+                "current": exc.current,
+            },
+        ) from exc
+
+    return {"status": "activated", "title": title, "revision": int(document["revision"])}
+
+@router.post("/api/chapters/{chapter_id}/versions/compare")
+def compare_versions(
+    chapter_id: str,
+    req: CompareVersionsRequest,
+    session: ProjectSession = RequireProjectDep,
+) -> List[Dict[str, str]]:
+    session = coerce_project_session(session)
+    safe_id = ws_server._validate_id(chapter_id, "chapter_id")
+    store = task_manager_for(session).store
+    v_a = store.get_chapter_version(req.version_id_a)
+    v_b = store.get_chapter_version(req.version_id_b)
+    if not v_a or not v_b:
+        raise HTTPException(404, "One or both versions not found for diff comparison")
+    if v_a["chapter_id"] != safe_id or v_b["chapter_id"] != safe_id:
+        raise HTTPException(400, "Versions must belong to the requested chapter")
+        
+    from novel_agent.utils.diff import compute_text_diff
+    return compute_text_diff(v_a["content"], v_b["content"])
+

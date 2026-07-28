@@ -1,0 +1,15 @@
+{
+  "id": "male_youxi_xunini",
+  "name": "虚拟网游",
+  "channel": "male",
+  "category": "游戏",
+  "subcategory": "虚拟网游",
+  "tags": [
+    "网游",
+    "全息",
+    "公会",
+    "争霸"
+  ],
+  "description": "全息网游、职业、装备、公会、争霸",
+  "built_in": true
+}

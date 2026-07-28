@@ -1,0 +1,200 @@
+import {
+  BrowserWindow,
+  Menu,
+  app,
+  ipcMain,
+  screen,
+  type IpcMainInvokeEvent,
+} from 'electron';
+import { PetSettings, readPetSettings, writePetSettings } from '../pet-settings';
+import {
+  parseMoveDelta,
+  parsePetSettingsPatch,
+  parseRoute,
+  parseWindowBounds,
+} from '../security';
+import { createBubbleWindow, positionBubbleNearPet } from '../windows/bubble-window';
+import { createPetWindow } from '../windows/pet-window';
+import { showWhenReady } from '../windows/window-ready';
+
+export interface PetIpcContext {
+  isDev: boolean;
+  apiPort: number;
+  getMainWindow: () => BrowserWindow | null;
+  getPetWindow: () => BrowserWindow | null;
+  setPetWindow: (window: BrowserWindow | null) => void;
+  getBubbleWindow: () => BrowserWindow | null;
+  setBubbleWindow: (window: BrowserWindow | null) => void;
+  navigateMain: (route: string) => void;
+  assertTrustedSender: (event: IpcMainInvokeEvent) => void;
+}
+
+export function ensurePetWindow(ctx: PetIpcContext) {
+  let petWindow = ctx.getPetWindow();
+  if (petWindow && !petWindow.isDestroyed()) {
+    return petWindow;
+  }
+  const settings = readPetSettings();
+  petWindow = createPetWindow({ settings, isDev: ctx.isDev, apiPort: ctx.apiPort });
+  petWindow.on('closed', () => {
+    ctx.setPetWindow(null);
+  });
+  ctx.setPetWindow(petWindow);
+  return petWindow;
+}
+
+function ensureBubbleWindow(ctx: PetIpcContext) {
+  const petWindow = ensurePetWindow(ctx);
+  let bubbleWindow = ctx.getBubbleWindow();
+  if (bubbleWindow && !bubbleWindow.isDestroyed()) {
+    positionBubbleNearPet(bubbleWindow, petWindow);
+    return bubbleWindow;
+  }
+  bubbleWindow = createBubbleWindow({ petWindow, isDev: ctx.isDev, apiPort: ctx.apiPort });
+  bubbleWindow.on('closed', () => {
+    ctx.setBubbleWindow(null);
+  });
+  bubbleWindow.on('blur', () => {
+    bubbleWindow?.hide();
+  });
+  ctx.setBubbleWindow(bubbleWindow);
+  return bubbleWindow;
+}
+
+function applySettingsToPetWindow(settings: PetSettings, petWindow: BrowserWindow | null) {
+  if (!petWindow || petWindow.isDestroyed()) return;
+  petWindow.setAlwaysOnTop(settings.alwaysOnTop);
+  petWindow.setSize(settings.size, settings.size);
+  if (settings.position) {
+    petWindow.setPosition(settings.position.x, settings.position.y);
+  }
+  if (!settings.enabled) {
+    petWindow.hide();
+  }
+}
+
+export function registerPetIpc(ctx: PetIpcContext) {
+  ipcMain.handle('pet:getWindowBounds', (event) => {
+    ctx.assertTrustedSender(event);
+    const petWindow = ctx.getPetWindow();
+    if (petWindow && !petWindow.isDestroyed()) {
+      return petWindow.getBounds();
+    }
+    return null;
+  });
+
+  ipcMain.handle('pet:getWorkArea', (event) => {
+    ctx.assertTrustedSender(event);
+    const petWindow = ctx.getPetWindow();
+    if (petWindow && !petWindow.isDestroyed()) {
+      const display = screen.getDisplayMatching(petWindow.getBounds());
+      return display.workArea;
+    }
+    return screen.getPrimaryDisplay().workArea;
+  });
+
+  ipcMain.handle('pet:setWindowBounds', (event, rawBounds: unknown) => {
+    ctx.assertTrustedSender(event);
+    const bounds = parseWindowBounds(rawBounds);
+    const petWindow = ctx.getPetWindow();
+    if (petWindow && !petWindow.isDestroyed()) {
+      const currentBounds = petWindow.getBounds();
+      petWindow.setBounds({
+        x: Math.round(bounds.x),
+        y: Math.round(bounds.y),
+        width: bounds.width !== undefined ? Math.round(bounds.width) : currentBounds.width,
+        height: bounds.height !== undefined ? Math.round(bounds.height) : currentBounds.height,
+      });
+    }
+  });
+
+  ipcMain.handle('pet:getSettings', (event) => {
+    ctx.assertTrustedSender(event);
+    return readPetSettings();
+  });
+
+  ipcMain.handle('pet:updateSettings', (event, rawPatch: unknown) => {
+    ctx.assertTrustedSender(event);
+    const patch = parsePetSettingsPatch(rawPatch);
+    const settings = writePetSettings(patch);
+    applySettingsToPetWindow(settings, ctx.getPetWindow());
+    if (settings.enabled && settings.showOnStartup) {
+      showWhenReady(ensurePetWindow(ctx), 'showInactive');
+    }
+    return settings;
+  });
+
+  ipcMain.handle('pet:show', (event) => {
+    ctx.assertTrustedSender(event);
+    writePetSettings({ enabled: true });
+    showWhenReady(ensurePetWindow(ctx), 'showInactive');
+  });
+
+  ipcMain.handle('pet:hide', (event) => {
+    ctx.assertTrustedSender(event);
+    writePetSettings({ enabled: false });
+    ctx.getBubbleWindow()?.hide();
+    ctx.getPetWindow()?.hide();
+  });
+
+  ipcMain.handle('pet:toggleBubble', (event) => {
+    ctx.assertTrustedSender(event);
+    const bubbleWindow = ensureBubbleWindow(ctx);
+    if (bubbleWindow.isVisible()) {
+      bubbleWindow.hide();
+    } else {
+      positionBubbleNearPet(bubbleWindow, ensurePetWindow(ctx));
+      showWhenReady(bubbleWindow, 'showInactive');
+    }
+  });
+
+  ipcMain.handle('pet:moveBy', (event, rawDelta: unknown) => {
+    ctx.assertTrustedSender(event);
+    const delta = parseMoveDelta(rawDelta);
+    const petWindow = ensurePetWindow(ctx);
+    const bounds = petWindow.getBounds();
+    petWindow.setPosition(bounds.x + Math.round(delta.x), bounds.y + Math.round(delta.y));
+  });
+
+  ipcMain.handle('pet:savePosition', (event) => {
+    ctx.assertTrustedSender(event);
+    const petWindow = ctx.getPetWindow();
+    if (petWindow && !petWindow.isDestroyed()) {
+      const { x, y } = petWindow.getBounds();
+      writePetSettings({ position: { x, y } });
+    }
+  });
+
+  ipcMain.handle('pet:openMain', (event) => {
+    ctx.assertTrustedSender(event);
+    const mainWindow = ctx.getMainWindow();
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
+
+  ipcMain.handle('pet:navigateMain', (event, rawRoute: unknown) => {
+    ctx.assertTrustedSender(event);
+    ctx.navigateMain(parseRoute(rawRoute));
+  });
+
+  ipcMain.handle('pet:showContextMenu', (event) => {
+    ctx.assertTrustedSender(event);
+    const petWindow = ensurePetWindow(ctx);
+    const menu = Menu.buildFromTemplate([
+      { label: '打开主界面', click: () => ctx.navigateMain('/') },
+      { label: '任务监控', click: () => ctx.navigateMain('/production?tab=runs') },
+      { label: '日志', click: () => ctx.navigateMain('/logs') },
+      { type: 'separator' },
+      {
+        label: '隐藏山山',
+        click: () => {
+          writePetSettings({ enabled: false });
+          ctx.getBubbleWindow()?.hide();
+          ctx.getPetWindow()?.hide();
+        },
+      },
+      { label: '退出栖墨', click: () => { (app as any).isQuitting = true; app.quit(); } },
+    ]);
+    menu.popup({ window: petWindow });
+  });
+}

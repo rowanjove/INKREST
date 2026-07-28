@@ -1,0 +1,27 @@
+chapter:
+  default_target_chars:
+  - 2000
+  - 3000
+  default_scene_target_chars:
+  - 400
+  - 800
+runtime:
+  max_workers: 4
+  retry_attempts: 1
+  interactive: false
+  batch_fail_streak_max: 5
+  vector_search_window: 80
+  autopilot_chapters_per_round: 10
+  autopilot_max_rounds: 300
+  rate_limit_backoff_sec: 8
+  rate_limit_max_retries: 4
+  plugin_sandbox: false
+llm:
+  provider: openai
+  base_url: https://api.openai.com/v1
+  api_key: sk-your-key-here
+  default_model_id: gpt-4o-mini
+  daily_model_id: gpt-4o-mini
+  reasoning_model_id: gpt-4o
+embedding:
+  provider: stub

@@ -1,0 +1,24 @@
+{
+  "id": "my-plugin",
+  "version": "1.0.0",
+  "display_name": "我的插件",
+  "description": "简要说明插件用途",
+  "author": "作者名",
+  "plugin_type": "pipeline_hook",
+  "entry": "plugin:PLUGIN_CLASS",
+  "min_core_version": "1.0.0",
+  "requires": [],
+  "capabilities": ["project_read", "project_write", "model_access"],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "enabled_feature": {
+        "type": "boolean",
+        "title": "启用扩展功能",
+        "default": true
+      }
+    }
+  },
+  "extract": [],
+  "bundles": []
+}

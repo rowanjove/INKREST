@@ -1,0 +1,15 @@
+{
+  "id": "female_xianxia_shitu",
+  "name": "师徒恋仙侠",
+  "channel": "female",
+  "category": "仙侠玄幻",
+  "subcategory": "师徒恋",
+  "tags": [
+    "师徒",
+    "仙侠",
+    "禁忌",
+    "养成"
+  ],
+  "description": "师尊/徒弟关系，禁忌感、养成感",
+  "built_in": true
+}

@@ -1,0 +1,16 @@
+{
+  "id": "male_qihuan_xihuan",
+  "name": "西幻",
+  "channel": "male",
+  "category": "奇幻",
+  "subcategory": "西幻",
+  "tags": [
+    "魔法",
+    "骑士",
+    "龙族",
+    "精灵",
+    "王国"
+  ],
+  "description": "魔法、骑士、龙族、精灵、神明、教会、王国",
+  "built_in": true
+}

@@ -1,0 +1,15 @@
+{
+  "id": "female_niandai_qishi",
+  "name": "七零年代文",
+  "channel": "female",
+  "category": "种田年代",
+  "subcategory": "年代文",
+  "tags": [
+    "年代",
+    "七零",
+    "家庭",
+    "发家致富"
+  ],
+  "description": "七零、八零、九零年代，家庭、婚恋、工作、发家致富",
+  "built_in": true
+}

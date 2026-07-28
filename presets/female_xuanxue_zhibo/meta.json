@@ -1,0 +1,15 @@
+{
+  "id": "female_xuanxue_zhibo",
+  "name": "玄学直播",
+  "channel": "female",
+  "category": "玄学灵异",
+  "subcategory": "玄学直播",
+  "tags": [
+    "玄学",
+    "直播",
+    "算命",
+    "打脸"
+  ],
+  "description": "直播算命，连麦破案、打脸",
+  "built_in": true
+}

@@ -1,0 +1,34 @@
+{
+  "idle": {
+    "file": "idle_sheet.webp",
+    "frameWidth": 256,
+    "frameHeight": 256,
+    "frames": 24,
+    "fps": 12,
+    "loop": true
+  },
+  "working": {
+    "file": "working_sheet.webp",
+    "frameWidth": 256,
+    "frameHeight": 256,
+    "frames": 24,
+    "fps": 12,
+    "loop": true
+  },
+  "success": {
+    "file": "success_sheet.webp",
+    "frameWidth": 256,
+    "frameHeight": 256,
+    "frames": 12,
+    "fps": 12,
+    "loop": false
+  },
+  "error": {
+    "file": "error_sheet.webp",
+    "frameWidth": 256,
+    "frameHeight": 256,
+    "frames": 12,
+    "fps": 12,
+    "loop": false
+  }
+}
