@@ -1,7 +1,8 @@
 {
-  "version": 1,
-  "description": "P95 latency ceilings (ms) for hot read APIs on seeded minimal project.",
-  "iterations": 5,
+  "version": 2,
+  "description": "Steady-state P95 latency ceilings (ms) for hot read APIs on seeded minimal project.",
+  "warmup_iterations": 3,
+  "iterations": 20,
   "endpoints": {
     "/api/health": 50,
     "/api/projects": 800,

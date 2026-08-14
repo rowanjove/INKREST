@@ -54,6 +54,7 @@ def measure_endpoints(
     endpoints: Dict[str, int],
     *,
     iterations: int,
+    warmup_iterations: int = 0,
 ) -> Tuple[Dict[str, float], List[str]]:
     from fastapi.testclient import TestClient
 
@@ -72,6 +73,16 @@ def measure_endpoints(
         web_server.BASE_DIR = tmpdir
         web_server._active_project_id = None
         client = TestClient(web_app)
+
+        # Keep one-time application and route initialization out of the latency
+        # distribution. Shared CI runners can make those cold calls especially
+        # noisy, while the guardrail is intended to detect steady-state API
+        # regressions.
+        for _ in range(max(0, warmup_iterations)):
+            for path in endpoints:
+                resp = client.get(path)
+                if resp.status_code >= 400:
+                    errors.append(f"{path} returned {resp.status_code} during warmup")
 
         for _ in range(max(1, iterations)):
             for path in endpoints:
@@ -97,8 +108,13 @@ def check_baseline(baseline_path: Path) -> Tuple[bool, Dict[str, float], List[st
     endpoints = spec.get("endpoints") or {}
     if not isinstance(endpoints, dict):
         raise ValueError("baseline endpoints must be an object")
-    iterations = int(spec.get("iterations") or 5)
-    p95, errors = measure_endpoints(endpoints, iterations=iterations)
+    iterations = int(spec.get("iterations") or 20)
+    warmup_iterations = int(spec.get("warmup_iterations") or 0)
+    p95, errors = measure_endpoints(
+        endpoints,
+        iterations=iterations,
+        warmup_iterations=warmup_iterations,
+    )
 
     violations: List[str] = []
     for path, limit in endpoints.items():

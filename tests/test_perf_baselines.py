@@ -1,4 +1,6 @@
-"""Perf guardrails: bundle budget + API latency baseline."""
+"""Deterministic tests for the performance guardrail helpers."""
+
+import json
 
 from pathlib import Path
 
@@ -15,8 +17,38 @@ def test_frontend_bundle_budget_with_built_dist() -> None:
     assert issues == [], "\n".join(issues)
 
 
-def test_api_perf_within_baseline() -> None:
-    from scripts.perf_api_baseline import check_baseline
+def test_check_baseline_forwards_sampling_configuration(tmp_path, monkeypatch) -> None:
+    from scripts import perf_api_baseline
 
-    ok, _p95, issues = check_baseline(ROOT / "benchmarks" / "api_perf_baseline.json")
-    assert ok, "\n".join(issues)
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "warmup_iterations": 3,
+                "iterations": 20,
+                "endpoints": {"/api/health": 50},
+            }
+        ),
+        encoding="utf-8",
+    )
+    received = {}
+
+    def fake_measure(endpoints, *, iterations, warmup_iterations):
+        received.update(
+            endpoints=endpoints,
+            iterations=iterations,
+            warmup_iterations=warmup_iterations,
+        )
+        return {"/api/health": 10.0}, []
+
+    monkeypatch.setattr(perf_api_baseline, "measure_endpoints", fake_measure)
+
+    ok, _p95, issues = perf_api_baseline.check_baseline(baseline)
+
+    assert ok is True
+    assert issues == []
+    assert received == {
+        "endpoints": {"/api/health": 50},
+        "iterations": 20,
+        "warmup_iterations": 3,
+    }
