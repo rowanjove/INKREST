@@ -59,6 +59,213 @@ class StateRepositoryMixin:
                 self._sync_timeline_edges(conn, chapter_id, update.get("timeline_edges", []))
                 self._sync_markers(conn, chapter_id, update)
                 self._sync_character_relations(conn, chapter_id, update.get("character_relations", []))
+        self.mark_story_search_dirty()
+
+    @staticmethod
+    def _narrative_event_row(row) -> Dict[str, Any]:
+        def load(value: Any, default: Any) -> Any:
+            if value in (None, ""):
+                return default
+            try:
+                return json.loads(value)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return default
+
+        return {
+            "id": row["event_id"],
+            "event_id": row["event_id"],
+            "projection_id": row["projection_id"],
+            "chapter_id": row["chapter_id"],
+            "scene_id": row["scene_id"] or "",
+            "story_time": row["story_time"] or "",
+            "story_time_start": row["story_time_start"] or "",
+            "story_time_end": row["story_time_end"] or "",
+            "recorded_at": row["recorded_at"] or "",
+            "truth_scope": row["truth_scope"] or "objective",
+            "knower_ids": load(row["knower_ids"], []),
+            "actors": load(row["actors"], []),
+            "location": row["location"] or "",
+            "action": row["action"] or "",
+            "outcome": row["outcome"] or "",
+            "objects": load(row["objects"], []),
+            "threads": load(row["threads"], []),
+            "causes": load(row["causes"], []),
+            "effects": load(row["effects"], []),
+            "beliefs_before": load(row["beliefs_before"], {}),
+            "beliefs_after": load(row["beliefs_after"], {}),
+            "state_delta": load(row["state_delta"], {}),
+            "source_document_id": row["source_document_id"] or "",
+            "source_revision_id": row["source_revision_id"] or "",
+            "source_span": load(row["source_span"], {}),
+            "confidence": float(row["confidence"] or 0.0),
+            "superseded_by": row["superseded_by"],
+            "invalidated_at_revision": row["invalidated_at_revision"] or "",
+        }
+
+    @db_write_lock
+    def upsert_narrative_events(
+        self,
+        chapter_id: str,
+        events: List[Dict[str, Any]],
+        *,
+        source_document_id: str = "",
+        source_revision_id: str = "",
+    ) -> List[str]:
+        """Persist a versioned, source-aware event projection.
+
+        Existing ``events`` rows remain untouched.  Reprocessing the same event
+        with a new revision marks the previous projection as superseded instead
+        of deleting it, which keeps causal evidence auditable.
+        """
+
+        from novel_agent.quality.event_memory import derive_event_revision_id, normalise_narrative_event
+
+        revision = str(source_revision_id or "").strip() or derive_event_revision_id(chapter_id, events)
+        projected = [
+            normalise_narrative_event(
+                event,
+                chapter_id=str(chapter_id),
+                index=index,
+                source_document_id=source_document_id,
+                source_revision_id=revision,
+            )
+            for index, event in enumerate(events or [])
+            if isinstance(event, dict)
+        ]
+        projection_ids: List[str] = []
+        with safe_connection(self.db_path) as conn:
+            with conn:
+                for event in projected:
+                    event_id = str(event["id"])
+                    projection_id = f"{event_id}@{revision}"
+                    projection_ids.append(projection_id)
+                    conn.execute(
+                        """
+                        update narrative_events
+                        set superseded_by = ?, updated_at = current_timestamp
+                        where event_id = ? and chapter_id = ?
+                          and source_revision_id <> ? and superseded_by is null
+                        """,
+                        (projection_id, event_id, str(chapter_id), revision),
+                    )
+                    conn.execute(
+                        """
+                        insert into narrative_events (
+                           projection_id, event_id, chapter_id, scene_id, story_time,
+                           story_time_start, story_time_end, recorded_at, truth_scope, knower_ids,
+                           actors, location, action, outcome, objects, threads,
+                           causes, effects, beliefs_before, beliefs_after, state_delta,
+                           source_document_id, source_revision_id, source_span,
+                           confidence, superseded_by, invalidated_at_revision, payload, updated_at
+                         )
+                        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
+                        on conflict(projection_id) do update set
+                          event_id=excluded.event_id,
+                           chapter_id=excluded.chapter_id,
+                           scene_id=excluded.scene_id,
+                           story_time=excluded.story_time,
+                           story_time_start=excluded.story_time_start,
+                           story_time_end=excluded.story_time_end,
+                           recorded_at=excluded.recorded_at,
+                           truth_scope=excluded.truth_scope,
+                           knower_ids=excluded.knower_ids,
+                          actors=excluded.actors,
+                          location=excluded.location,
+                          action=excluded.action,
+                          outcome=excluded.outcome,
+                          objects=excluded.objects,
+                          threads=excluded.threads,
+                          causes=excluded.causes,
+                          effects=excluded.effects,
+                          beliefs_before=excluded.beliefs_before,
+                          beliefs_after=excluded.beliefs_after,
+                          state_delta=excluded.state_delta,
+                          source_document_id=excluded.source_document_id,
+                          source_revision_id=excluded.source_revision_id,
+                           source_span=excluded.source_span,
+                           confidence=excluded.confidence,
+                           superseded_by=excluded.superseded_by,
+                           invalidated_at_revision=excluded.invalidated_at_revision,
+                          payload=excluded.payload,
+                          updated_at=current_timestamp
+                        """,
+                        (
+                            projection_id,
+                            event_id,
+                            str(chapter_id),
+                            event.get("scene_id", ""),
+                            event.get("story_time", ""),
+                            event.get("story_time_start", ""),
+                            event.get("story_time_end", ""),
+                            event.get("recorded_at", ""),
+                            event.get("truth_scope", "objective"),
+                            self._json(event.get("knower_ids", [])),
+                            self._json(event.get("actors", [])),
+                            event.get("location", ""),
+                            event.get("action", ""),
+                            event.get("outcome", ""),
+                            self._json(event.get("objects", [])),
+                            self._json(event.get("threads", [])),
+                            self._json(event.get("causes", [])),
+                            self._json(event.get("effects", [])),
+                            self._json(event.get("beliefs_before", {})),
+                            self._json(event.get("beliefs_after", {})),
+                            self._json(event.get("state_delta", {})),
+                            event.get("source_document_id", source_document_id),
+                            revision,
+                            self._json(event.get("source_span", {})),
+                            float(event.get("confidence", 0.0) or 0.0),
+                            event.get("superseded_by"),
+                            event.get("invalidated_at_revision", ""),
+                            self._json(event),
+                        ),
+                    )
+        self.mark_story_search_dirty()
+        return projection_ids
+
+    def list_narrative_events(
+        self,
+        *,
+        chapter_id: Optional[str] = None,
+        actor: Optional[str] = None,
+        object_name: Optional[str] = None,
+        thread: Optional[str] = None,
+        limit: int = 100,
+        include_superseded: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """List current event projections with optional entity filters."""
+
+        limit = max(1, min(int(limit), 500))
+        clauses = []
+        params: List[Any] = []
+        if chapter_id is not None:
+            clauses.append("chapter_id = ?")
+            params.append(str(chapter_id))
+        if not include_superseded:
+            clauses.append("superseded_by is null")
+        where = " where " + " and ".join(clauses) if clauses else ""
+        with safe_connection(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                select * from narrative_events
+                """ + where + " order by cast(chapter_id as integer) desc, updated_at desc limit ?",
+                (*params, limit),
+            ).fetchall()
+        result = [self._narrative_event_row(row) for row in rows]
+
+        def contains(values: Any, needle: Optional[str]) -> bool:
+            if not needle:
+                return True
+            return any(str(needle) in str(value) for value in values or [])
+
+        return [
+            item
+            for item in result
+            if contains(item.get("actors"), actor)
+            and contains(item.get("objects"), object_name)
+            and contains(item.get("threads"), thread)
+        ]
 
     def _sync_events(self, conn, chapter_id: str, events: List[Dict[str, Any]]) -> None:
         for event in events:

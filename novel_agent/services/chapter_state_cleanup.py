@@ -133,6 +133,7 @@ def purge_chapter_narrative_state(conn: Any, root_dir: Path, chapter_id: str) ->
     conn.execute("delete from chapters where id = ?", (chapter_id,))
     conn.execute("delete from chapter_summaries where chapter_id = ?", (chapter_id,))
     conn.execute("delete from events where chapter_id = ?", (chapter_id,))
+    conn.execute("delete from narrative_events where chapter_id = ?", (chapter_id,))
     conn.execute("delete from timeline_nodes where chapter_id = ?", (chapter_id,))
     conn.execute("delete from timeline_edges where chapter_id = ?", (chapter_id,))
     conn.execute("delete from foreshadows where chapter_id = ? or plan_chapter = ?", (chapter_id, chapter_id))

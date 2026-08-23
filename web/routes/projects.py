@@ -46,7 +46,11 @@ from web.models import (
     UpdateAuthorLabelRequest,
     ProjectMaintenanceRequest,
 )
-from novel_agent.control.scale_profile import resolve_scale_profile
+from novel_agent.control.scale_profile import (
+    ScaleLimitError,
+    resolve_scale_profile,
+    validate_scale_target,
+)
 from novel_agent.control.chapter_window import build_pacing_report, normalize_chapter_window
 from novel_agent.control.genre_genes import ensure_genre_genes
 from novel_agent.pipeline import load_project_pipeline_file, write_pipeline_file
@@ -240,6 +244,22 @@ def pet_debug_log(payload: Dict[str, Any]):
 
 @router.post("/api/projects")
 def create_project(req: ProjectCreateRequest) -> Dict[str, Any]:
+    incoming_scale = req.scale or str((req.scale_profile or {}).get("scale", ""))
+    incoming_target = int(
+        req.target_chapters
+        or (req.scale_profile or {}).get("target_chapters")
+        or (req.scale_profile or {}).get("project_soft_target")
+        or 0
+    )
+    if incoming_scale or incoming_target:
+        try:
+            validate_scale_target(
+                scale=incoming_scale,
+                scale_label=req.scale_label,
+                target_chapters=incoming_target or 20,
+            )
+        except ScaleLimitError as exc:
+            raise HTTPException(422, str(exc)) from exc
     result = ws_server.project_manager.create_project(req.name, req.description)
     pid = result["id"]
     project_dir = ws_server.BASE_DIR / "projects" / pid

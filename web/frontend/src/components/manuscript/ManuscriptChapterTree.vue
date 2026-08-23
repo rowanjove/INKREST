@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { Document, Search } from '@element-plus/icons-vue'
 import type {
@@ -10,15 +10,27 @@ import type {
 const props = defineProps<{
   chapters: ManuscriptChapter[]
   activeChapterId: string
+  catalogTotal?: number
+  catalogHasMore?: boolean
 }>()
 
 const emit = defineEmits<{
   select: [chapterId: string]
+  search: [query: string, status: 'all' | ManuscriptChapterStatus]
+  loadMore: []
 }>()
 
 const query = ref('')
 const status = ref<'all' | ManuscriptChapterStatus>('all')
 const scrollElement = ref<HTMLElement | null>(null)
+let searchTimer: number | null = null
+
+watch([query, status], () => {
+  if (searchTimer !== null) window.clearTimeout(searchTimer)
+  searchTimer = window.setTimeout(() => {
+    emit('search', query.value, status.value)
+  }, 200)
+})
 
 const filtered = computed(() => {
   const needle = query.value.trim().toLowerCase()
@@ -48,7 +60,7 @@ const totalHeight = computed(() => virtualizer.value.getTotalSize())
     <header>
       <div>
         <p>正文目录</p>
-        <strong>{{ chapters.length }} 章</strong>
+        <strong>{{ catalogTotal ?? chapters.length }} 章</strong>
       </div>
     </header>
 
@@ -101,6 +113,14 @@ const totalHeight = computed(() => virtualizer.value.getTotalSize())
         </button>
       </div>
       <el-empty v-else description="没有匹配的章节" :image-size="64" />
+      <el-button
+        v-if="catalogHasMore"
+        class="load-more"
+        text
+        @click="emit('loadMore')"
+      >
+        加载更多
+      </el-button>
     </div>
   </aside>
 </template>
@@ -132,6 +152,10 @@ const totalHeight = computed(() => virtualizer.value.getTotalSize())
   color: var(--color-text-strong);
   font-size: 14px;
   font-weight: 800;
+}
+.load-more {
+  width: 100%;
+  margin: var(--space-2) 0;
 }
 .chapter-tree header strong {
   color: var(--color-text-muted);

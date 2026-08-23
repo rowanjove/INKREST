@@ -13,6 +13,10 @@ const props = defineProps<{
   selectedChapter: PublicationChapter | null
   selectedChapterId: string
   selectedIndex: number
+  selectedGlobalIndex: number
+  catalogTotal: number
+  catalogHasMore: boolean
+  catalogLoadingMore: boolean
   paragraphs: string[]
   chapterLoading: boolean
   readerStyle: Record<string, string>
@@ -22,19 +26,19 @@ const settings = defineModel<ReaderSettings>('settings', { required: true })
 const emit = defineEmits<{
   select: [chapterId: string]
   edit: [chapterId: string]
+  navigate: [offset: number]
+  'load-more': []
 }>()
-
-function move(offset: number) {
-  const target = props.chapters[props.selectedIndex + offset]
-  if (target?.has_content) emit('select', target.chapter_id)
-}
 </script>
 
 <template>
   <section class="preview-workspace">
     <aside class="catalog-panel">
       <header>
-        <div><strong>成书目录</strong><span>{{ chapters.filter((item) => item.has_content).length }} 章</span></div>
+        <div>
+          <strong>成书目录</strong>
+          <span>{{ catalogTotal.toLocaleString('zh-CN') }} 章 · 已载入 {{ chapters.length }}</span>
+        </div>
         <el-input
           v-model="catalogQuery"
           :prefix-icon="Search"
@@ -56,6 +60,15 @@ function move(offset: number) {
           <small>{{ chapter.word_count.toLocaleString('zh-CN') }} 字 · R{{ chapter.revision }}</small>
         </button>
         <div v-if="!filteredChapters.length" class="catalog-empty">没有匹配的正文章节</div>
+        <el-button
+          v-if="catalogHasMore"
+          class="catalog-load-more"
+          text
+          :loading="catalogLoadingMore"
+          @click="emit('load-more')"
+        >
+          加载更多目录
+        </el-button>
       </div>
     </aside>
 
@@ -117,13 +130,17 @@ function move(offset: number) {
             </p>
           </div>
           <footer>
-            <button type="button" :disabled="selectedIndex <= 0" @click="move(-1)">
+            <button
+              type="button"
+              :disabled="selectedGlobalIndex <= 0"
+              @click="emit('navigate', -1)"
+            >
               <el-icon><ArrowLeft /></el-icon><span>上一章</span>
             </button>
             <button
               type="button"
-              :disabled="selectedIndex < 0 || selectedIndex >= chapters.length - 1"
-              @click="move(1)"
+              :disabled="selectedGlobalIndex < 0 || selectedGlobalIndex >= catalogTotal - 1"
+              @click="emit('navigate', 1)"
             >
               <span>下一章</span><el-icon><ArrowRight /></el-icon>
             </button>
@@ -175,6 +192,7 @@ function move(offset: number) {
 .catalog-list button strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .catalog-list button small { color: var(--color-text-subtle); font-size: 9px; }
 .catalog-empty { padding: 30px 12px; color: var(--color-text-muted); font-size: 11px; text-align: center; }
+.catalog-load-more { width: 100%; margin-top: 6px; }
 .reader-panel { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
 .reader-controls {
   display: flex;

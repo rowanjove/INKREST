@@ -34,8 +34,10 @@ from web.routes.system import router as system_router
 from web.routes.auth import router as auth_router
 from web.routes.planning import router as planning_router
 from web.routes.manuscript import router as manuscript_router
+from web.routes.quality import router as quality_router
 from web.routes.production import router as production_router
 from web.routes.publishing import router as publishing_router
+from web.routes.search import router as search_router
 
 app = FastAPI(title="Novel Agent API", version="2.0.1", lifespan=lifespan)
 app.add_middleware(AccessTokenMiddleware)
@@ -128,8 +130,10 @@ app.include_router(system_router)
 app.include_router(auth_router)
 app.include_router(planning_router)
 app.include_router(manuscript_router)
+app.include_router(quality_router)
 app.include_router(production_router)
 app.include_router(publishing_router)
+app.include_router(search_router)
 
 if os.environ.get("E2E_FIXTURES", "").strip() in ("1", "true", "yes"):
     from web.routes.e2e_fixtures import router as e2e_fixtures_router

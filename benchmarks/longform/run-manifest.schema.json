@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "run_id", "status", "chapters", "model", "prompt_digest", "embedding_digest", "config_digest", "seed", "temperature", "budget", "retrieval_comparison", "quality_check_interval"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["planned", "started", "paused", "completed", "failed", "cancelled"]},
+    "launch_status": {"enum": ["plan_only", "explicit_acknowledged"]},
+    "operator_started": {"type": "boolean"},
+    "chapters": {"enum": [20, 50, 100]},
+    "model": {"type": "string", "minLength": 1},
+    "available_models": {"type": "array", "items": {"type": "string"}},
+    "prompt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "embedding_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "config_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "seed": {"type": "integer"},
+    "temperature": {"type": "number", "minimum": 0, "maximum": 2},
+    "budget": {"type": "object", "required": ["max_cost_units"], "properties": {"max_cost_units": {"type": "number", "minimum": 0}}},
+    "retrieval_comparison": {"type": "array", "minItems": 2, "items": {"type": "string"}},
+    "retrieval_comparison_status": {"enum": ["not_run", "running", "completed", "failed"]},
+    "quality_check_interval": {"const": 10},
+    "completed_chapters": {"type": "array", "items": {"type": "string"}},
+    "failed_chapters": {"type": "array", "items": {"type": "string"}},
+    "chapter_results": {"type": "array", "items": {"type": "object"}},
+    "quality_trend": {"type": "array", "items": {"type": "object"}},
+    "manual_samples": {"type": "array", "items": {"type": "object"}},
+    "interruptions": {"type": "array", "items": {"type": "object"}},
+    "retries": {"type": "array", "items": {"type": "object"}},
+    "checkpoint": {
+      "type": "object",
+      "properties": {
+        "completed_count": {"type": "integer", "minimum": 0},
+        "last_chapter_id": {"type": "string"},
+        "updated_at": {"type": ["string", "null"]}
+      }
+    },
+    "cost": {
+      "type": "object",
+      "properties": {
+        "used": {"type": "number", "minimum": 0},
+        "tokens": {"type": "integer", "minimum": 0},
+        "baseline_cost": {"type": "number", "minimum": 0},
+        "baseline_tokens": {"type": "integer", "minimum": 0},
+        "currency": {"type": "string"}
+      }
+    },
+    "execution": {"type": "object"},
+    "execution_contract": {"type": "object"},
+    "error": {"type": "string"}
+  }
+}

@@ -109,6 +109,18 @@ class ExportersTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "No chapters"):
             export_epub(self.root, self.root / "empty.epub", chapter_ids=["999"])
 
+    def test_streaming_export_callback_cancels_before_atomic_replace(self) -> None:
+        self._create_document("001", "第一章", "正文。")
+        output = self.root / "cancelled.txt"
+
+        def cancel(_count: int) -> None:
+            raise RuntimeError("cancelled")
+
+        with self.assertRaisesRegex(RuntimeError, "cancelled"):
+            export_txt(self.root, output, progress_callback=cancel)
+        self.assertFalse(output.exists())
+        self.assertFalse((self.root / "cancelled.txt.tmp").exists())
+
     def test_epub_is_self_contained_epub3_and_escapes_content(self) -> None:
         self._create_document("001", "雨夜 <开始>", "林越 & 风雨\n门外 <无人>。")
         output = self.root / "book.epub"

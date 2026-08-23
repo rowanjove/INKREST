@@ -5,6 +5,7 @@ import threading
 import uuid
 import contextvars
 import json
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
@@ -26,6 +27,11 @@ from novel_agent.services.manuscript_workspace import (
 
 task_id_var = contextvars.ContextVar("task_id", default=None)
 logger = get_logger("tasks")
+_EXPORT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="novel-export")
+
+
+class _ExportCancelled(RuntimeError):
+    """Cooperative cancellation raised from a streaming exporter callback."""
 
 
 def _is_auto_resumable_single_chapter_task(task: Dict[str, Any]) -> bool:
@@ -1067,6 +1073,221 @@ class TaskManager:
                     logger.warning("Failed to close LLM clients for task %s: %s", task_id, exc)
             self._semaphore_for_loop().release()
             self._running_chapters.pop(chapter_id, None)
+            self._running_tasks.pop(task_id, None)
+            task_id_var.reset(token)
+
+    async def submit_export(
+        self,
+        *,
+        export_format: str,
+        title: str,
+        chapter_ids: Optional[List[str]] = None,
+        extension: str = ".txt",
+        streaming: bool = True,
+    ) -> str:
+        """Queue a project-scoped publication export as a cancellable task."""
+
+        task_id = f"export-{str(uuid.uuid4())[:8]}"
+        export_dir = self.root_dir / "workspace" / "exports"
+        output_path = export_dir / f"{task_id}{extension}"
+        payload = {
+            "format": export_format,
+            "title": title,
+            "chapter_ids": list(chapter_ids or []),
+            "output_path": str(output_path),
+            "streaming": bool(streaming),
+            "goal": f"发布导出：{title}",
+        }
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            self._create_task_record,
+            task_id,
+            TaskType.EXPORT,
+            payload,
+            2,
+        )
+        task = _EXPORT_EXECUTOR.submit(
+            asyncio.run,
+            self._run_export(
+                task_id,
+                export_format,
+                title,
+                list(chapter_ids or []),
+                output_path,
+                bool(streaming),
+            ),
+        )
+        self._running_tasks[task_id] = task
+        return task_id
+
+    async def submit_vector_rebuild(self, *, chunk_size: int = 500) -> str:
+        task_id = f"vector-{str(uuid.uuid4())[:8]}"
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            self._create_task_record,
+            task_id,
+            TaskType.VECTOR_REBUILD,
+            {"chunk_size": int(chunk_size), "goal": "重建向量索引"},
+            3,
+        )
+        task = _EXPORT_EXECUTOR.submit(
+            asyncio.run,
+            self._run_vector_rebuild(task_id, int(chunk_size)),
+        )
+        self._running_tasks[task_id] = task
+        return task_id
+
+    async def _run_vector_rebuild(self, task_id: str, chunk_size: int) -> None:
+        token = task_id_var.set(task_id)
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, self._update_task_status, task_id, "running"
+            )
+            from novel_agent.services.vector_rebuild import rebuild_vector_index
+
+            def on_progress(progress: Dict[str, Any]) -> None:
+                self._update_task_progress(task_id, progress)
+
+            result = await asyncio.get_running_loop().run_in_executor(
+                None,
+                partial(
+                    rebuild_vector_index,
+                    self.root_dir,
+                    chunk_size=chunk_size,
+                    should_abort=lambda: self.is_aborted(task_id),
+                    on_progress=on_progress,
+                ),
+            )
+            if self.is_aborted(task_id):
+                return
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._update_task_status,
+                task_id,
+                "completed",
+                result,
+                None,
+            )
+        except asyncio.CancelledError:
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._update_task_status,
+                task_id,
+                "cancelled",
+                None,
+                "向量重建已取消",
+            )
+        except Exception as exc:
+            await self._mark_task_failed(task_id, exc, resumable_from="vector_rebuild")
+        finally:
+            self._running_tasks.pop(task_id, None)
+            task_id_var.reset(token)
+
+    async def _run_export(
+        self,
+        task_id: str,
+        export_format: str,
+        title: str,
+        chapter_ids: List[str],
+        output_path: Path,
+        streaming: bool = True,
+    ) -> None:
+        token = task_id_var.set(task_id)
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, self._update_task_status, task_id, "running"
+            )
+            if streaming:
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    self._update_task_progress,
+                    task_id,
+                    {"step": "exporting", "status": "running", "progress": 5},
+                )
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            from novel_agent.exporters import export_novel
+
+            total_chapters = len(chapter_ids)
+            if not total_chapters:
+                total_chapters = self.store.count_manuscript_document_summaries(has_content=True)
+
+            def on_chapter_exported(count: int) -> None:
+                if self.is_aborted(task_id):
+                    raise _ExportCancelled("导出任务已取消")
+                self._update_task_progress(
+                    task_id,
+                    {
+                        "step": "exporting",
+                        "status": "running",
+                        "progress": round(count * 95 / total_chapters) if total_chapters else 95,
+                        "completed_chapters": count,
+                        "total_chapters": total_chapters,
+                    },
+                )
+
+            exporter_kwargs = {}
+            if streaming and export_format in {"txt", "markdown", "md"}:
+                exporter_kwargs["progress_callback"] = on_chapter_exported
+
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                partial(
+                    export_novel,
+                    self.root_dir,
+                    output_path,
+                    export_format,
+                    title=title,
+                    chapter_ids=chapter_ids or None,
+                    **exporter_kwargs,
+                ),
+            )
+            if self.is_aborted(task_id):
+                output_path.unlink(missing_ok=True)
+                return
+            if streaming:
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    self._update_task_progress,
+                    task_id,
+                    {"step": "ready", "status": "completed", "progress": 100},
+                )
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._update_task_status,
+                task_id,
+                "completed",
+                {
+                    "path": str(output_path),
+                    "format": export_format,
+                    "title": title,
+                    "chapter_count": len(chapter_ids) if chapter_ids else None,
+                },
+                None,
+            )
+        except _ExportCancelled:
+            output_path.unlink(missing_ok=True)
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._update_task_status,
+                task_id,
+                "cancelled",
+                None,
+                "导出任务已取消",
+            )
+        except asyncio.CancelledError:
+            output_path.unlink(missing_ok=True)
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._update_task_status,
+                task_id,
+                "cancelled",
+                None,
+                "导出任务已取消",
+            )
+        except Exception as exc:
+            output_path.unlink(missing_ok=True)
+            await self._mark_task_failed(task_id, exc, resumable_from="export")
+        finally:
             self._running_tasks.pop(task_id, None)
             task_id_var.reset(token)
 

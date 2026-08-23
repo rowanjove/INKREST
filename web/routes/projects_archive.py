@@ -13,6 +13,7 @@ from starlette.background import BackgroundTask
 
 import web.context as ws_server
 from web.project_manager import MAX_PINNED_PROJECTS
+from novel_agent.services.v2_reset import _verify_backup_manifest
 
 router = APIRouter()
 
@@ -93,6 +94,48 @@ def _should_export_project_member(filename: str) -> bool:
     )
 
 
+def _validated_export_members(
+    project_dir: Path,
+    *,
+    budget: dict[str, int] | None = None,
+) -> list[tuple[Path, str, int]]:
+    """Enumerate safe export members while enforcing the ZIP size contract."""
+
+    members: list[tuple[Path, str, int]] = []
+    own_total_bytes = 0
+    own_file_count = 0
+    for path in project_dir.rglob("*"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            path.resolve().relative_to(project_dir.resolve())
+        except ValueError:
+            continue
+        rel_path = path.relative_to(project_dir).as_posix()
+        if not _should_export_project_member(rel_path):
+            continue
+        size = int(path.stat().st_size)
+        if size > projects_module.MAX_PROJECT_ZIP_UNCOMPRESSED_BYTES:
+            raise HTTPException(413, f"Project member exceeds the allowed size: {rel_path}")
+        own_total_bytes += size
+        own_file_count += 1
+        if (
+            (budget or {}).get("bytes", 0) + own_total_bytes
+            > projects_module.MAX_PROJECT_ZIP_UNCOMPRESSED_BYTES
+        ):
+            raise HTTPException(413, "Project ZIP expands beyond the allowed size")
+        if (
+            (budget or {}).get("files", 0) + own_file_count
+            > projects_module.MAX_PROJECT_ZIP_FILES
+        ):
+            raise HTTPException(413, "Project ZIP contains too many files")
+        members.append((path, rel_path, size))
+    if budget is not None:
+        budget["bytes"] = budget.get("bytes", 0) + own_total_bytes
+        budget["files"] = budget.get("files", 0) + own_file_count
+    return members
+
+
 def _extract_and_validate_zip(tmp_path: Path, project_dir: Path) -> None:
     with zipfile.ZipFile(tmp_path, "r") as zf:
         infos = zf.infolist()
@@ -118,6 +161,36 @@ def _extract_and_validate_zip(tmp_path: Path, project_dir: Path) -> None:
                 member_path.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(info) as source, open(member_path, "wb") as target:
                     shutil.copyfileobj(source, target)
+
+
+def _verify_v2_backup_if_present(tmp_path: Path) -> None:
+    """Verify the manifest of a V2 reset backup before it is imported.
+
+    Ordinary project exports intentionally have no manifest and keep their
+    historical import behavior.  A V2 backup, however, carries per-member
+    hashes; accepting it through the normal import endpoint must not silently
+    discard that integrity contract.
+    """
+
+    try:
+        with zipfile.ZipFile(tmp_path, "r") as archive:
+            try:
+                manifest = json.loads(archive.read("manifest.json"))
+            except KeyError:
+                return
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise HTTPException(400, "V2 backup manifest is invalid") from exc
+            if not isinstance(manifest, dict) or manifest.get("format") != "novel-agent-v2-backup":
+                return
+            project_id = str(manifest.get("project_id") or "")
+            if not project_id:
+                raise HTTPException(400, "V2 backup manifest is missing project_id")
+            try:
+                _verify_backup_manifest(archive, manifest, project_id=project_id)
+            except Exception as exc:
+                raise HTTPException(400, f"V2 backup integrity verification failed: {exc}") from exc
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(400, "Uploaded project ZIP is invalid") from exc
 
 
 def _parse_imported_project_metadata(project_dir: Path) -> Tuple[str, str, bool, str]:
@@ -193,6 +266,7 @@ def batch_export_projects_zip(req: BatchExportRequest) -> FileResponse:
     tmp.close()
 
     try:
+        budget = {"files": 0, "bytes": 0}
         with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
             manifest = {
                 "exported_at": datetime.now().isoformat(),
@@ -200,6 +274,8 @@ def batch_export_projects_zip(req: BatchExportRequest) -> FileResponse:
                 "count": len(unique_ids),
             }
             zf.writestr("batch_export_manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+            budget["files"] += 1
+            budget["bytes"] += len(json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"))
             for pid in unique_ids:
                 project_dir = ws_server.BASE_DIR / "projects" / pid
                 info = projects.get(pid, {})
@@ -214,17 +290,20 @@ def batch_export_projects_zip(req: BatchExportRequest) -> FileResponse:
                     f"{pid}/project_info.json",
                     json.dumps(info_data, ensure_ascii=False, indent=2),
                 )
-                for path in project_dir.rglob("*"):
-                    if not path.is_file() or path.is_symlink():
-                        continue
-                    try:
-                        path.resolve().relative_to(project_dir.resolve())
-                    except ValueError:
-                        continue
-                    rel_path = path.relative_to(project_dir).as_posix()
-                    if not _should_export_project_member(rel_path):
-                        continue
+                info_bytes = len(json.dumps(info_data, ensure_ascii=False, indent=2).encode("utf-8"))
+                budget["files"] += 1
+                budget["bytes"] += info_bytes
+                if budget["files"] > projects_module.MAX_PROJECT_ZIP_FILES:
+                    raise HTTPException(413, "Project ZIP contains too many files")
+                if budget["bytes"] > projects_module.MAX_PROJECT_ZIP_UNCOMPRESSED_BYTES:
+                    raise HTTPException(413, "Project ZIP expands beyond the allowed size")
+                for path, rel_path, _size in _validated_export_members(project_dir, budget=budget):
                     zf.write(str(path), f"{pid}/{rel_path}")
+        if tmp_path.stat().st_size > projects_module.MAX_PROJECT_ZIP_BYTES:
+            raise HTTPException(413, "Project ZIP exceeds the download size limit")
+    except HTTPException:
+        tmp_path.unlink(missing_ok=True)
+        raise
     except Exception as exc:
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(500, f"Batch export failed: {exc}") from exc
@@ -253,6 +332,7 @@ def export_project_zip(pid: str) -> FileResponse:
     tmp.close()
 
     try:
+        budget = {"files": 1, "bytes": 0}
         with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
             info_data = {
                 "name": info.get("name", pid),
@@ -263,19 +343,15 @@ def export_project_zip(pid: str) -> FileResponse:
             }
             zf.writestr("project_info.json", json.dumps(info_data, ensure_ascii=False, indent=2))
 
-            for path in project_dir.rglob("*"):
-                if path.is_file():
-                    if path.is_symlink():
-                        continue
-                    try:
-                        path.resolve().relative_to(project_dir.resolve())
-                    except ValueError:
-                        continue
-                    rel_path = path.relative_to(project_dir)
-                    rel_posix = rel_path.as_posix()
-                    if not _should_export_project_member(rel_posix):
-                        continue
-                    zf.write(str(path), rel_posix)
+            info_payload = json.dumps(info_data, ensure_ascii=False, indent=2)
+            budget["bytes"] = len(info_payload.encode("utf-8"))
+            for path, rel_path, _size in _validated_export_members(project_dir, budget=budget):
+                zf.write(str(path), rel_path)
+        if tmp_path.stat().st_size > projects_module.MAX_PROJECT_ZIP_BYTES:
+            raise HTTPException(413, "Project ZIP exceeds the download size limit")
+    except HTTPException:
+        tmp_path.unlink(missing_ok=True)
+        raise
     except Exception as exc:
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(500, f"Exporting ZIP failed: {exc}")
@@ -307,6 +383,7 @@ def import_project_zip(file: UploadFile = File(...)) -> Dict[str, Any]:
         with open(tmp_path, "wb") as f:
             _copy_upload_with_limit(file.file, f, projects_module.MAX_PROJECT_ZIP_BYTES)
 
+        _verify_v2_backup_if_present(tmp_path)
         _extract_and_validate_zip(tmp_path, project_dir)
         name, description, import_pinned, import_pinned_at = _parse_imported_project_metadata(project_dir)
         _register_imported_project(pid, name, description, import_pinned, import_pinned_at)

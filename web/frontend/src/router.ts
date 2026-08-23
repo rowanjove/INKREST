@@ -25,6 +25,7 @@ const router = createRouter({
     { path: '/state', name: 'state', component: () => import('./views/StateView.vue'), meta: { scope: 'project', title: '剧情状态', navId: 'planning' } },
     { path: '/assets', name: 'assets', component: () => import('./views/AssetEditor.vue'), meta: { scope: 'project', title: '故事素材', navId: 'planning' } },
     { path: '/production', name: 'production', component: () => import('./views/ProductionCenter.vue'), meta: { scope: 'project', title: '生产', navId: 'production', fullBleed: true } },
+    { path: '/quality', name: 'quality', component: () => import('./views/QualityCenter.vue'), meta: { scope: 'project', title: '质量', navId: 'quality' } },
     {
       path: '/monitor',
       redirect: (to) => ({

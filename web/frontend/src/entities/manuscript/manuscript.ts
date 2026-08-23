@@ -33,6 +33,54 @@ export interface ManuscriptDocument {
   updated_at: string
 }
 
+export interface QualityCandidateDiffSegment {
+  op: 'equal' | 'insert' | 'delete' | 'replace'
+  text: string
+}
+
+export interface QualityCandidateMetadata {
+  accepted?: boolean
+  status?: string
+  adopted?: boolean
+  adopted_revision?: number
+  reasons?: string[]
+  metrics?: Record<string, unknown>
+  source_sha256?: string
+  candidate_sha256?: string
+}
+
+export interface QualityCandidateDiff {
+  segments: QualityCandidateDiffSegment[]
+  stats: {
+    original_lines: number
+    candidate_lines: number
+    added_lines: number
+    removed_lines: number
+    changed_blocks: number
+  }
+  truncated: boolean
+}
+
+export interface QualityCandidateSummary {
+  available?: boolean
+  preview?: string
+  preview_truncated?: boolean
+  artifact?: string
+  metadata?: QualityCandidateMetadata
+  diff?: QualityCandidateDiff
+}
+
+export interface QualityCandidateDetail {
+  available: boolean
+  chapter_id: string
+  current_revision: number
+  current_sha256: string
+  candidate_text: string
+  metadata: QualityCandidateMetadata
+  artifact?: string
+  diff: QualityCandidateDiff
+}
+
 export interface ManuscriptRevision {
   revision_id: string
   document_id: string
@@ -52,6 +100,7 @@ export interface ManuscriptContext {
   target_chars?: number[]
   risk_level?: string
   gate_status?: string
+  quality_candidate?: QualityCandidateSummary
 }
 
 export interface ManuscriptWorkspace {
@@ -61,6 +110,10 @@ export interface ManuscriptWorkspace {
   document: ManuscriptDocument | null
   history: ManuscriptRevision[]
   context: ManuscriptContext
+  catalog_offset?: number
+  catalog_limit?: number
+  catalog_total?: number
+  catalog_has_more?: boolean
 }
 
 export interface EditorSelection {

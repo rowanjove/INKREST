@@ -1,4 +1,8 @@
-import { findScaleOption, isLongFormScale } from '../constants/scaleOptions'
+import {
+  DEFAULT_RUN_CHAPTER_BUDGET,
+  findScaleOption,
+  isLongFormScale,
+} from '../constants/scaleOptions'
 import type { Composition } from '../types/preset'
 
 export interface QuickCreatePayload {
@@ -29,6 +33,9 @@ export function buildMinimalOutline(data: QuickCreatePayload): Record<string, un
     label: data.scale_label,
     target_chapters: target,
     max_chapters: opt?.max_chapters ?? target,
+    scale_hard_max: opt?.max_chapters ?? target,
+    project_soft_target: target,
+    run_chapter_budget: DEFAULT_RUN_CHAPTER_BUDGET,
     target_chars: data.target_chars_per_chapter,
   }
 

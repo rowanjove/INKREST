@@ -1,4 +1,5 @@
 import { computed, ref, watch } from 'vue'
+import { MAX_RUN_CHAPTER_BUDGET } from '../constants/scaleOptions'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
@@ -145,9 +146,13 @@ export function useNovelBatchRun() {
     const outline = ctx.value.outline
     const profile = outline?.scale_profile || {}
     const scale = profile.scale || ''
-    const hardMax = Number(profile.max_chapters) || 0
+    const hardMax = Number(profile.scale_hard_max || profile.max_chapters) || 0
     const limit =
-      outline?.target_chapters || currentProject.value?.target_chapters || hardMax || 20
+      outline?.target_chapters
+      || profile.project_soft_target
+      || currentProject.value?.target_chapters
+      || hardMax
+      || 20
     const cap =
       hardMax >= 999999 || scale === 'infinite'
         ? limit
@@ -156,6 +161,11 @@ export function useNovelBatchRun() {
   })
 
   const workScale = computed(() => String(ctx.value.outline?.scale_profile?.scale || ''))
+  const runChapterInputMax = computed(() => {
+    const remaining = maxAvailableChapters.value || 1
+    if (form.value.autopilot) return Math.min(remaining, 5000)
+    return Math.min(remaining, MAX_RUN_CHAPTER_BUDGET)
+  })
 
   const readinessItems = computed(() => {
     const server = ctx.value.serverReadiness
@@ -403,6 +413,12 @@ export function useNovelBatchRun() {
       )
       return
     }
+    if (!form.value.autopilot && form.value.target_chapters > MAX_RUN_CHAPTER_BUDGET) {
+      ElMessage.warning(
+        `单次运行最多 ${MAX_RUN_CHAPTER_BUDGET} 章；更大目标请打开自动续跑`,
+      )
+      return
+    }
 
     if (isExternalBlockActive.value) {
       ElMessage.warning(
@@ -472,6 +488,7 @@ export function useNovelBatchRun() {
         {
           resume: true,
           max_chapters: cap,
+          chapters_per_round: form.value.autopilot ? Math.min(cap, 100) : 0,
           dry_run: false,
           autopilot: form.value.autopilot,
           full_book: true,
@@ -555,6 +572,7 @@ export function useNovelBatchRun() {
     ctx,
     currentProject,
     maxAvailableChapters,
+    runChapterInputMax,
     workScale,
     readinessItems,
     canRun,

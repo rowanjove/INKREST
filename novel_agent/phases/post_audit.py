@@ -204,6 +204,37 @@ class PostAuditPhase(PipelinePhase):
 
         logger.info("Step 13: Persistence update for chapter %s", ctx.chapter_id)
         emit_progress("state_update", "running", chapter_id=ctx.chapter_id)
+
+        # Keep the existing SQLite/YAML state authoritative, while writing a
+        # source-labelled event projection for later causal retrieval.  This is
+        # best-effort and never changes the state update payload itself.
+        try:
+            from novel_agent.quality.event_memory import (
+                derive_event_revision_id,
+                write_narrative_event_projection,
+            )
+
+            events = state_update.get("events", [])
+            event_revision = str(state_update.get("source_revision_id") or "").strip() or derive_event_revision_id(
+                ctx.chapter_id,
+                events,
+            )
+
+            write_narrative_event_projection(
+                self.orchestrator.root_dir,
+                ctx.chapter_id,
+                events,
+                source_document_id=f"chapter:{ctx.chapter_id}",
+                source_revision_id=event_revision,
+            )
+            self.orchestrator.store.upsert_narrative_events(
+                ctx.chapter_id,
+                events,
+                source_document_id=f"chapter:{ctx.chapter_id}",
+                source_revision_id=event_revision,
+            )
+        except Exception as exc:
+            logger.warning("Failed to write narrative event projection: %s", exc)
         
         # 1. 保存 YAML 文件
         self.orchestrator.state_manager.apply_update(ctx.chapter_id, state_update, interactive=self.orchestrator.config.interactive)

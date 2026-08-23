@@ -61,6 +61,20 @@ export function targetChaptersInputMax(scale: string): number {
   return opt?.max_chapters ?? 3000
 }
 
+export const DEFAULT_RUN_CHAPTER_BUDGET = 20
+export const MAX_RUN_CHAPTER_BUDGET = 200
+
+export function resolveScaleBudget(scale: string, targetChapters: number) {
+  const opt = findScaleOption(scale)
+  const scaleHardMax = opt?.max_chapters ?? 3000
+  return {
+    scale,
+    scaleHardMax,
+    projectSoftTarget: targetChapters,
+    runChapterBudget: Math.min(DEFAULT_RUN_CHAPTER_BUDGET, MAX_RUN_CHAPTER_BUDGET),
+  }
+}
+
 export function isLongFormScale(scale: string): boolean {
   return scale === 'long' || scale === 'epic' || scale === 'infinite'
 }

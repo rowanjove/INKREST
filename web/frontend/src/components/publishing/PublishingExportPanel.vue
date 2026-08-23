@@ -3,6 +3,7 @@ import { Check, Download, DocumentCopy, Warning } from '@element-plus/icons-vue'
 
 import type {
   ExportFormat,
+  PublishingExportTask,
   PublishingWorkspace,
 } from '../../entities/publishing/publishing'
 
@@ -10,12 +11,14 @@ defineProps<{
   workspace: PublishingWorkspace
   selectedChapterId: string
   exporting: boolean
+  exportTask: PublishingExportTask | null
 }>()
 const format = defineModel<ExportFormat>('format', { required: true })
 const scope = defineModel<'all' | 'chapter'>('scope', { required: true })
 const title = defineModel<string>('title', { required: true })
 const emit = defineEmits<{
   download: []
+  cancel: []
   navigate: [route: string]
 }>()
 </script>
@@ -77,8 +80,16 @@ const emit = defineEmits<{
         :disabled="!workspace.preflight.can_export"
         @click="emit('download')"
       >
-        检查并下载
+        {{ exporting ? '正在生成…' : '检查并下载' }}
       </el-button>
+      <div v-if="exporting && exportTask" class="export-progress">
+        <div>
+          <span>{{ exportTask.progress?.step === 'ready' ? '准备下载' : '正在生成文件' }}</span>
+          <strong>{{ exportTask.progress?.progress || 0 }}%</strong>
+        </div>
+        <el-progress :percentage="exportTask.progress?.progress || 0" :show-text="false" />
+        <el-button text type="danger" size="small" @click="emit('cancel')">取消导出</el-button>
+      </div>
     </article>
 
     <aside class="preflight-panel">
@@ -152,6 +163,9 @@ header p { margin: 3px 0 0; color: var(--color-text-muted); font-size: 10px; }
 .export-note { display: flex; gap: 9px; margin: 4px 0 18px; padding: 11px; border-radius: 9px; background: var(--color-info-soft); color: var(--color-info); }
 .export-note svg { width: 16px; flex: 0 0 16px; }
 .export-note p { margin: 0; font-size: 9px; line-height: 1.65; }
+.export-progress { display: grid; gap: 6px; margin-top: 10px; }
+.export-progress > div { display: flex; justify-content: space-between; color: var(--color-text-muted); font-size: 10px; }
+.export-progress strong { color: var(--color-primary); }
 .preflight-panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--color-border); }
 .preflight-panel > header > span { flex: 0 0 auto; padding: 5px 8px; border-radius: 999px; background: var(--color-success-soft); color: var(--color-success); font-size: 8px; font-weight: 800; }
 .preflight-panel > header > span.warning { background: var(--color-warning-soft); color: var(--color-warning); }

@@ -7,6 +7,7 @@ from typing import Tuple
 # Core narrative graph and chapter index (user-visible "story state").
 NARRATIVE_STATE_TABLES: Tuple[str, ...] = (
     "events",
+    "narrative_events",
     "objects",
     "threads",
     "character_state",
@@ -26,6 +27,7 @@ NARRATIVE_STATE_TABLES: Tuple[str, ...] = (
     "chapter_rewrites",
     "document_revisions",
     "documents",
+    "story_search_fts",
 )
 
 # Task queue, cost logs, prompt/asset version history (kept unless include_operational).

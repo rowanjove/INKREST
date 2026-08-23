@@ -4,6 +4,7 @@ export * from './api/factory'
 export * from './api/chapters'
 export * from './api/projectSnapshot'
 export * from './api/publishing'
+export * from './api/quality'
 
 import api from './api/client'
 import type { PlanningWorkspace } from './entities/planning/planningWorkspace'
@@ -59,6 +60,9 @@ export const deleteAsset = (name: string) =>
 export const getConfig = () =>
   api.get('/config')
 
+export const getLongformReadiness = () =>
+  api.get('/longform/readiness')
+
 export const updateConfig = (data: Record<string, unknown>) =>
   api.put('/config', data)
 
@@ -76,10 +80,25 @@ export const updatePrompt = (role: string, content: string) =>
 export const resetPrompt = (role: string) =>
   api.post(`/prompts/${role}/reset`)
 
+export const getPromptManifest = () =>
+  api.get('/prompts/manifest')
+
+export const getProseProfile = () =>
+  api.get('/prose-profile')
+
+export const getProseProfileVersions = () =>
+  api.get('/prose-profile/versions')
+
+export const restoreProseProfile = (revision: number) =>
+  api.post('/prose-profile/restore', { revision })
+
 // ---- Outline ----
 
 export const getOutline = () =>
   api.get('/outline')
+
+export const getOutlineRevision = () =>
+  api.get<{ revision: number; digest: string }>('/outline/revision')
 
 // ---- Longform Control ----
 

@@ -48,6 +48,9 @@ _SENSITIVE_NAMES = frozenset(
 )
 _ACTIVE_STATUSES = ("pending", "claimed", "running", "paused")
 _RESET_LOCK = threading.RLock()
+MAX_BACKUP_FILES = 20000
+MAX_BACKUP_FILE_BYTES = 512 * 1024 * 1024
+MAX_BACKUP_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 
 
 class V2ResetError(RuntimeError):
@@ -264,6 +267,38 @@ def _verify_backup_manifest(
             raise V2ResetError(f"Backup member hash mismatch: {path}")
 
 
+def list_backup_inventory(project_root: Path) -> dict[str, Any]:
+    """Stream-friendly backup inventory with explicit size/file caps."""
+
+    files = _iter_backup_files(Path(project_root))
+    total_bytes = 0
+    oversized: list[str] = []
+    for source, relative in files:
+        size = int(source.stat().st_size)
+        total_bytes += size
+        if size > MAX_BACKUP_FILE_BYTES:
+            oversized.append(relative.as_posix())
+    if len(files) > MAX_BACKUP_FILES:
+        raise V2ResetError(
+            f"Backup file count {len(files)} exceeds {MAX_BACKUP_FILES}"
+        )
+    if oversized:
+        raise V2ResetError(
+            f"Backup file exceeds {MAX_BACKUP_FILE_BYTES} bytes: {oversized[0]}"
+        )
+    if total_bytes > MAX_BACKUP_TOTAL_BYTES:
+        raise V2ResetError(
+            f"Backup total size {total_bytes} exceeds {MAX_BACKUP_TOTAL_BYTES} bytes"
+        )
+    return {
+        "file_count": len(files),
+        "total_bytes": total_bytes,
+        "max_files": MAX_BACKUP_FILES,
+        "max_file_bytes": MAX_BACKUP_FILE_BYTES,
+        "max_total_bytes": MAX_BACKUP_TOTAL_BYTES,
+    }
+
+
 def create_v2_backup(
     *,
     projects_root: Path,
@@ -284,6 +319,8 @@ def create_v2_backup(
         backup_dir.mkdir(parents=True, exist_ok=True)
         stamp = created.strftime("%Y%m%dT%H%M%S%fZ")
         target = backup_dir / f"{project_id}-{stamp}.zip"
+        files = _iter_backup_files(project)
+        list_backup_inventory(project)
         descriptor, temporary_name = tempfile.mkstemp(
             dir=backup_dir,
             prefix=f".{project_id}-",
@@ -291,7 +328,6 @@ def create_v2_backup(
         )
         os.close(descriptor)
         temporary = Path(temporary_name)
-        files = _iter_backup_files(project)
         sqlite_relative = Path("data") / "novel.sqlite"
         sqlite_snapshot = temporary.with_suffix(".sqlite")
         sqlite_source = project / sqlite_relative

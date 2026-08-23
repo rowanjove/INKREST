@@ -83,6 +83,11 @@ class PublishingWorkspace(BaseModel):
     chapters: list[PublicationChapterSummary]
     selected_chapter_id: str = ""
     selected_chapter: PublicationChapter | None = None
+    catalog_offset: int = 0
+    catalog_limit: int = 100
+    catalog_total: int = 0
+    catalog_has_more: bool = False
+    selected_catalog_index: int = -1
     platform: dict
     platform_check: dict
     golden_check: dict

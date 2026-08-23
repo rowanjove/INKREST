@@ -49,3 +49,7 @@ class ManuscriptWorkspace(BaseModel):
     document: Optional[ManuscriptDocument] = None
     history: List[ManuscriptRevision] = Field(default_factory=list)
     context: Dict[str, Any] = Field(default_factory=dict)
+    catalog_offset: int = 0
+    catalog_limit: int = 100
+    catalog_total: int = 0
+    catalog_has_more: bool = False

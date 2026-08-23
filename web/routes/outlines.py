@@ -1,7 +1,8 @@
 import json
 import copy
+import hashlib
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from web.deps import (
@@ -53,6 +54,74 @@ def _load_outline_from_root(root: Path) -> Dict[str, Any]:
         return {}
 
 
+def _outline_digest(outline: Dict[str, Any]) -> str:
+    payload = json.dumps(outline or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _outline_revision_path(root: Path) -> Path:
+    return root / "workspace" / "outline_revision.json"
+
+
+def _load_outline_revision(root: Path, outline: Dict[str, Any]) -> Dict[str, Any]:
+    path = _outline_revision_path(root)
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        value = {}
+    if not isinstance(value, dict):
+        value = {}
+    value.setdefault("revision", 0)
+    value.setdefault("digest", _outline_digest(outline))
+    return value
+
+
+def _save_outline_revision(root: Path, outline: Dict[str, Any], *, previous: Dict[str, Any]) -> Dict[str, Any]:
+    revision = int(previous.get("revision") or 0) + 1
+    digest = _outline_digest(outline)
+    history_dir = root / "workspace" / "outline_history"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    if previous.get("revision") and previous.get("outline"):
+        history_path = history_dir / f"v{int(previous['revision'])}.json"
+        if not history_path.exists():
+            history_path.write_text(json.dumps(previous["outline"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    document = {"schema_version": 1, "revision": revision, "digest": digest, "outline": outline}
+    revision_path = _outline_revision_path(root)
+    revision_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = revision_path.with_suffix(revision_path.suffix + ".tmp")
+    temporary.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(revision_path)
+    return {"revision": revision, "digest": digest}
+
+
+def _written_chapter_ids(root: Path) -> list[str]:
+    ids: set[str] = set()
+    progress_path = root / "workspace" / "novel_batch_progress.json"
+    try:
+        progress = json.loads(progress_path.read_text(encoding="utf-8"))
+        ids.update(str(item) for item in (progress.get("completed_chapter_ids") or []) if str(item))
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        pass
+    for chapter_dir in (root / "workspace" / "chapters").glob("chapter_*"):
+        if (chapter_dir / "chapter_final.txt").is_file():
+            ids.add(chapter_dir.name.removeprefix("chapter_"))
+    return sorted(ids)
+
+
+def _current_canon_events(root: Path) -> list[dict[str, Any]]:
+    # Outline saves must remain read-only with respect to a fresh project.  Do
+    # not initialize SQLite merely to discover that there are no canon rows.
+    if not (Path(root) / "data" / "novel.sqlite").is_file():
+        return []
+    try:
+        from novel_agent.state.sqlite_store import SQLiteStateStore
+
+        return SQLiteStateStore(root).list_narrative_events(limit=500)
+    except Exception as exc:
+        ws_server.logger.debug("Unable to load canon events for outline impact: %s", exc)
+        return []
+
+
 def _sync_and_ensure_assets(root: Path, outline: Dict[str, Any]):
     """大纲生成或更新时，一并确保并同步五大核心项目资产文件。"""
     # 1. 联动同步世界观
@@ -77,13 +146,138 @@ def get_outline(session: ProjectSession = Depends(get_project_session)) -> Dict[
     return _load_outline_from_root(session.root_dir)
 
 
+@router.get("/api/outline/revision")
+def get_outline_revision(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    outline = _load_outline_from_root(session.root_dir)
+    state = _load_outline_revision(session.root_dir, outline)
+    return {"revision": int(state.get("revision") or 0), "digest": str(state.get("digest") or _outline_digest(outline))}
+
+
+@router.get("/api/outline/arc-contract/{arc_id}")
+def get_arc_contract(arc_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    from novel_agent.control.arc_contract_store import load_arc_contract
+
+    contract = load_arc_contract(session.root_dir, arc_id)
+    if not contract:
+        raise HTTPException(404, "arc contract not found")
+    return contract.to_dict()
+
+
+@router.post("/api/outline/arc-contract")
+def post_arc_contract(body: Dict[str, Any], session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    from novel_agent.control.arc_contract_store import create_arc_contract
+
+    try:
+        contract = create_arc_contract(session.root_dir, body, seal=bool(body.get("seal")))
+    except FileExistsError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    touch_project_activity(session)
+    return {"status": "saved", "contract": contract.to_dict()}
+
+
+@router.post("/api/outline/arc-contract/{arc_id}/seal")
+def seal_arc_contract_api(
+    arc_id: str,
+    body: Optional[Dict[str, Any]] = None,
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    from novel_agent.control.arc_contract_store import seal_saved_arc_contract
+
+    try:
+        expected_version = (body or {}).get("expected_version")
+        contract = seal_saved_arc_contract(
+            session.root_dir,
+            arc_id,
+            expected_version=int(expected_version) if expected_version is not None else None,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    touch_project_activity(session)
+    return {"status": "sealed", "contract": contract.to_dict()}
+
+
+@router.get("/api/outline/arc-contract/{arc_id}/history")
+def get_arc_contract_history(arc_id: str, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    from novel_agent.control.arc_contract_store import list_arc_contract_history
+
+    return {"arc_id": arc_id, "history": [item.to_dict() for item in list_arc_contract_history(session.root_dir, arc_id)]}
+
+
+@router.post("/api/outline/arc-contract/{arc_id}/supersede")
+def supersede_arc_contract_api(arc_id: str, body: Dict[str, Any], session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    from novel_agent.control.arc_contract_store import supersede_saved_arc_contract
+
+    try:
+        contract = supersede_saved_arc_contract(session.root_dir, arc_id, body)
+    except (FileNotFoundError, TypeError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    touch_project_activity(session)
+    return {"status": "superseded", "contract": contract.to_dict()}
+
+
+@router.post("/api/outline/arc-contract/{arc_id}/restore")
+def restore_arc_contract_api(arc_id: str, body: Dict[str, Any], session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    from novel_agent.control.arc_contract_store import restore_saved_arc_contract
+
+    try:
+        version = int(body.get("version") or 0)
+        expected_current_version = body.get("expected_current_version")
+        contract = restore_saved_arc_contract(
+            session.root_dir,
+            arc_id,
+            version,
+            expected_current_version=(
+                int(expected_current_version) if expected_current_version is not None else None
+            ),
+        )
+    except (FileNotFoundError, TypeError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    touch_project_activity(session)
+    return {"status": "restored_as_new_revision", "contract": contract.to_dict()}
+
+
 @router.put("/api/outline")
 def update_outline(body: Dict[str, Any], session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
     if not isinstance(body, dict):
         raise HTTPException(400, "Outline must be a JSON object")
     incoming = dict(body)
+    expected_digest = str(incoming.pop("expected_outline_digest", "") or "")
+    expected_revision_raw = incoming.pop("expected_revision", None)
     existing = _load_outline_from_root(session.root_dir)
+    previous_revision = _load_outline_revision(session.root_dir, existing)
+    current_digest = _outline_digest(existing)
+    stored_digest = str(previous_revision.get("digest") or "")
+    if stored_digest and existing and stored_digest != current_digest:
+        raise HTTPException(409, "outline revision metadata is stale; refresh before saving")
+    if expected_digest and expected_digest != (stored_digest or current_digest):
+        raise HTTPException(409, "outline changed since it was loaded; refresh before saving")
+    if expected_revision_raw is not None:
+        try:
+            if int(expected_revision_raw) != int(previous_revision.get("revision") or 0):
+                raise HTTPException(409, "outline revision is stale; refresh before saving")
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, "expected_revision must be an integer") from exc
+    from novel_agent.services.outline_impact import analyze_outline_impact
+
+    impact_target = {**existing, **incoming} if existing else dict(incoming)
+    if existing and not incoming.get("macro_outline") and existing.get("macro_outline"):
+        impact_target["macro_outline"] = existing["macro_outline"]
+    outline_impact = analyze_outline_impact(
+        existing,
+        impact_target,
+        written_chapters=_written_chapter_ids(session.root_dir),
+        canon_events=_current_canon_events(session.root_dir),
+    )
     macro_touched = "macro_outline" in incoming
     if existing:
         merged = {**existing, **incoming}
@@ -96,6 +290,12 @@ def update_outline(body: Dict[str, Any], session: ProjectSession = RequireProjec
     sp = body.get("scale_profile") or {}
     scale = str(sp.get("scale") or "")
     target = int(body.get("target_chapters") or sp.get("target_chapters") or 20)
+    from novel_agent.control.scale_profile import ScaleLimitError, validate_scale_target
+
+    try:
+        validate_scale_target(scale=scale, target_chapters=target)
+    except ScaleLimitError as exc:
+        raise HTTPException(422, str(exc)) from exc
     if body.get("macro_outline"):
         body["macro_outline"] = normalize_macro_outline(
             body.get("macro_outline") or [],
@@ -104,7 +304,17 @@ def update_outline(body: Dict[str, Any], session: ProjectSession = RequireProjec
         )
     root = session.root_dir
     
-    # Sync scale_profile and target_chapters to project_meta.json
+    body = finalize_outline_for_save(body)
+    validation = validate_outline_document(
+        body,
+        strict_macro=macro_touched and bool(body.get("macro_outline")),
+    )
+    if not validation["valid"]:
+        raise HTTPException(400, "；".join(validation["errors"]))
+
+    # Do not touch project projections until the complete outline has passed
+    # validation.  These writes are intentionally kept after the validation
+    # gate so a rejected request has no configuration side effects.
     scale_profile = body.get("scale_profile")
     target_chapters = body.get("target_chapters")
     meta_path = root / "config" / "project_meta.json"
@@ -121,12 +331,10 @@ def update_outline(body: Dict[str, Any], session: ProjectSession = RequireProjec
         except Exception as exc:
             ws_server.logger.warning("Failed to sync project meta: %s", exc)
 
-    # Sync default target chars to pipeline.yaml
     if scale_profile and scale_profile.get("target_chars"):
         chars_range = scale_profile.get("target_chars")
     else:
         chars_range = body.get("target_chars_per_chapter")
-        
     if chars_range and isinstance(chars_range, list) and len(chars_range) == 2:
         config_path = root / "config" / "pipeline.yaml"
         if config_path.exists():
@@ -137,16 +345,11 @@ def update_outline(body: Dict[str, Any], session: ProjectSession = RequireProjec
             except Exception as exc:
                 ws_server.logger.warning("Failed to sync pipeline.yaml target chars: %s", exc)
 
-    outline_path = root / "workspace" / "outline.json"
-    outline_path.parent.mkdir(parents=True, exist_ok=True)
-    outline_path.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
-
     if scale_profile:
         from novel_agent.services.long_form_preset import sync_pipeline_for_scale
 
         sync_pipeline_for_scale(root, scale=str(scale_profile.get("scale") or ""))
 
-    # 同步更新项目名称到注册表 projects.json
     chosen_title = body.get("chosen_title")
     if chosen_title:
         try:
@@ -159,25 +362,40 @@ def update_outline(body: Dict[str, Any], session: ProjectSession = RequireProjec
         except Exception as exc:
             ws_server.logger.warning("Failed to sync project name in projects.json: %s", exc)
 
-    body = finalize_outline_for_save(body)
-    validation = validate_outline_document(
-        body,
-        strict_macro=macro_touched and bool(body.get("macro_outline")),
-    )
-    if not validation["valid"]:
-        raise HTTPException(400, "；".join(validation["errors"]))
+    outline_path = root / "workspace" / "outline.json"
+    outline_path.parent.mkdir(parents=True, exist_ok=True)
+    outline_path.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+    revision_meta = _save_outline_revision(root, body, previous={**previous_revision, "outline": existing})
 
     _sync_and_ensure_assets(root, body)
     from novel_agent.services.outline_sync import check_arc_queue_stale, record_outline_saved
 
     record_outline_saved(root, body)
+    impact_path = root / "workspace" / "outline_impact.json"
+    impact_path.parent.mkdir(parents=True, exist_ok=True)
+    impact_path.write_text(json.dumps(outline_impact, ensure_ascii=False, indent=2), encoding="utf-8")
     touch_project_activity(session)
     stale = check_arc_queue_stale(root)
     return {
         **body,
         "validation_warnings": validation.get("warnings") or [],
         "arc_queue_stale": stale,
+        "outline_impact": outline_impact,
+        "outline_revision": revision_meta,
     }
+
+
+@router.post("/api/outline/impact")
+def preview_outline_impact(body: Dict[str, Any], session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    """Preview replan/canon impact without writing the outline."""
+    session = coerce_project_session(session)
+    before = _load_outline_from_root(session.root_dir)
+    after = body.get("after") if isinstance(body.get("after"), dict) else body
+    written = body.get("written_chapters") if isinstance(body.get("written_chapters"), list) else []
+    canon = body.get("canon_events") if isinstance(body.get("canon_events"), list) else []
+    from novel_agent.services.outline_impact import analyze_outline_impact
+
+    return analyze_outline_impact(before, after, written_chapters=written, canon_events=canon)
 
 
 @router.get("/api/outline/arc-queue-stale")
@@ -282,6 +500,12 @@ def plan_novel(req: NovelPlanRequest, session: ProjectSession = RequireProjectDe
     outline_path.write_text(
         json.dumps(outline, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    previous_generated_revision = _load_outline_revision(root, existing_outline)
+    outline_revision = _save_outline_revision(
+        root,
+        outline,
+        previous={**previous_generated_revision, "outline": existing_outline},
+    )
 
     sp = outline.get("scale_profile") or {}
     from novel_agent.services.long_form_preset import sync_pipeline_for_scale
@@ -311,6 +535,7 @@ def plan_novel(req: NovelPlanRequest, session: ProjectSession = RequireProjectDe
         "arc_queue_stale": check_arc_queue_stale(root),
         "planning_staged": req.target_chapters >= 200
         or str(scale_profile.get("scale") or "") in ("epic", "infinite", "long"),
+        "outline_revision": outline_revision,
     }
 
 

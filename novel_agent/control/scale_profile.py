@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -105,6 +106,146 @@ NEXT_SCALE = {
     "epic": "infinite",
 }
 
+DEFAULT_RUN_CHAPTER_BUDGET = 20
+MAX_RUN_CHAPTER_BUDGET = 200
+MAX_RUN_CHAPTER_BUDGET_BY_SCALE = {
+    "micro": 3,
+    "short": 20,
+    "medium": 50,
+    "long": 100,
+    "epic": 200,
+    "infinite": 200,
+}
+
+
+class ScaleLimitError(ValueError):
+    """Raised when a scale, soft target, or run budget exceeds the contract."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "SCALE_LIMIT",
+        scale: str = "",
+        target_chapters: int = 0,
+        recommended_scale: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.scale = scale
+        self.target_chapters = target_chapters
+        self.recommended_scale = recommended_scale
+
+
+@dataclass(frozen=True)
+class ScaleBudget:
+    scale: str
+    scale_hard_max: int
+    project_soft_target: int
+    run_chapter_budget: int
+    recommended_scale: str = ""
+
+
+def scale_hard_max(scale: str) -> int:
+    profile = SCALE_PROFILES.get(scale) or SCALE_PROFILES["medium"]
+    return int(profile["max_chapters"])
+
+
+def default_run_chapter_budget(scale: str) -> int:
+    cap = int(MAX_RUN_CHAPTER_BUDGET_BY_SCALE.get(scale, MAX_RUN_CHAPTER_BUDGET))
+    return min(DEFAULT_RUN_CHAPTER_BUDGET, cap)
+
+
+def clamp_run_chapter_budget(value: int, scale: str = "medium") -> int:
+    cap = int(MAX_RUN_CHAPTER_BUDGET_BY_SCALE.get(scale, MAX_RUN_CHAPTER_BUDGET))
+    cap = min(cap, MAX_RUN_CHAPTER_BUDGET)
+    if scale != "infinite":
+        cap = min(cap, scale_hard_max(scale))
+    try:
+        requested = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ScaleLimitError(
+            "本轮运行章数必须是整数",
+            code="RUN_BUDGET_INVALID",
+            scale=scale,
+        ) from exc
+    if requested < 0:
+        raise ScaleLimitError(
+            "本轮运行章数不能为负数",
+            code="RUN_BUDGET_INVALID",
+            scale=scale,
+            target_chapters=requested,
+        )
+    if requested == 0:
+        return default_run_chapter_budget(scale)
+    if requested > cap:
+        raise ScaleLimitError(
+            f"单次运行预算最多 {cap} 章，不能一次提交 {requested} 个生成任务",
+            code="RUN_BUDGET_EXCEEDED",
+            scale=scale,
+            target_chapters=requested,
+        )
+    return requested
+
+
+def resolve_scale_budget(
+    *,
+    scale: str = "",
+    scale_label: str = "",
+    target_chapters: Optional[int] = None,
+    run_chapter_budget: int = 0,
+) -> ScaleBudget:
+    profile = resolve_scale_profile(
+        target_chapters=target_chapters,
+        scale=scale,
+        scale_label=scale_label,
+    )
+    resolved = str(profile["scale"])
+    target = int(profile.get("project_soft_target") or target_chapters or 0)
+    return ScaleBudget(
+        scale=resolved,
+        scale_hard_max=int(profile["scale_hard_max"]),
+        project_soft_target=target,
+        run_chapter_budget=clamp_run_chapter_budget(
+            run_chapter_budget, scale=resolved
+        ),
+        recommended_scale=NEXT_SCALE.get(resolved, ""),
+    )
+
+
+def validate_scale_target(
+    *,
+    scale: str = "",
+    scale_label: str = "",
+    target_chapters: int = 0,
+) -> ScaleBudget:
+    resolved = scale or LABEL_TO_SCALE.get(scale_label, "")
+    if not resolved:
+        resolved = _scale_for_target(int(target_chapters or 20))
+    if resolved not in SCALE_PROFILES:
+        raise ScaleLimitError(
+            f"未知体量档位：{resolved}",
+            code="UNKNOWN_SCALE",
+            scale=resolved,
+            target_chapters=int(target_chapters or 0),
+        )
+    hard_max = scale_hard_max(resolved)
+    target = int(target_chapters or hard_max)
+    if resolved != "infinite" and target > hard_max:
+        recommended = NEXT_SCALE.get(resolved, "infinite")
+        raise ScaleLimitError(
+            f"{SCALE_PROFILES[resolved]['label']}硬上限为 {hard_max} 章；"
+            f"{target} 章请改用{SCALE_PROFILES[recommended]['label']}",
+            code="SCALE_HARD_MAX",
+            scale=resolved,
+            target_chapters=target,
+            recommended_scale=recommended,
+        )
+    return resolve_scale_budget(
+        scale=resolved,
+        target_chapters=target,
+    )
+
 
 def _outline_json_paths(root_dir: Path) -> list[Path]:
     root = Path(root_dir)
@@ -144,8 +285,15 @@ def resolve_scale_profile(
     if not resolved:
         resolved = _scale_for_target(int(target_chapters or 20))
     profile = deepcopy(SCALE_PROFILES.get(resolved, SCALE_PROFILES["medium"]))
+    hard_max = int(profile.get("max_chapters") or 0)
+    target = int(target_chapters or profile.get("target_chapters") or hard_max)
+    profile["scale_hard_max"] = hard_max
+    profile["project_soft_target"] = target
+    profile["run_chapter_budget"] = default_run_chapter_budget(str(profile.get("scale") or resolved))
     if target_chapters:
         profile["target_chapters"] = int(target_chapters)
+    else:
+        profile["target_chapters"] = target
     return profile
 
 
@@ -172,4 +320,6 @@ def _scale_for_target(target: int) -> str:
         return "medium"
     if target <= 500:
         return "long"
-    return "epic"
+    if target <= 3000:
+        return "epic"
+    return "infinite"

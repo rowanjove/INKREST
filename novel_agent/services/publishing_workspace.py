@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from novel_agent.control.platform_profiles import resolve_platform_profile
+from novel_agent.control.longform_flags import flag_enabled
 from novel_agent.domain.publishing import (
     ExportPreflight,
     PreflightItem,
@@ -75,11 +76,24 @@ def build_golden_check(chapters: list[PublicationChapterSummary]) -> dict[str, A
 def build_platform_check(
     chapters: list[PublicationChapterSummary],
     platform: dict[str, Any],
+    *,
+    chapter_count: int | None = None,
+    total_chars: int | None = None,
 ) -> dict[str, Any]:
     published = [chapter for chapter in chapters if chapter.has_content]
-    total_chars = sum(chapter.word_count for chapter in published)
-    chapter_count = len(published)
-    average = round(total_chars / chapter_count) if chapter_count else 0
+    effective_total_chars = (
+        int(total_chars)
+        if total_chars is not None
+        else sum(chapter.word_count for chapter in published)
+    )
+    effective_chapter_count = (
+        int(chapter_count) if chapter_count is not None else len(published)
+    )
+    average = (
+        round(effective_total_chars / effective_chapter_count)
+        if effective_chapter_count
+        else 0
+    )
     items = [
         {
             "code": "platform_selected",
@@ -101,7 +115,7 @@ def build_platform_check(
         },
     ]
     return {
-        "status": "ready" if chapter_count else "pending",
+        "status": "ready" if effective_chapter_count else "pending",
         "items": items,
     }
 
@@ -112,10 +126,20 @@ def build_export_preflight(
     snapshot_quality: dict[str, Any],
     empty_document_count: int,
     platform_explicit: bool,
+    published_count: int | None = None,
+    published_word_count: int | None = None,
 ) -> ExportPreflight:
     items: list[PreflightItem] = []
     published = [chapter for chapter in chapters if chapter.has_content]
-    if not published:
+    ready_count = (
+        int(published_count) if published_count is not None else len(published)
+    )
+    ready_words = (
+        int(published_word_count)
+        if published_word_count is not None
+        else sum(ch.word_count for ch in published)
+    )
+    if not ready_count:
         items.append(
             PreflightItem(
                 code="no_manuscript",
@@ -130,8 +154,8 @@ def build_export_preflight(
             PreflightItem(
                 code="manuscript_ready",
                 severity="ready",
-                label=f"已收集 {len(published)} 个正文章节",
-                detail=f"共 {sum(ch.word_count for ch in published)} 字，来自 SQLite 文稿。",
+                label=f"已收集 {ready_count} 个正文章节",
+                detail=f"共 {ready_words} 字，来自 SQLite 文稿。",
             )
         )
     if empty_document_count:
@@ -156,7 +180,7 @@ def build_export_preflight(
                 route="/production?tab=reviews",
             )
         )
-    if len(published) < 3:
+    if ready_count < 3:
         items.append(
             PreflightItem(
                 code="golden_chapters_incomplete",
@@ -211,6 +235,9 @@ def build_publishing_workspace(
     project_id: str,
     project_info: dict[str, Any] | None = None,
     selected_chapter_id: str = "",
+    offset: int = 0,
+    limit: int = 100,
+    query: str = "",
 ) -> PublishingWorkspace:
     root = Path(root_dir)
     meta = _read_project_meta(root)
@@ -221,19 +248,55 @@ def build_publishing_workspace(
     )
     title = str(snapshot.project.get("name") or "未命名小说")
     store = SQLiteStateStore(root)
+    page_offset = max(0, int(offset or 0))
+    page_limit = max(1, min(int(limit or 100), 100))
+    catalog_total = store.count_manuscript_document_summaries(
+        query=query, has_content=True
+    )
+    if not flag_enabled("m1_catalog_pagination", root):
+        page_offset = 0
+        page_limit = max(1, catalog_total)
+    selected_position = (
+        store.get_manuscript_document_summary_position(
+            selected_chapter_id,
+            query=query,
+            has_content=True,
+        )
+        if selected_chapter_id
+        else None
+    )
+    # A direct deep link should open the page containing the selected chapter.
+    # For subsequent page loads, the caller owns the offset and we must not
+    # snap back to the selected chapter's page.
+    if (
+        selected_position is not None
+        and page_offset == 0
+        and not (page_offset <= selected_position < page_offset + page_limit)
+    ):
+        page_offset = (selected_position // page_limit) * page_limit
     chapters = [
         PublicationChapterSummary(**row)
-        for row in store.list_manuscript_document_summaries()
+        for row in store.list_manuscript_document_summaries_page(
+            offset=page_offset,
+            limit=page_limit,
+            query=query,
+            has_content=True,
+        )
     ]
-    published = [chapter for chapter in chapters if chapter.has_content]
-    selected_summary = next(
-        (
-            chapter
-            for chapter in chapters
-            if chapter.chapter_id == selected_chapter_id and chapter.has_content
-        ),
-        published[0] if published else None,
-    )
+    published_count = store.count_manuscript_document_summaries(has_content=True)
+    selected_summary = None
+    if selected_chapter_id:
+        raw = store.get_manuscript_document_summary(selected_chapter_id)
+        if raw and raw.get("has_content"):
+            selected_summary = PublicationChapterSummary(**raw)
+    if selected_summary is None and chapters:
+        selected_summary = chapters[0]
+    if selected_summary is not None and selected_position is None:
+        selected_position = store.get_manuscript_document_summary_position(
+            selected_summary.chapter_id,
+            query=query,
+            has_content=True,
+        )
     selected = None
     if selected_summary:
         document = store.get_manuscript_document(selected_summary.chapter_id)
@@ -248,16 +311,24 @@ def build_publishing_workspace(
             )
     book = PublicationBookSummary(
         title=title,
-        chapter_count=len(published),
-        word_count=sum(chapter.word_count for chapter in published),
+        chapter_count=published_count,
+        word_count=store.sum_manuscript_word_count(has_content=True),
     )
-    empty_count = sum(not chapter.has_content for chapter in chapters)
+    empty_count = store.count_manuscript_document_summaries(has_content=False)
     platform = _platform_contract(meta)
+    golden_summaries = []
+    for chapter_id in ("001", "002", "003"):
+        raw = store.get_manuscript_document_summary(chapter_id)
+        if raw:
+            golden_summaries.append(PublicationChapterSummary(**raw))
+    preflight_source = golden_summaries + list(chapters)
     preflight = build_export_preflight(
-        chapters,
+        preflight_source,
         snapshot_quality=snapshot.quality_summary,
         empty_document_count=empty_count,
         platform_explicit=bool(str(meta.get("platform") or "").strip()),
+        published_count=published_count,
+        published_word_count=book.word_count,
     )
     return PublishingWorkspace(
         snapshot=snapshot,
@@ -265,9 +336,19 @@ def build_publishing_workspace(
         chapters=chapters,
         selected_chapter_id=selected.chapter_id if selected else "",
         selected_chapter=selected,
+        catalog_offset=page_offset,
+        catalog_limit=page_limit,
+        catalog_total=catalog_total,
+        catalog_has_more=page_offset + len(chapters) < catalog_total,
+        selected_catalog_index=selected_position if selected_position is not None else -1,
         platform=platform,
-        platform_check=build_platform_check(chapters, platform),
-        golden_check=build_golden_check(chapters),
+        platform_check=build_platform_check(
+            chapters,
+            platform,
+            chapter_count=published_count,
+            total_chars=book.word_count,
+        ),
+        golden_check=build_golden_check(golden_summaries),
         feedback=store.get_recent_feedback(limit=100),
         preflight=preflight,
         formats=publication_formats(),

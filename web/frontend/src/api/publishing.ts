@@ -1,12 +1,19 @@
 import type {
   ExportFormat,
+  PublishingExportTask,
   PublishingWorkspace,
 } from '../entities/publishing/publishing'
 import api from './client'
 
-export const getPublishingWorkspace = (chapterId = '') =>
+export const getPublishingWorkspace = (
+  chapterId = '',
+  params: { query?: string; offset?: number; limit?: number } = {},
+) =>
   api.get<PublishingWorkspace>('/publishing/workspace', {
-    params: chapterId ? { chapter_id: chapterId } : undefined,
+    params: {
+      ...(chapterId ? { chapter_id: chapterId } : {}),
+      ...params,
+    },
   })
 
 export const updatePublishingPlatform = (platform: string) =>
@@ -24,4 +31,13 @@ export const exportPublication = (data: {
   title: string
   chapter_ids: string[]
   acknowledge_warnings: boolean
-}) => api.post<Blob>('/publishing/export', data, { responseType: 'blob' })
+}) => api.post<PublishingExportTask>('/publishing/export', data)
+
+export const getPublishingExportTask = (taskId: string) =>
+  api.get<PublishingExportTask>(`/publishing/export/${taskId}`)
+
+export const downloadPublishingExport = (taskId: string) =>
+  api.get<Blob>(`/publishing/export/${taskId}/download`, { responseType: 'blob' })
+
+export const cancelPublishingExport = (taskId: string) =>
+  api.post<{ task_id: string; status: string }>(`/publishing/export/${taskId}/cancel`)

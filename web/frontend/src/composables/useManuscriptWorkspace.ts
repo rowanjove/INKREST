@@ -2,6 +2,7 @@ import type { JSONContent } from '@tiptap/core'
 import { computed, onBeforeUnmount, ref } from 'vue'
 import {
   getManuscriptWorkspace,
+  acceptQualityCandidate as acceptQualityCandidateRequest,
   listManuscriptRevisions,
   restoreManuscriptRevision as restoreRevisionRequest,
   saveManuscriptDocument,
@@ -21,6 +22,10 @@ const EMPTY_WORKSPACE: ManuscriptWorkspace = {
   document: null,
   history: [],
   context: {},
+  catalog_offset: 0,
+  catalog_limit: 100,
+  catalog_total: 0,
+  catalog_has_more: false,
 }
 
 function isConflict(error: unknown): error is {
@@ -43,7 +48,11 @@ export function useManuscriptWorkspace() {
   const conflictDocument = ref<ManuscriptDocument | null>(null)
   const dirty = ref(false)
   const pendingSource = ref<'autosave' | 'manual' | 'ai_accept'>('autosave')
+  const catalogQuery = ref('')
+  const catalogStatus = ref<'all' | 'draft' | 'ready' | 'attention'>('all')
+  const catalogOffset = ref(0)
   let saveTimer: number | null = null
+  let loadSequence = 0
 
   const document = computed(() => workspace.value.document)
   const activeChapterId = computed(() => workspace.value.selected_chapter_id)
@@ -63,12 +72,18 @@ export function useManuscriptWorkspace() {
   }
 
   async function load(chapterId = '') {
+    const sequence = ++loadSequence
     loading.value = true
     loadError.value = ''
     try {
       const { data } = await getManuscriptWorkspace({
         chapter_id: chapterId || undefined,
+        query: catalogQuery.value || undefined,
+        status: catalogStatus.value,
+        offset: catalogOffset.value,
+        limit: 100,
       })
+      if (sequence !== loadSequence) return
       workspace.value = data
       title.value = data.document?.title || ''
       content.value = data.document?.content_json || EMPTY_TIPTAP_DOCUMENT
@@ -76,9 +91,67 @@ export function useManuscriptWorkspace() {
       conflictDocument.value = null
       saveStatus.value = data.document ? 'saved' : 'idle'
     } catch (error) {
+      if (sequence !== loadSequence) return
       loadError.value = error instanceof Error ? error.message : '正文工作区加载失败'
     } finally {
-      loading.value = false
+      if (sequence === loadSequence) loading.value = false
+    }
+  }
+
+  async function searchCatalog(
+    query: string,
+    status: 'all' | 'draft' | 'ready' | 'attention' = catalogStatus.value,
+  ) {
+    catalogQuery.value = query
+    catalogStatus.value = status
+    catalogOffset.value = 0
+    const sequence = ++loadSequence
+    try {
+      const { data } = await getManuscriptWorkspace({
+        chapter_id: activeChapterId.value || undefined,
+        query: catalogQuery.value || undefined,
+        status: catalogStatus.value,
+        offset: 0,
+        limit: 100,
+      })
+      if (sequence !== loadSequence) return
+      workspace.value = {
+        ...data,
+        document: workspace.value.document,
+        history: workspace.value.history,
+        context: workspace.value.context,
+        selected_chapter_id: workspace.value.selected_chapter_id || data.selected_chapter_id,
+      }
+    } catch (error) {
+      if (sequence !== loadSequence) return
+      loadError.value = error instanceof Error ? error.message : '目录搜索失败'
+    }
+  }
+
+  async function loadMoreCatalog() {
+    if (!workspace.value.catalog_has_more) return
+    const sequence = ++loadSequence
+    catalogOffset.value = (workspace.value.catalog_offset || 0) + (workspace.value.catalog_limit || 100)
+    try {
+      const { data } = await getManuscriptWorkspace({
+        chapter_id: activeChapterId.value || undefined,
+        query: catalogQuery.value || undefined,
+        status: catalogStatus.value,
+        offset: catalogOffset.value,
+        limit: 100,
+      })
+      if (sequence !== loadSequence) return
+      workspace.value = {
+        ...data,
+        chapters: [...workspace.value.chapters, ...data.chapters],
+        document: workspace.value.document,
+        history: workspace.value.history,
+        context: workspace.value.context,
+        selected_chapter_id: workspace.value.selected_chapter_id,
+      }
+    } catch (error) {
+      if (sequence !== loadSequence) return
+      loadError.value = error instanceof Error ? error.message : '目录加载失败'
     }
   }
 
@@ -198,6 +271,31 @@ export function useManuscriptWorkspace() {
     }
   }
 
+  async function acceptQualityCandidate() {
+    const current = document.value
+    if (!current) return false
+    if (dirty.value && !(await saveNow())) return false
+    saveStatus.value = 'saving'
+    saveError.value = ''
+    try {
+      const { data } = await acceptQualityCandidateRequest(current.chapter_id, current.revision)
+      applyDocument(data.document)
+      dirty.value = false
+      saveStatus.value = 'saved'
+      await load(current.chapter_id)
+      return true
+    } catch (error) {
+      if (isConflict(error)) {
+        conflictDocument.value = error.response.data.current
+        saveStatus.value = 'conflict'
+      } else {
+        saveError.value = error instanceof Error ? error.message : '候选稿采纳失败'
+        saveStatus.value = 'error'
+      }
+      return false
+    }
+  }
+
   onBeforeUnmount(() => {
     cancelSaveTimer()
     if (dirty.value) void saveNow()
@@ -215,6 +313,10 @@ export function useManuscriptWorkspace() {
     conflictDocument,
     dirty,
     activeChapterId,
+    catalogQuery,
+    catalogStatus,
+    searchCatalog,
+    loadMoreCatalog,
     load,
     selectChapter,
     updateContent,
@@ -223,5 +325,6 @@ export function useManuscriptWorkspace() {
     useServerVersion,
     keepLocalAsNewRevision,
     restoreRevision,
+    acceptQualityCandidate,
   }
 }

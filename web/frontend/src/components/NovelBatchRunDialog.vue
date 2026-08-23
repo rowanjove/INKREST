@@ -16,6 +16,7 @@ const {
   ctx,
   currentProject,
   maxAvailableChapters,
+  runChapterInputMax,
   readinessItems,
   canRun,
   isCircuitPaused,
@@ -149,7 +150,7 @@ const showVectorAlert = computed(() =>
         <el-input-number
           v-model="form.target_chapters"
           :min="1"
-          :max="maxAvailableChapters || 1"
+          :max="runChapterInputMax || 1"
           style="width: 150px"
         />
       </label>

@@ -25,6 +25,7 @@ const emit = defineEmits<{
   confirmAi: []
   cancelAi: []
   acceptAi: []
+  acceptQualityCandidate: []
   previewRevision: [revision: ManuscriptRevision]
   updateFontSize: [value: number]
   updateLineHeight: [value: number]
@@ -35,6 +36,18 @@ const targetRange = computed(() => {
   const target = props.context.target_chars
   if (!Array.isArray(target) || target.length < 2) return '未设置'
   return `${target[0]}–${target[1]} 字`
+})
+const qualityCandidate = computed(() => props.context.quality_candidate)
+const qualityCandidateStatus = computed(() => {
+  const metadata = qualityCandidate.value?.metadata
+  if (metadata?.adopted) return `已采纳${metadata.adopted_revision ? ` · 修订 ${metadata.adopted_revision}` : ''}`
+  if (metadata?.accepted) return '已通过契约'
+  if (metadata?.status === 'rejected') return '已拒绝，正文未变'
+  return '待审阅'
+})
+const qualityCandidateCanAdopt = computed(() => {
+  const metadata = qualityCandidate.value?.metadata
+  return Boolean(qualityCandidate.value?.available && metadata?.accepted && !metadata.adopted)
 })
 
 function showAiTab() {
@@ -128,6 +141,39 @@ defineExpose({ showAiTab })
           </el-tag>
         </div>
         <p class="muted">完整质量报告将在 Phase 5 审校中心集中处理，正文中心仅展示当前章结论。</p>
+        <div v-if="qualityCandidate?.available" class="candidate-card">
+          <div class="section-heading">
+            <span>返工候选稿</span>
+            <el-tag size="small" effect="plain" :type="qualityCandidate.metadata?.accepted ? 'success' : 'warning'">
+              {{ qualityCandidateStatus }}
+            </el-tag>
+          </div>
+          <p class="muted">{{ qualityCandidate.metadata?.adopted ? '候选稿已写入版本历史。' : '候选稿与正文隔离保存，尚未覆盖正文。' }}</p>
+          <el-button
+            v-if="qualityCandidateCanAdopt"
+            type="primary"
+            size="small"
+            @click="emit('acceptQualityCandidate')"
+          >
+            采纳为新修订
+          </el-button>
+          <small v-if="qualityCandidateCanAdopt" class="candidate-note">采纳前会再次校验当前正文版本。</small>
+          <div v-if="qualityCandidate.diff?.stats" class="candidate-stats">
+            <span>改动 {{ qualityCandidate.diff.stats.changed_blocks }} 处</span>
+            <span>+{{ qualityCandidate.diff.stats.added_lines }} / -{{ qualityCandidate.diff.stats.removed_lines }} 行</span>
+          </div>
+          <div v-if="qualityCandidate.diff?.segments?.length" class="diff-view" aria-label="候选稿差异">
+            <span
+              v-for="(segment, index) in qualityCandidate.diff.segments"
+              :key="`${segment.op}-${index}`"
+              :class="`diff-${segment.op}`"
+            >{{ segment.text }}</span>
+          </div>
+          <pre>{{ qualityCandidate.preview }}<span v-if="qualityCandidate.preview_truncated">…</span></pre>
+          <small v-if="qualityCandidate.metadata?.reasons?.length" class="candidate-reasons">
+            {{ qualityCandidate.metadata.reasons.join('、') }}
+          </small>
+        </div>
       </section>
 
       <section v-else-if="activeTab === 'history'" class="inspector-section history-section">
@@ -291,6 +337,43 @@ defineExpose({ showAiTab })
   font-size: 11px;
 }
 .muted { margin: 0; color: var(--color-text-muted); font-size: 11px; line-height: 1.6; }
+.candidate-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-warning-soft, var(--color-border));
+  border-radius: 10px;
+  background: var(--color-warning-surface, var(--color-bg-surface-muted));
+}
+.candidate-card pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: 9px;
+  border-radius: 7px;
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.65;
+}
+.candidate-stats { display: flex; gap: 10px; color: var(--color-text-muted); font-size: 10px; }
+.diff-view {
+  max-height: 170px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 7px;
+  background: var(--color-bg-surface);
+  white-space: pre-wrap;
+  font-size: 10px;
+  line-height: 1.65;
+}
+.diff-delete { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 12%, transparent); text-decoration: line-through; }
+.diff-insert { color: var(--color-success); background: color-mix(in srgb, var(--color-success) 12%, transparent); }
+.candidate-note { color: var(--color-text-muted); font-size: 10px; }
+.candidate-reasons { color: var(--color-warning); font-size: 10px; }
 .history-section { gap: 6px; }
 .history-row {
   display: grid;

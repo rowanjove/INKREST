@@ -30,6 +30,7 @@ class TaskType(str, Enum):
     NOVEL_AUTOPILOT = "novel_autopilot"
     EMBEDDING_SETUP = "embedding_setup"
     EXPORT = "export"
+    VECTOR_REBUILD = "vector_rebuild"
 
 
 class TaskTransitionError(ValueError):

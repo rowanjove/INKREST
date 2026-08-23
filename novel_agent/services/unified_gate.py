@@ -26,6 +26,11 @@ if TYPE_CHECKING:
 logger = get_logger("services.unified_gate")
 
 
+def _audit_is_incomplete(audit: Dict[str, Any]) -> bool:
+    status = str((audit or {}).get("status") or "ok").strip().lower()
+    return status in {"error", "incomplete", "unknown"}
+
+
 @dataclass
 class UnifiedGateOutcome:
     passed: bool
@@ -46,6 +51,7 @@ def build_unified_gate_report(
     guard = quality_report.get("guard_summary") or {}
     return {
         "overall_pass": quality_report.get("overall_pass", True),
+        "incomplete": bool(quality_report.get("incomplete", False)),
         "quality": {
             "mode": quality_report.get("mode"),
             "overall_pass": quality_report.get("overall_pass"),
@@ -54,6 +60,7 @@ def build_unified_gate_report(
             "blocked_by": guard.get("blocked_by") or [],
         },
         "audit": {
+            "status": audit.get("status", "ok"),
             "risk_level": audit.get("risk_level"),
             "requires_rewrite": audit_requires_rewrite(audit, root_dir=root_dir),
             "issue_count": len(audit.get("issues") or []),
@@ -153,15 +160,16 @@ async def run_unified_review_gate(
             orchestrator, chapter_id, ctx, chapter_dir, reports_dir
         )
 
+    audit = ctx.audit or {}
     quality_outcome = await orchestrator.chapter_post.write_quality_report(
-        chapter_id, ctx.final_text or "", reports_dir
+        chapter_id, ctx.final_text or "", reports_dir, audit=audit
     )
     report = dict(quality_outcome.report)
-    audit = ctx.audit or {}
     audit_rewrite = audit_requires_rewrite(audit, root_dir=orchestrator.root_dir)
 
     if (
         quality_outcome.blocked
+        and not _audit_is_incomplete(audit)
         and resolve_quality_auto_rewrite(orchestrator.root_dir)
         and (ctx.final_text or "").strip()
     ):
@@ -170,6 +178,7 @@ async def run_unified_review_gate(
             chapter_id,
             ctx.final_text or "",
             report,
+            candidate_path=reports_dir / "quality_rewrite_candidate.txt",
         )
         if revised and revised.strip() != (ctx.final_text or "").strip():
             ctx = dataclasses.replace(ctx, final_text=revised)
@@ -178,7 +187,7 @@ async def run_unified_review_gate(
 
             write_style_precheck_cache(reports_dir, revised, orchestrator.root_dir)
             quality_outcome = await orchestrator.chapter_post.write_quality_report(
-                chapter_id, revised, reports_dir
+                chapter_id, revised, reports_dir, audit=audit
             )
             report = dict(quality_outcome.report)
 
@@ -205,7 +214,7 @@ async def run_unified_review_gate(
                 {"retried": True},
             )
             quality_outcome = await orchestrator.chapter_post.write_quality_report(
-                chapter_id, ctx.final_text or "", reports_dir
+                chapter_id, ctx.final_text or "", reports_dir, audit=audit
             )
             report = dict(quality_outcome.report)
             from novel_agent.services.chapter_postprocess import QualityReportOutcome

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Inkrest longform benchmark result",
+  "type": "object",
+  "required": [
+    "kind",
+    "chapters",
+    "seed",
+    "python",
+    "llm_called",
+    "elapsed_ms",
+    "machine",
+    "repeat",
+    "latency_samples_ms",
+    "p50_elapsed_ms",
+    "p95_elapsed_ms",
+    "peak_rss_bytes"
+  ],
+  "properties": {
+    "kind": { "type": "string", "enum": ["state", "export"] },
+    "chapters": { "type": "integer", "minimum": 1 },
+    "seed": { "type": "integer" },
+    "repeat": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "python": { "type": "string" },
+    "llm_called": { "type": "boolean" },
+    "elapsed_ms": { "type": "number" },
+    "setup_elapsed_ms": { "type": "number", "minimum": 0 },
+    "operation_elapsed_ms": { "type": "number", "minimum": 0 },
+    "peak_tracemalloc_bytes": { "type": "integer", "minimum": 0 },
+    "current_tracemalloc_bytes": { "type": "integer", "minimum": 0 },
+    "latency_samples_ms": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "number", "minimum": 0 }
+    },
+    "p95_elapsed_ms": { "type": "number", "minimum": 0 },
+    "p50_elapsed_ms": { "type": "number", "minimum": 0 },
+    "peak_rss_bytes": { "type": "integer", "minimum": 0 },
+    "machine": { "type": "object" },
+    "format": { "type": "string" },
+    "streamed": { "type": "boolean" },
+    "chapter_count": { "type": "integer" },
+    "queries": { "type": "object" }
+  },
+  "oneOf": [
+    {
+      "properties": { "kind": { "const": "state" } },
+      "required": ["kind", "queries"]
+    },
+    {
+      "properties": { "kind": { "const": "export" } },
+      "required": ["kind", "format", "streamed", "chapter_count"]
+    }
+  ]
+}

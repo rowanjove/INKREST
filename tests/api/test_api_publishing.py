@@ -1,4 +1,5 @@
 from tests.api._base import *  # noqa: F403
+import time
 
 from novel_agent.services.manuscript_documents import plain_text_to_tiptap
 
@@ -110,8 +111,19 @@ class ApiPublishingTests(ApiTestBase):
         self.assertEqual(warning.json()["code"], "EXPORT_WARNINGS_NOT_ACKNOWLEDGED")
 
         request["acknowledge_warnings"] = True
-        exported = client.post("/api/publishing/export", json=request)
+        queued = client.post("/api/publishing/export", json=request)
 
+        self.assertEqual(queued.status_code, 200)
+        task_id = queued.json()["task_id"]
+        task = None
+        for _ in range(40):
+            task = client.get(f"/api/publishing/export/{task_id}").json()
+            if task["status"] in {"succeeded", "failed", "cancelled"}:
+                break
+            time.sleep(0.02)
+        self.assertIsNotNone(task)
+        self.assertEqual(task["status"], "succeeded")
+        exported = client.get(f"/api/publishing/export/{task_id}/download")
         self.assertEqual(exported.status_code, 200)
         self.assertIn("数据库中的第一章。", exported.content.decode("utf-8"))
         self.assertNotIn("不应出现在发布中心的旧文件。", exported.content.decode("utf-8"))

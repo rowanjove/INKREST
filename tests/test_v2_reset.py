@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from fastapi import HTTPException
 
 from novel_agent.domain.tasks import TaskType
 from novel_agent.state.schema_version import SchemaState, inspect_schema_state
@@ -84,6 +85,63 @@ def test_backup_excludes_secrets_logs_plugins_and_external_symlinks(
     assert "model-secret" not in text
     assert "must-not-leak" not in text
     assert result.sha256
+
+
+def test_v2_backup_manifest_is_verified_by_formal_import_path(tmp_path: Path) -> None:
+    projects_root = tmp_path / "projects"
+    root = _project(projects_root)
+
+    from novel_agent.services.v2_reset import create_v2_backup
+    from web.routes.projects_archive import _verify_v2_backup_if_present
+
+    result = create_v2_backup(
+        projects_root=projects_root,
+        project_root=root,
+        project_id="book-1",
+    )
+    _verify_v2_backup_if_present(result.path)
+
+    corrupted = tmp_path / "corrupted.zip"
+    with zipfile.ZipFile(result.path, "r") as source, zipfile.ZipFile(
+        corrupted, "w", compression=zipfile.ZIP_DEFLATED
+    ) as target:
+        for name in source.namelist():
+            payload = source.read(name)
+            if name == "workspace/outline.json":
+                payload += b"\ncorrupted"
+            target.writestr(name, payload)
+    with pytest.raises(HTTPException, match="integrity verification failed"):
+        _verify_v2_backup_if_present(corrupted)
+
+
+def test_5000_chapter_backup_restores_through_import_contract(tmp_path: Path) -> None:
+    from novel_agent.services.longform_synth import seed_synthetic_project
+    from novel_agent.services.v2_reset import create_v2_backup
+    from web.routes.projects_archive import (
+        _extract_and_validate_zip,
+        _verify_v2_backup_if_present,
+    )
+
+    projects_root = tmp_path / "projects"
+    root = projects_root / "long-book"
+    seed_synthetic_project(root, chapters=5000, seed=7)
+    backup = create_v2_backup(
+        projects_root=projects_root,
+        project_root=root,
+        project_id="long-book",
+    )
+
+    _verify_v2_backup_if_present(backup.path)
+    restored = tmp_path / "restored-project"
+    restored.mkdir()
+    _extract_and_validate_zip(backup.path, restored)
+
+    restored_store = SQLiteStateStore(restored)
+    assert restored_store.count_manuscript_document_summaries() == 5000
+    assert restored_store.count_manuscript_document_summaries(has_content=True) == 5000
+    assert (restored / "workspace" / "outline.json").read_text(encoding="utf-8") == (
+        root / "workspace" / "outline.json"
+    ).read_text(encoding="utf-8")
 
 
 def test_reset_preserves_project_inputs_and_only_clears_target_runtime(

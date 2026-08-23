@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus'
 import {
   generateOutline,
   getOutline,
+  getOutlineRevision,
   getCurrentProject,
   updateOutline,
   getArcQueueStale,
@@ -18,6 +19,7 @@ export function useOutlineView() {
   const loading = ref(false)
   const submitting = ref(false)
   const outline = ref<Record<string, any> | null>(null)
+  const outlineRevision = ref<{ revision: number; digest: string } | null>(null)
   const project = ref<any>(null)
   const dialogVisible = ref(false)
   const editDialogVisible = ref(false)
@@ -60,6 +62,18 @@ export function useOutlineView() {
   const arcSyncLoading = ref(false)
 
   const genreGenes = computed(() => outline.value?.genre_genes || {})
+
+  const saveOutline = async (next: Record<string, any>) => {
+    const payload = { ...next }
+    if (outlineRevision.value) {
+      payload.expected_revision = outlineRevision.value.revision
+      payload.expected_outline_digest = outlineRevision.value.digest
+    }
+    const { data } = await updateOutline(payload)
+    outline.value = data
+    outlineRevision.value = data.outline_revision || outlineRevision.value
+    return data
+  }
 
   const title = computed(() => {
     if (outline.value?.chosen_title) {
@@ -108,11 +122,13 @@ export function useOutlineView() {
   const load = async () => {
     loading.value = true
     try {
-      const [{ data: outlineData }, { data: projectData }] = await Promise.all([
+      const [{ data: outlineData }, { data: projectData }, { data: revisionData }] = await Promise.all([
         getOutline().catch(() => ({ data: {} })),
         getCurrentProject().catch(() => ({ data: null })),
+        getOutlineRevision().catch(() => ({ data: null })),
       ])
       project.value = projectData
+      outlineRevision.value = revisionData
       outline.value = outlineData && Object.keys(outlineData).length ? outlineData : null
       form.value.theme = outline.value?.core_theme || projectData?.name || ''
       form.value.genre = outline.value?.genre_positioning || projectData?.genre || ''
@@ -136,6 +152,7 @@ export function useOutlineView() {
     try {
       const { data } = await generateOutline(form.value)
       outline.value = data
+      outlineRevision.value = data.outline_revision || outlineRevision.value
       dialogVisible.value = false
       const staged = data.planning_staged ? '（长篇已分段生成卷纲）' : ''
       ElMessage.success(`大纲已生成并保存${staged}`)
@@ -185,8 +202,7 @@ export function useOutlineView() {
       const next = { ...outline.value }
       next.chosen_title = selectedTitle.trim()
 
-      const { data } = await updateOutline(next)
-      outline.value = data
+      await saveOutline(next)
       ElMessage.success(`书名已确定为「${selectedTitle}」`)
       window.location.reload()
     } catch (error: any) {
@@ -213,8 +229,7 @@ export function useOutlineView() {
       limit: editForm.value.protagonist_limit,
     }
     try {
-      const { data } = await updateOutline(next)
-      outline.value = data
+      const data = await saveOutline(next)
       editDialogVisible.value = false
       ElMessage.success('基础设定已保存')
       if (data.arc_queue_stale?.stale) {
@@ -267,7 +282,7 @@ export function useOutlineView() {
           drift_guards: editGenesForm.value.drift_guards,
         },
       }
-      await updateOutline(updatedOutline)
+      await saveOutline(updatedOutline)
       ElMessage.success('类型基因修改成功')
       editGenesVisible.value = false
       await load()
@@ -287,6 +302,7 @@ export function useOutlineView() {
     loading,
     submitting,
     outline,
+    outlineRevision,
     project,
     dialogVisible,
     editDialogVisible,

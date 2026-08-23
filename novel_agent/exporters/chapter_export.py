@@ -22,6 +22,28 @@ def _matches_selection(chapter_id: str, selected: set[str]) -> bool:
     return normalized in selected
 
 
+def iter_publication_chapters(
+    root_dir: Path,
+    chapter_ids: Optional[Iterable[str]] = None,
+) -> Iterator[PublicationChapter]:
+    """Yield publication chapters from SQLite without materializing the full book."""
+    store = SQLiteStateStore(Path(root_dir))
+    selected = selected_chapter_ids(chapter_ids)
+    selected_list = list(selected) if selected else None
+    for row in store.iter_manuscript_export_rows(chapter_ids=selected_list):
+        chapter_id = str(row["chapter_id"])
+        if not _matches_selection(chapter_id, selected):
+            continue
+        yield PublicationChapter(
+            chapter_id=chapter_id,
+            title=str(row["title"]).strip(),
+            plain_text=str(row["plain_text"]),
+            markdown_text=str(row["markdown_text"]),
+            revision=int(row["revision"]),
+            word_count=int(row["word_count"] or len(str(row["plain_text"]))),
+        )
+
+
 def collect_publication_book(
     root_dir: Path,
     *,
@@ -30,26 +52,7 @@ def collect_publication_book(
     chapter_ids: Optional[Iterable[str]] = None,
 ) -> PublicationBook:
     """Build a publication snapshot from SQLite, never from disk projections."""
-    store = SQLiteStateStore(Path(root_dir))
-    selected = selected_chapter_ids(chapter_ids)
-    chapters: list[PublicationChapter] = []
-    for document in store.list_manuscript_documents():
-        chapter_id = str(document["chapter_id"])
-        if not _matches_selection(chapter_id, selected):
-            continue
-        plain_text = str(document["plain_text"]).strip()
-        if not plain_text:
-            continue
-        chapters.append(
-            PublicationChapter(
-                chapter_id=chapter_id,
-                title=str(document["title"]).strip(),
-                plain_text=plain_text,
-                markdown_text=str(document["markdown_text"]).strip(),
-                revision=int(document["revision"]),
-                word_count=len(plain_text),
-            )
-        )
+    chapters = list(iter_publication_chapters(root_dir, chapter_ids=chapter_ids))
     return PublicationBook(
         title=str(title or "未命名小说").strip() or "未命名小说",
         author=str(author or "栖墨").strip() or "栖墨",
@@ -61,10 +64,7 @@ def iter_export_chapters(
     root_dir: Path,
     chapter_ids: Optional[Iterable[str]] = None,
 ) -> Iterator[ExportChapter]:
-    yield from collect_publication_book(
-        root_dir,
-        chapter_ids=chapter_ids,
-    ).chapters
+    yield from iter_publication_chapters(root_dir, chapter_ids=chapter_ids)
 
 
 def collect_export_chapters(

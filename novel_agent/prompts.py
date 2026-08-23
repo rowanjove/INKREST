@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 
+from novel_agent.prompt_registry import inspect_prompt_sources, prompt_manifest
+
 logger = logging.getLogger(__name__)
 
 EXPECTED_DEFAULTS_HASH = "934d4a3ad20e7fb59bb3547d32b1ffd1b3ff477eef781b09c65e5767253c4a47"
@@ -90,4 +92,13 @@ class PromptRepository:
         """Clear the prompt cache. Useful when prompts are updated at runtime."""
         self._cache.clear()
 
+    def describe(self, role: str) -> Dict[str, Any]:
+        """Return source/digest metadata without loading or mutating prompt state."""
+
+        return inspect_prompt_sources(self.root_dir, role)
+
+    def manifest(self, roles: Optional[list[str]] = None) -> Dict[str, Any]:
+        """Return a project prompt manifest for UI/diagnostic consumers."""
+
+        return prompt_manifest(self.root_dir, roles)
 

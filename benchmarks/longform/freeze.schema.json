@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Inkrest M0 worktree freeze",
+  "type": "object",
+  "required": [
+    "format",
+    "version",
+    "captured_at",
+    "root",
+    "commit",
+    "dirty",
+    "status_lines",
+    "tracked_modified",
+    "untracked",
+    "python",
+    "platform",
+    "longform_flags",
+    "flag_contract"
+  ],
+  "properties": {
+    "format": { "const": "novel-agent-m0-freeze" },
+    "version": { "const": 1 },
+    "captured_at": { "type": "string", "minLength": 1 },
+    "root": { "type": "string", "minLength": 1 },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "dirty": { "type": "boolean" },
+    "status_lines": { "type": "array", "items": { "type": "string" } },
+    "tracked_modified": { "type": "array", "items": { "type": "string" } },
+    "untracked": { "type": "array", "items": { "type": "string" } },
+    "python": { "type": "string" },
+    "platform": { "type": "object" },
+    "longform_flags": { "type": "object" },
+    "flag_contract": { "type": "object" }
+  }
+}

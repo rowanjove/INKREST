@@ -1,3 +1,4 @@
+schema_version: 2
 chapter:
   default_target_chars:
   - 2000

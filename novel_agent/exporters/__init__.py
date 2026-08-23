@@ -43,7 +43,7 @@ def export_novel(
             )
 
     if format_lower == "txt":
-        export_txt(root_dir, output_path, chapter_ids=chapter_ids)
+        export_txt(root_dir, output_path, chapter_ids=chapter_ids, **kwargs)
         return output_path
     elif format_lower == "epub":
         export_epub(root_dir, output_path, chapter_ids=chapter_ids, title=title)
@@ -52,7 +52,7 @@ def export_novel(
         export_pdf(root_dir, output_path, chapter_ids=chapter_ids, title=title)
         return output_path
     elif format_lower in {"markdown", "md"}:
-        export_markdown(root_dir, output_path, chapter_ids=chapter_ids, title=title)
+        export_markdown(root_dir, output_path, chapter_ids=chapter_ids, title=title, **kwargs)
         return output_path
     elif format_lower == "docx":
         export_docx(root_dir, output_path, chapter_ids=chapter_ids, title=title)

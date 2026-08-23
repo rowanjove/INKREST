@@ -68,9 +68,22 @@ AUDIT_PROFILE_BY_TIER: Dict[str, Dict[str, Any]] = {
 
 def merge_scale_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
     """Fill missing scale_profile fields from canonical SCALE_PROFILES defaults."""
+    from novel_agent.control.scale_profile import default_run_chapter_budget, scale_hard_max
+
     scale = str(profile.get("scale") or "medium")
     base = deepcopy(SCALE_PROFILES.get(scale, SCALE_PROFILES["medium"]))
-    return {**base, **profile}
+    merged = {**base, **profile}
+    merged["scale_hard_max"] = int(merged.get("scale_hard_max") or scale_hard_max(scale))
+    merged["project_soft_target"] = int(
+        merged.get("project_soft_target")
+        or merged.get("target_chapters")
+        or merged.get("max_chapters")
+        or 0
+    )
+    merged["run_chapter_budget"] = int(
+        merged.get("run_chapter_budget") or default_run_chapter_budget(scale)
+    )
+    return merged
 
 
 def is_semantic_search_effective(root_dir: Path) -> bool:

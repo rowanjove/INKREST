@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import yaml
 
@@ -122,6 +123,31 @@ class TestGenerationPolicy(unittest.TestCase):
         self.assertEqual(final, original)
         self.assertTrue(
             any("truncated" in w.lower() or "截断" in w for w in new_ctx.warnings)
+        )
+
+    def test_style_editor_render_contract_keeps_previous_text(self):
+        config = PipelineConfig.dry_run(self.tmpdir)
+        orchestrator = NovelOrchestrator(config)
+        orchestrator.style_editor = MagicMock()
+        orchestrator.style_editor.edit.return_value = "```\n短输出\n```"
+        phase = GenerationPhase(orchestrator)
+        ctx = ChapterContext(
+            chapter_id="001",
+            chapter_goal="测试",
+            chapter_dir=self.tmpdir / "ch001",
+            scenes_dir=self.tmpdir / "ch001" / "scenes",
+            reports_dir=self.tmpdir / "ch001" / "reports",
+        )
+        stitched = "这是足够长的缝合正文，用来验证 Style Editor 的候选稿不会绕过本地渲染契约。" * 8
+        ctx.chapter_dir.mkdir(parents=True, exist_ok=True)
+
+        final, new_ctx = phase._run_style_edit(ctx, stitched, stitched)
+
+        self.assertEqual(final, stitched)
+        self.assertTrue(any("render contract" in warning for warning in new_ctx.warnings))
+        self.assertEqual(
+            (ctx.reports_dir / "style_editor_candidate.txt").read_text(encoding="utf-8"),
+            "```\n短输出\n```",
         )
 
     def test_write_style_precheck_cache_reuses_auditor_checks(self):

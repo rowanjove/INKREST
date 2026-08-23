@@ -17,15 +17,16 @@ describe('V2 navigation contract', () => {
     ])
   })
 
-  it('keeps the project shell fixed to five product centers', () => {
+  it('keeps the project shell fixed to six product centers', () => {
     expect(PROJECT_NAV_ITEMS.map((item) => item.label)).toEqual([
       '概览',
       '策划',
       '正文',
       '生产',
+      '质量',
       '发布',
     ])
-    expect(new Set(PROJECT_NAV_ITEMS.map((item) => item.path)).size).toBe(5)
+    expect(new Set(PROJECT_NAV_ITEMS.map((item) => item.path)).size).toBe(6)
   })
 
   it('only redirects project-scoped routes when no project is hydrated', () => {

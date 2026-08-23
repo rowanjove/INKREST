@@ -8,6 +8,7 @@ import api, {
   getSetupLocalStatus,
   updateConfig,
   rebuildEmbeddingIndex,
+  getTask,
 } from '../api'
 import {
   EMBEDDING_CLOUD_PRESETS,
@@ -221,8 +222,15 @@ const handleSkipSetup = async () => {
 const handleRebuildIndex = async () => {
   rebuildingIndex.value = true
   try {
-    const { data } = await rebuildEmbeddingIndex()
-    ElMessage.success(`索引已重建（${JSON.stringify(data.dimensions || {})}）`)
+    const { data: queued } = await rebuildEmbeddingIndex()
+    let task = queued
+    for (let attempt = 0; attempt < 240; attempt += 1) {
+      if (task.status === 'succeeded' || task.status === 'failed' || task.status === 'cancelled') break
+      await new Promise((resolve) => window.setTimeout(resolve, 250))
+      task = (await getTask(queued.task_id)).data
+    }
+    if (task.status !== 'succeeded') throw new Error(task.error || `重建任务未完成（${task.status}）`)
+    ElMessage.success('向量索引重建完成')
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.detail || error.message || '重建失败')
   } finally {

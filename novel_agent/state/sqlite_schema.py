@@ -87,6 +87,43 @@ class SchemaMixin:
                   threads text,
                   payload text
                 );
+                create table if not exists narrative_events (
+                  projection_id text primary key,
+                  event_id text not null,
+                  chapter_id text not null,
+                  scene_id text,
+                  story_time text,
+                  story_time_start text,
+                  story_time_end text,
+                  recorded_at datetime,
+                  truth_scope text not null default 'objective',
+                  knower_ids text not null default '[]',
+                  actors text not null default '[]',
+                  location text,
+                  action text,
+                  outcome text,
+                  objects text not null default '[]',
+                  threads text not null default '[]',
+                  causes text not null default '[]',
+                  effects text not null default '[]',
+                  beliefs_before text not null default '{}',
+                  beliefs_after text not null default '{}',
+                  state_delta text not null default '{}',
+                  source_document_id text,
+                  source_revision_id text,
+                  source_span text not null default '{}',
+                  confidence real default 0.0,
+                  superseded_by text,
+                  invalidated_at_revision text,
+                  payload text not null default '{}',
+                  created_at datetime default current_timestamp,
+                  updated_at datetime default current_timestamp,
+                  unique(event_id, source_revision_id)
+                );
+                create index if not exists idx_narrative_events_chapter
+                  on narrative_events(chapter_id, updated_at desc);
+                create index if not exists idx_narrative_events_revision
+                  on narrative_events(source_revision_id);
                 create table if not exists app_metadata (
                   key text primary key,
                   value text not null
@@ -394,6 +431,41 @@ class SchemaMixin:
             self._ensure_marker_columns(conn)
             self._ensure_task_columns(conn)
             self._ensure_chapter_index_columns(conn)
+            self._ensure_narrative_event_columns(conn)
+            self._ensure_story_search_schema(conn)
+
+    def _ensure_story_search_schema(self, conn) -> None:
+        """Create the optional FTS5 projection without making it a hard dependency."""
+
+        try:
+            conn.execute(
+                """
+                create virtual table if not exists story_search_fts using fts5(
+                  memory_id unindexed,
+                  kind unindexed,
+                  text,
+                  source_chapter unindexed,
+                  source_revision_id unindexed,
+                  hardness unindexed,
+                  superseded unindexed
+                )
+                """
+            )
+            conn.execute(
+                """
+                insert into app_metadata(key, value) values ('fts5_status', 'available')
+                on conflict(key) do update set value = excluded.value
+                """
+            )
+        except sqlite3.OperationalError as exc:
+            # SQLite builds without FTS5 remain fully usable for short projects.
+            conn.execute(
+                """
+                insert into app_metadata(key, value) values ('fts5_status', ?)
+                on conflict(key) do update set value = excluded.value
+                """,
+                (f"unavailable:{exc}",),
+            )
 
     def _ensure_chapter_index_columns(self, conn) -> None:
         columns = {
@@ -405,6 +477,25 @@ class SchemaMixin:
             conn.execute("alter table chapters add column gate_status text default ''")
         if "indexed_at" not in columns:
             conn.execute("alter table chapters add column indexed_at real default 0")
+
+    def _ensure_narrative_event_columns(self, conn) -> None:
+        columns = {
+            row[1]
+            for row in conn.execute("pragma table_info(narrative_events)").fetchall()
+        }
+        additions = {
+            "story_time_start": "text",
+            "story_time_end": "text",
+            "recorded_at": "datetime",
+            "truth_scope": "text not null default 'objective'",
+            "knower_ids": "text not null default '[]'",
+            "invalidated_at_revision": "text",
+        }
+        for name, declaration in additions.items():
+            if name not in columns:
+                conn.execute(
+                    f"alter table narrative_events add column {name} {declaration}"
+                )
 
     def _ensure_task_columns(self, conn) -> None:
         columns = {
