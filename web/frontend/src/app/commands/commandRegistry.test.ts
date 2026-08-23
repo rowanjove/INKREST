@@ -19,11 +19,11 @@ describe('command registry', () => {
     ])
   })
 
-  it('adds all five project centers and keeps settings searchable', () => {
+  it('adds all six project centers and keeps settings searchable', () => {
     const commands = buildNavigationCommands(true)
 
     expect(commands.filter((command) => command.group === '项目').map((command) => command.label))
-      .toEqual(['概览', '策划', '正文', '生产', '发布'])
+      .toEqual(['概览', '策划', '正文', '生产', '质量', '发布'])
     expect(searchCommands(commands, '模型')).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ path: '/config#model-library', label: '模型与提供方' }),

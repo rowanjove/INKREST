@@ -75,6 +75,8 @@ const {
   saveError,
   conflictDocument,
   activeChapterId,
+  searchCatalog,
+  loadMoreCatalog,
   load,
   selectChapter,
   updateContent,
@@ -83,6 +85,7 @@ const {
   useServerVersion,
   keepLocalAsNewRevision,
   restoreRevision,
+  acceptQualityCandidate,
 } = useManuscriptWorkspace()
 
 const centerSize = computed(() => {
@@ -187,6 +190,15 @@ async function restorePreviewedRevision() {
   if (succeeded) {
     revisionPreview.value = null
     ElMessage.success('已恢复为新的当前修订')
+  }
+}
+
+async function adoptQualityCandidate() {
+  const succeeded = await acceptQualityCandidate()
+  if (succeeded) {
+    ElMessage.success('候选稿已采纳为新的手动修订')
+  } else if (saveError.value) {
+    ElMessage.error(saveError.value)
   }
 }
 
@@ -328,7 +340,11 @@ onBeforeUnmount(() => {
         <ManuscriptChapterTree
           :chapters="workspace.chapters"
           :active-chapter-id="activeChapterId"
+          :catalog-total="workspace.catalog_total ?? workspace.chapters.length"
+          :catalog-has-more="Boolean(workspace.catalog_has_more)"
           @select="openChapter"
+          @search="searchCatalog"
+          @load-more="loadMoreCatalog"
         />
       </Pane>
       <Pane :size="centerSize" :min-size="60">
@@ -362,6 +378,7 @@ onBeforeUnmount(() => {
           @confirm-ai="confirmAiIntent"
           @cancel-ai="cancelAi"
           @accept-ai="acceptAi"
+          @accept-quality-candidate="adoptQualityCandidate"
           @preview-revision="revisionPreview = $event"
           @update-font-size="fontSize = $event"
           @update-line-height="lineHeight = $event"
@@ -408,7 +425,11 @@ onBeforeUnmount(() => {
       <ManuscriptChapterTree
         :chapters="workspace.chapters"
         :active-chapter-id="activeChapterId"
+        :catalog-total="workspace.catalog_total ?? workspace.chapters.length"
+        :catalog-has-more="Boolean(workspace.catalog_has_more)"
         @select="openChapter"
+        @search="searchCatalog"
+        @load-more="loadMoreCatalog"
       />
     </el-drawer>
     <el-drawer v-model="mobileRightOpen" direction="rtl" size="88%" title="正文辅助">
@@ -425,6 +446,7 @@ onBeforeUnmount(() => {
         @confirm-ai="confirmAiIntent"
         @cancel-ai="cancelAi"
         @accept-ai="acceptAi"
+        @accept-quality-candidate="adoptQualityCandidate"
         @preview-revision="revisionPreview = $event"
         @update-font-size="fontSize = $event"
         @update-line-height="lineHeight = $event"

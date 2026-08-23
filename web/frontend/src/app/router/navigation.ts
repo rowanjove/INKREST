@@ -7,6 +7,7 @@ export type NavigationIcon =
   | 'planning'
   | 'manuscript'
   | 'production'
+  | 'quality'
   | 'publishing'
   | 'settings'
   | 'extensions'
@@ -54,6 +55,13 @@ export const PROJECT_NAV_ITEMS: readonly NavigationItem[] = [
     path: '/production',
     icon: 'production',
     match: ['/production', '/monitor', '/tasks', '/pipeline', '/logs'],
+  },
+  {
+    id: 'quality',
+    label: '质量',
+    path: '/quality',
+    icon: 'quality',
+    match: ['/quality'],
   },
   {
     id: 'publishing',

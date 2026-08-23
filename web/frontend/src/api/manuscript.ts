@@ -3,6 +3,7 @@ import type {
   ManuscriptDocument,
   ManuscriptRevision,
   ManuscriptWorkspace,
+  QualityCandidateDetail,
 } from '../entities/manuscript/manuscript'
 import api from './client'
 
@@ -10,6 +11,8 @@ export const getManuscriptWorkspace = (params?: {
   chapter_id?: string
   query?: string
   status?: string
+  offset?: number
+  limit?: number
 }) => api.get<ManuscriptWorkspace>('/manuscript/workspace', { params })
 
 export const saveManuscriptDocument = (
@@ -34,3 +37,15 @@ export const restoreManuscriptRevision = (
     `/manuscript/documents/${chapterId}/revisions/${revisionId}/restore`,
     { expected_revision: expectedRevision },
   )
+
+export const getQualityCandidate = (chapterId: string) =>
+  api.get<QualityCandidateDetail>(`/manuscript/documents/${chapterId}/quality-candidate`)
+
+export const acceptQualityCandidate = (chapterId: string, expectedRevision: number) =>
+  api.post<{
+    status: 'accepted' | 'already_applied'
+    document: ManuscriptDocument
+    metadata: QualityCandidateDetail['metadata']
+  }>(`/manuscript/documents/${chapterId}/quality-candidate/accept`, {
+    expected_revision: expectedRevision,
+  })

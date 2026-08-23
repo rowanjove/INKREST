@@ -6,7 +6,8 @@ Supports offline tasks:
   3. query-events: Searches events in SQLite.
   4. query-timeline: Searches timeline items.
   5. compress-assets: Compresses project assets.
-  6. agent: Read-only status / logs for external AI agents (JSON stdout).
+  6. calibrate-prose: Builds a local prose identity profile from explicit files.
+  7. agent: Read-only status / logs for external AI agents (JSON stdout).
 """
 
 import argparse
@@ -269,6 +270,98 @@ def compress_assets_cmd(args: argparse.Namespace) -> None:
     print(f"removed_events={len(result.get('removed_events', []))}")
 
 
+def calibrate_prose_cmd(args: argparse.Namespace) -> None:
+    """Build a prose identity profile from explicitly selected local files."""
+
+    from novel_agent.quality.prose_identity import (
+        build_prose_identity_profile,
+        list_prose_identity_profile_versions,
+        restore_prose_identity_profile,
+        save_prose_identity_profile,
+    )
+
+    root_dir = Path(getattr(args, "root_dir", None) or getattr(args, "root", None) or ".").resolve()
+    if getattr(args, "list_versions", False):
+        payload = {"versions": list_prose_identity_profile_versions(root_dir)}
+        if getattr(args, "json_output", False):
+            print(json.dumps(payload, ensure_ascii=False))
+        else:
+            for item in payload["versions"]:
+                marker = "*" if item.get("is_active") else " "
+                print(f"{marker} revision={item.get('revision')} profile_id={item.get('profile_id')} samples={item.get('sample_count')}")
+        return
+
+    restore_revision = getattr(args, "restore_revision", None)
+    if restore_revision is not None:
+        try:
+            target = restore_prose_identity_profile(root_dir, revision=int(restore_revision))
+        except ValueError as exc:
+            print(f"无法恢复文风档案: {exc}", file=sys.stderr)
+            raise SystemExit(2)
+        payload = {"path": str(target), "restored_revision": int(restore_revision)}
+        if getattr(args, "json_output", False):
+            print(json.dumps(payload, ensure_ascii=False))
+        else:
+            print(f"prose_profile={target}")
+            print(f"restored_revision={restore_revision}")
+        return
+
+    sample_paths = [(str(raw), "user_sample") for raw in (getattr(args, "sample", None) or [])]
+    accepted_paths = [(str(raw), "accepted_chapter") for raw in (getattr(args, "accepted_chapter", None) or [])]
+    inputs = sample_paths + accepted_paths
+    if not inputs:
+        print("至少指定一个 --sample 或 --accepted-chapter", file=sys.stderr)
+        raise SystemExit(2)
+
+    samples = []
+    for raw_path, kind in inputs:
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = root_dir / path
+        if not path.is_file():
+            print(f"输入文件不存在: {path}", file=sys.stderr)
+            raise SystemExit(2)
+        try:
+            relative_path = str(path.resolve().relative_to(root_dir))
+        except ValueError:
+            relative_path = str(path.resolve())
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            print(f"无法读取输入文件 {path}: {exc}", file=sys.stderr)
+            raise SystemExit(2)
+        samples.append(
+            {
+                "id": relative_path,
+                "kind": kind,
+                "path": relative_path,
+                "text": text,
+            }
+        )
+
+    profile = build_prose_identity_profile(samples)
+    target = Path(getattr(args, "output", None) or "assets/prose_identity_profile.json")
+    if not target.is_absolute():
+        target = root_dir / target
+    if target.exists() and not getattr(args, "force", False):
+        print(f"档案已存在，使用 --force 覆盖: {target}", file=sys.stderr)
+        raise SystemExit(2)
+    save_prose_identity_profile(root_dir, profile, path=target)
+    payload = {
+        "path": str(target),
+        "profile_id": profile.get("profile_id"),
+        "status": profile.get("status"),
+        "sample_count": profile.get("sample_count"),
+        "char_count": profile.get("char_count"),
+    }
+    if getattr(args, "json_output", False):
+        print(json.dumps(payload, ensure_ascii=False))
+    else:
+        print(f"prose_profile={target}")
+        print(f"profile_id={profile.get('profile_id')}")
+        print(f"sample_count={profile.get('sample_count')}")
+
+
 def _normalize_argv(argv):
     if not argv:
         return ["--help"]
@@ -281,6 +374,7 @@ def _normalize_argv(argv):
         "query-events",
         "query-timeline",
         "compress-assets",
+        "calibrate-prose",
     }
     if argv[0] in commands:
         return argv
@@ -350,6 +444,25 @@ def main() -> None:
     compress_parser.add_argument("--root-dir", default=None)
     compress_parser.add_argument("--root", default=None)
 
+    calibrate_parser = subparsers.add_parser(
+        "calibrate-prose",
+        help="Build a local prose identity profile from explicit sample files",
+    )
+    calibrate_parser.add_argument("--sample", action="append", default=[], help="User-provided prose sample (repeatable)")
+    calibrate_parser.add_argument(
+        "--accepted-chapter",
+        action="append",
+        default=[],
+        help="Accepted chapter text to include (repeatable)",
+    )
+    calibrate_parser.add_argument("--root-dir", default=None)
+    calibrate_parser.add_argument("--root", default=None)
+    calibrate_parser.add_argument("--output", default=None, help="Profile output path (default: assets/prose_identity_profile.json)")
+    calibrate_parser.add_argument("--force", action="store_true", help="Overwrite an existing profile")
+    calibrate_parser.add_argument("--list-versions", action="store_true", help="List saved profile revisions")
+    calibrate_parser.add_argument("--restore-revision", type=int, default=None, help="Restore a prior revision as a new active revision")
+    calibrate_parser.add_argument("--json-output", action="store_true")
+
     agent_parser = subparsers.add_parser(
         "agent",
         help="Agent bridge: status, logs, alerts (JSON; use with Cursor MCP / skills)",
@@ -410,6 +523,8 @@ def main() -> None:
         query_timeline_cmd(args)
     elif args.command == "compress-assets":
         compress_assets_cmd(args)
+    elif args.command == "calibrate-prose":
+        calibrate_prose_cmd(args)
     elif args.command == "agent":
         args.func(args)
     else:

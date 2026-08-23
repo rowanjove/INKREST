@@ -35,6 +35,13 @@ def quality_gate_blocks(report: Dict[str, Any], mode: str) -> bool:
     """Return True when the chapter should not proceed to post_audit persistence."""
     if mode != "block_on_fail":
         return False
+    audit = report.get("audit") or {}
+    if isinstance(audit, dict) and str(audit.get("status") or "ok").lower() in {
+        "error",
+        "incomplete",
+        "unknown",
+    }:
+        return True
     summary = report.get("guard_summary") or {}
     if summary.get("overall_status") == "FAIL":
         return True
@@ -105,6 +112,13 @@ def quality_report_warrants_persona_eval(report: Dict[str, Any]) -> bool:
 
 
 def should_run_persona_evaluations(root_dir: Path, quality_report: Dict[str, Any]) -> bool:
+    audit = quality_report.get("audit") or {}
+    if isinstance(audit, dict) and str(audit.get("status") or "ok").lower() in {
+        "error",
+        "incomplete",
+        "unknown",
+    }:
+        return False
     mode = resolve_persona_evaluations(root_dir)
     if mode == "off":
         return False
@@ -114,6 +128,13 @@ def should_run_persona_evaluations(root_dir: Path, quality_report: Dict[str, Any
 
 
 def format_quality_block_message(report: Dict[str, Any]) -> str:
+    audit = report.get("audit") or {}
+    if isinstance(audit, dict) and str(audit.get("status") or "ok").lower() in {
+        "error",
+        "incomplete",
+        "unknown",
+    }:
+        return "审校未完成，已暂停落库；请修复审校器或模型调用后重新运行审校。"
     summary = report.get("guard_summary") or {}
     blocked = summary.get("blocked_by") or []
     if blocked:

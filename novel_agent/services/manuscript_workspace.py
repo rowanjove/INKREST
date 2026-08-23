@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import time
+import difflib
+import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -20,6 +23,7 @@ from novel_agent.services.manuscript_documents import (
     plain_text_to_tiptap,
     validate_tiptap_document,
 )
+from novel_agent.control.longform_flags import flag_enabled
 from novel_agent.state.sqlite_store import SQLiteStateStore
 from novel_agent.state.manuscript_repository import DocumentConflictError
 
@@ -41,12 +45,20 @@ def _atomic_text(path: Path, value: str) -> None:
     temporary.replace(path)
 
 
-def _chapter_rows(store: SQLiteStateStore) -> List[Dict[str, Any]]:
-    total = store.count_chapters_indexed()
-    rows: List[Dict[str, Any]] = []
-    for offset in range(0, total, 500):
-        rows.extend(store.list_chapters_page(offset=offset, limit=500))
-    return rows
+def _chapter_rows(
+    store: SQLiteStateStore,
+    *,
+    offset: int = 0,
+    limit: int = 100,
+    query: str = "",
+    status: str = "all",
+) -> List[Dict[str, Any]]:
+    return store.list_chapters_page(
+        offset=offset,
+        limit=limit,
+        query=query,
+        status=status,
+    )
 
 
 def _chapter_status(row: Dict[str, Any]) -> tuple[str, str]:
@@ -57,6 +69,158 @@ def _chapter_status(row: Dict[str, Any]) -> tuple[str, str]:
     if bool(row.get("has_final")) or gate in {"passed", "pass", "ready"}:
         return "ready", "已成稿"
     return "draft", "草稿"
+
+
+def text_sha256(value: str) -> str:
+    normalized = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def load_quality_rewrite_candidate(root: Path, chapter_id: str) -> Optional[Dict[str, Any]]:
+    """Load the isolated quality-rewrite candidate and its metadata."""
+
+    reports_dir = root / "workspace" / "chapters" / f"chapter_{chapter_id}" / "reports"
+    candidate_path = reports_dir / "quality_rewrite_candidate.txt"
+    metadata_path = reports_dir / "quality_rewrite_candidate.json"
+    if not candidate_path.is_file() and not metadata_path.is_file():
+        return None
+
+    metadata: Dict[str, Any] = {}
+    if metadata_path.is_file():
+        try:
+            parsed = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict):
+                metadata = parsed
+        except (OSError, json.JSONDecodeError):
+            metadata = {}
+    candidate = ""
+    if candidate_path.is_file():
+        try:
+            candidate = candidate_path.read_text(encoding="utf-8")
+        except OSError:
+            candidate = ""
+    return {
+        "available": bool(candidate.strip() or metadata),
+        "candidate_text": candidate,
+        "metadata": metadata,
+        "artifact": "reports/quality_rewrite_candidate.txt",
+    }
+
+
+def mark_quality_rewrite_candidate_adopted(
+    root: Path,
+    chapter_id: str,
+    *,
+    revision: int,
+    source: str = "manual",
+) -> Dict[str, Any]:
+    """Record that the isolated candidate was explicitly adopted."""
+
+    reports_dir = Path(root) / "workspace" / "chapters" / f"chapter_{chapter_id}" / "reports"
+    metadata_path = reports_dir / "quality_rewrite_candidate.json"
+    loaded = load_quality_rewrite_candidate(Path(root), chapter_id) or {}
+    metadata = dict(loaded.get("metadata") or {})
+    metadata.update(
+        {
+            "adopted": True,
+            "adopted_revision": int(revision),
+            "adopted_source": source,
+            "adopted_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    _atomic_text(metadata_path, json.dumps(metadata, ensure_ascii=False, indent=2))
+    return metadata
+
+
+def build_quality_candidate_diff(
+    original_text: str,
+    candidate_text: str,
+    *,
+    max_chars: int = 24000,
+) -> Dict[str, Any]:
+    """Build a bounded line diff suitable for the manuscript inspector."""
+
+    original_lines = str(original_text or "").splitlines(keepends=True)
+    candidate_lines = str(candidate_text or "").splitlines(keepends=True)
+    matcher = difflib.SequenceMatcher(None, original_lines, candidate_lines, autojunk=False)
+    segments: List[Dict[str, Any]] = []
+    consumed = 0
+    added_lines = 0
+    removed_lines = 0
+    changed_blocks = 0
+    truncated = False
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "replace":
+            removed_lines += i2 - i1
+            added_lines += j2 - j1
+            changed_blocks += 1
+            replacement_segments = [
+                ("delete", "".join(original_lines[i1:i2])),
+                ("insert", "".join(candidate_lines[j1:j2])),
+            ]
+        elif tag == "delete":
+            removed_lines += i2 - i1
+            changed_blocks += 1
+            replacement_segments = [("delete", "".join(original_lines[i1:i2]))]
+        elif tag == "insert":
+            added_lines += j2 - j1
+            changed_blocks += 1
+            replacement_segments = [("insert", "".join(candidate_lines[j1:j2]))]
+        else:
+            replacement_segments = [("equal", "".join(original_lines[i1:i2]))]
+        for operation, text in replacement_segments:
+            if consumed + len(text) > max_chars:
+                remaining = max(0, max_chars - consumed)
+                if remaining:
+                    segments.append({"op": operation, "text": text[:remaining]})
+                truncated = True
+                break
+            segments.append({"op": operation, "text": text})
+            consumed += len(text)
+        if truncated:
+            break
+    return {
+        "segments": segments,
+        "stats": {
+            "original_lines": len(original_lines),
+            "candidate_lines": len(candidate_lines),
+            "added_lines": added_lines,
+            "removed_lines": removed_lines,
+            "changed_blocks": changed_blocks,
+        },
+        "truncated": truncated,
+    }
+
+
+def _quality_rewrite_candidate(
+    root: Path,
+    chapter_id: str,
+    *,
+    current_text: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Read the latest isolated quality-rewrite candidate, if one exists.
+
+    Only a bounded preview is included in the workspace payload.  The actual
+    ``chapter_final.txt`` remains the authoritative manuscript until a human or
+    an explicitly approved workflow adopts the candidate.
+    """
+
+    loaded = load_quality_rewrite_candidate(root, chapter_id)
+    if loaded is None:
+        return {"available": False}
+    metadata = loaded["metadata"]
+    candidate = loaded["candidate_text"]
+    preview_limit = 1600
+    result: Dict[str, Any] = {
+        "available": bool(candidate.strip() or metadata),
+        "preview": candidate[:preview_limit],
+        "preview_truncated": len(candidate) > preview_limit,
+        "metadata": metadata,
+        "artifact": loaded["artifact"],
+    }
+    if current_text is not None:
+        result["diff"] = build_quality_candidate_diff(current_text, candidate)
+    return result
 
 
 def ensure_manuscript_document(
@@ -96,14 +260,30 @@ def build_manuscript_workspace(
     chapter_id: str = "",
     query: str = "",
     status: str = "all",
+    offset: int = 0,
+    limit: int = 100,
 ) -> ManuscriptWorkspace:
     root = Path(root_dir)
     store = SQLiteStateStore(root)
     if store.count_chapters_indexed() == 0:
         sync_chapters_from_disk(root, store)
-    rows = _chapter_rows(store)
+    page_offset = max(0, int(offset or 0))
+    page_limit = max(1, min(int(limit or 100), 100))
+    catalog_total = store.count_chapters_filtered(query=query, status=status)
+    # The rollback switch intentionally restores the pre-pagination behavior
+    # for operators diagnosing a deployment: one request receives the full
+    # filtered catalog.  The default path remains bounded at 100 rows.
+    if not flag_enabled("m1_catalog_pagination", root):
+        page_offset = 0
+        page_limit = max(1, catalog_total)
+    rows = _chapter_rows(
+        store,
+        offset=page_offset,
+        limit=page_limit,
+        query=query,
+        status=status,
+    )
     chapters: List[ManuscriptChapter] = []
-    normalized_query = query.strip().lower()
     for row in rows:
         item_status, status_label = _chapter_status(row)
         item = ManuscriptChapter(
@@ -114,17 +294,14 @@ def build_manuscript_workspace(
             status_label=status_label,
             has_content=bool(row.get("has_final")),
         )
-        if normalized_query and normalized_query not in (
-            item.chapter_id + " " + item.title
-        ).lower():
-            continue
-        if status != "all" and item.status != status:
-            continue
         chapters.append(item)
 
     selected = str(chapter_id or "")
-    all_ids = {str(row["id"]) for row in rows}
-    if selected not in all_ids:
+    if selected:
+        indexed = store.get_chapter_index(selected)
+        if indexed is None:
+            selected = chapters[0].chapter_id if chapters else ""
+    else:
         selected = chapters[0].chapter_id if chapters else ""
 
     document = None
@@ -140,13 +317,18 @@ def build_manuscript_workspace(
         plan = _safe_json(
             root / "workspace" / "chapters" / "chapter_{}".format(selected) / "plan.json"
         )
-        row = next((item for item in rows if str(item["id"]) == selected), {})
+        row = store.get_chapter_index(selected) or {}
         context = {
             "chapter_goal": str(plan.get("chapter_goal") or ""),
             "synopsis": str(plan.get("detailed_synopsis") or ""),
             "target_chars": plan.get("target_chars") or [],
             "risk_level": str(row.get("risk_level") or ""),
             "gate_status": str(row.get("gate_status") or ""),
+            "quality_candidate": _quality_rewrite_candidate(
+                root,
+                selected,
+                current_text=document.plain_text if document else "",
+            ),
         }
     return ManuscriptWorkspace(
         chapters=chapters,
@@ -154,6 +336,10 @@ def build_manuscript_workspace(
         document=document,
         history=history,
         context=context,
+        catalog_offset=page_offset,
+        catalog_limit=page_limit,
+        catalog_total=catalog_total,
+        catalog_has_more=page_offset + len(chapters) < catalog_total,
     )
 
 
@@ -186,10 +372,7 @@ def _project_document(
         json.dumps(report, ensure_ascii=False, indent=2),
     )
 
-    existing = next(
-        (row for row in _chapter_rows(store) if str(row["id"]) == chapter_id),
-        {},
-    )
+    existing = store.get_chapter_index(chapter_id) or {}
     store.index_chapter(
         chapter_id,
         str(document["title"]),

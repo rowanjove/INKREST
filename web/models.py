@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 # ---- Request models ----
@@ -45,15 +45,33 @@ class ConfigUpdate(BaseModel):
     chapter: Optional[Dict[str, Any]] = None
 
 
+def _validate_request_scale(scale: str, scale_label: str, target_chapters: int) -> None:
+    from novel_agent.control.scale_profile import ScaleLimitError, validate_scale_target
+
+    try:
+        validate_scale_target(
+            scale=scale,
+            scale_label=scale_label,
+            target_chapters=target_chapters,
+        )
+    except ScaleLimitError as exc:
+        raise ValueError(str(exc)) from exc
+
+
 class NovelPlanRequest(BaseModel):
     """Request to generate a novel outline."""
     theme: str = Field(..., min_length=1)
     genre: str = Field(default="玄幻")
-    target_chapters: int = Field(default=20, ge=1, le=3000)
+    target_chapters: int = Field(default=20, ge=1, le=999999)
     scale: str = ""
     scale_label: str = ""
     special_requirements: str = ""
     overwrite: bool = False
+
+    @model_validator(mode="after")
+    def _scale_budget(self):
+        _validate_request_scale(self.scale, self.scale_label, self.target_chapters)
+        return self
 
 
 class ChapterPlanRequest(BaseModel):
@@ -67,11 +85,16 @@ class NovelRunRequest(BaseModel):
     """Request to run the full novel generation pipeline."""
     theme: str = Field(..., min_length=1)
     genre: str = Field(default="玄幻")
-    target_chapters: int = Field(default=20, ge=1, le=3000)
+    target_chapters: int = Field(default=20, ge=1, le=999999)
     scale: str = ""
     scale_label: str = ""
     special_requirements: str = ""
     dry_run: bool = False
+
+    @model_validator(mode="after")
+    def _scale_budget(self):
+        _validate_request_scale(self.scale, self.scale_label, self.target_chapters)
+        return self
 
 
 class NovelArcRunRequest(BaseModel):
@@ -118,6 +141,17 @@ class NovelContinueRequest(BaseModel):
         default=False,
         description="True=熔断暂停后仍续跑；默认需先处理阻断章",
     )
+
+    @model_validator(mode="after")
+    def _run_budget(self):
+        from novel_agent.control.scale_profile import MAX_RUN_CHAPTER_BUDGET
+
+        if not self.autopilot and int(self.max_chapters or 0) > MAX_RUN_CHAPTER_BUDGET:
+            raise ValueError(
+                f"单次运行预算最多 {MAX_RUN_CHAPTER_BUDGET} 章；"
+                "更大目标请打开自动续跑，按轮次执行"
+            )
+        return self
 
 
 class NovelChatRequest(BaseModel):
@@ -226,6 +260,16 @@ class ProjectCreateRequest(BaseModel):
     scale: str = ""
     scale_label: str = ""
     scale_profile: Dict[str, Any] = {}
+
+    @model_validator(mode="after")
+    def _scale_budget(self):
+        if int(self.target_chapters or 0) > 0 or self.scale or self.scale_label:
+            _validate_request_scale(
+                self.scale,
+                self.scale_label,
+                int(self.target_chapters or 0) or 20,
+            )
+        return self
     target_chars_per_chapter: List[int] = []
     outline: Optional[Dict[str, Any]] = None
     preset_channel: Optional[str] = None

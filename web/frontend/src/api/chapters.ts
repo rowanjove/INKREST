@@ -9,6 +9,9 @@ export const listTasks = () =>
 export const abortTask = (taskId: string) =>
   api.post(`/chapters/tasks/${taskId}/abort`)
 
+export const getTask = (taskId: string) =>
+  api.get(`/chapters/tasks/${taskId}`)
+
 export const getArcProgress = () =>
   api.get('/novel/arc-progress')
 
@@ -90,4 +93,3 @@ export const analyzeNovelIntro = (text: string) =>
 
 export const updateOutline = (data: Record<string, any>) =>
   api.put('/outline', data)
-

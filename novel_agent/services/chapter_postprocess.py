@@ -99,6 +99,8 @@ class ChapterPostProcessor:
         chapter_id: str,
         final_text: str,
         reports_dir: Path,
+        audit: Optional[Dict[str, Any]] = None,
+        prose_profile: Optional[Dict[str, Any]] = None,
     ) -> QualityReportOutcome:
         logger.info("Building quality report for chapter %s", chapter_id)
         previous_text = self._previous_chapter_text(chapter_id)
@@ -109,6 +111,14 @@ class ChapterPostProcessor:
         mode = resolve_quality_mode(self._o.root_dir)
         from novel_agent.quality.style_precheck import load_style_precheck_cache
 
+        if prose_profile is None:
+            try:
+                from novel_agent.quality.prose_identity import load_prose_identity_profile
+
+                prose_profile = load_prose_identity_profile(self._o.root_dir)
+            except Exception as exc:
+                logger.warning("Failed to load prose identity profile: %s", exc)
+
         style_precheck = load_style_precheck_cache(reports_dir, final_text)
         quality_report = build_quality_report(
             final_text,
@@ -117,6 +127,9 @@ class ChapterPostProcessor:
             root_dir=self._o.root_dir,
             mode=mode,
             style_precheck=style_precheck,
+            audit=audit,
+            prose_profile=prose_profile,
+            chapter_id=chapter_id,
         )
         rewrite_hints = build_quality_rewrite_hints(quality_report)
         if rewrite_hints.strip():

@@ -69,6 +69,11 @@ export interface PublishingWorkspace {
   chapters: PublicationChapterSummary[]
   selected_chapter_id: string
   selected_chapter: PublicationChapter | null
+  catalog_offset?: number
+  catalog_limit?: number
+  catalog_total?: number
+  catalog_has_more?: boolean
+  selected_catalog_index?: number
   platform: PublicationPlatform
   platform_check: {
     status: string
@@ -100,6 +105,25 @@ export interface PublishingWorkspace {
   }>
   preflight: ExportPreflight
   formats: PublicationFormat[]
+}
+
+export interface PublishingExportTask {
+  task_id: string
+  status: 'pending' | 'claimed' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+  format?: ExportFormat
+  filename?: string
+  error?: string | null
+  result?: {
+    path?: string
+    format?: ExportFormat
+    title?: string
+    chapter_count?: number | null
+  } | null
+  progress?: {
+    step?: string
+    status?: string
+    progress?: number
+  } | null
 }
 
 export interface ReaderSettings {

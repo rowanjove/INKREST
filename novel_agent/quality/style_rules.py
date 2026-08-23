@@ -51,6 +51,69 @@ HOOK_ENDING_PATTERNS = [
 ]
 
 
+def _make_finding(
+    rule_id: str,
+    category: str,
+    description: str,
+    *,
+    text: str,
+    start: int,
+    end: int,
+) -> Dict[str, Any]:
+    """Build a stable, source-anchored style finding.
+
+    The legacy ``hits``/``details`` fields remain for compatibility.  New callers
+    should prefer this structure because it can drive a local rewrite without
+    asking a model to rediscover the offending span.
+    """
+
+    return {
+        "id": f"{rule_id}:{start}:{end}",
+        "rule_id": rule_id,
+        "category": category,
+        "description": description,
+        "text": text,
+        "start": int(start),
+        "end": int(end),
+    }
+
+
+def _cluster_findings(findings: List[Dict[str, Any]], window: int = 240) -> List[Dict[str, Any]]:
+    """Group nearby signals so one isolated word is not treated as a pattern.
+
+    ``window`` is deliberately a diagnostic heuristic, not a pass/fail threshold.
+    A cluster is only emitted for two or more findings; downstream gates can decide
+    whether the cluster matters for the current genre/profile.
+    """
+
+    ordered = sorted(findings, key=lambda item: (item.get("start", 0), item.get("end", 0)))
+    clusters: List[Dict[str, Any]] = []
+    current: List[Dict[str, Any]] = []
+    current_end = -1
+    for finding in ordered:
+        start = int(finding.get("start", 0))
+        end = int(finding.get("end", start))
+        if current and start > current_end + window:
+            if len(current) >= 2:
+                clusters.append(_finalize_cluster(current, len(clusters) + 1))
+            current = []
+        current.append(finding)
+        current_end = max(current_end, end)
+    if len(current) >= 2:
+        clusters.append(_finalize_cluster(current, len(clusters) + 1))
+    return clusters
+
+
+def _finalize_cluster(findings: List[Dict[str, Any]], number: int) -> Dict[str, Any]:
+    return {
+        "id": f"style-cluster-{number}",
+        "start": min(int(item.get("start", 0)) for item in findings),
+        "end": max(int(item.get("end", 0)) for item in findings),
+        "finding_ids": [str(item.get("id")) for item in findings],
+        "categories": sorted({str(item.get("category") or "unknown") for item in findings}),
+    }
+
+
 def load_style_rules_config(root_dir: Path) -> Dict[str, Any]:
     import logging
     logger = logging.getLogger(__name__)
@@ -157,13 +220,23 @@ def check_reference_similarity(text: str, root_dir: Path) -> Dict[str, Any]:
 def check_ai_style(text: str, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Check for AI-style phrases in the text. Report-only."""
     if not text:
-        return {"pass": True, "level": "none", "score": 100, "details": [], "total_hits": 0, "hits": []}
+        return {
+            "pass": True,
+            "level": "none",
+            "score": 100,
+            "details": [],
+            "total_hits": 0,
+            "hits": [],
+            "findings": [],
+            "clusters": [],
+        }
 
     rules_cfg = (config or {}).get("rules", {})
     details: List[str] = []
     total_hits = 0
     weighted_hits = 0.0
     hits: List[str] = []
+    findings: List[Dict[str, Any]] = []
 
     for rule_id, pattern, desc in AI_STYLE_PATTERNS:
         cfg = rules_cfg.get(rule_id, {"enabled": True, "weight": 1.0})
@@ -174,6 +247,16 @@ def check_ai_style(text: str, config: Optional[Dict[str, Any]] = None) -> Dict[s
         rule_hits = 0
         for m in pattern.finditer(text):
             hits.append(m.group(0))
+            findings.append(
+                _make_finding(
+                    rule_id,
+                    "ai_style",
+                    desc,
+                    text=m.group(0),
+                    start=m.start(),
+                    end=m.end(),
+                )
+            )
             rule_hits += 1
             
         if rule_hits > 0:
@@ -201,6 +284,8 @@ def check_ai_style(text: str, config: Optional[Dict[str, Any]] = None) -> Dict[s
         "details": details,
         "total_hits": total_hits,
         "hits": hits,
+        "findings": findings,
+        "clusters": _cluster_findings(findings),
     }
 
 
@@ -226,11 +311,14 @@ def check_anti_ai_flavor(text: str, config: Optional[Dict[str, Any]] = None) -> 
             "dialogue_overcomplete_hits": 0,
             "ending_type": "empty",
             "hits": [],
+            "findings": [],
+            "clusters": [],
         }
 
     rules_cfg = (config or {}).get("rules", {})
     details: List[str] = []
     hits: List[str] = []
+    findings: List[Dict[str, Any]] = []
 
     emotion_hits = 0
     cfg_emotion = rules_cfg.get("anti_ai_emotion_telling", {"enabled": True, "weight": 1.0})
@@ -239,6 +327,16 @@ def check_anti_ai_flavor(text: str, config: Optional[Dict[str, Any]] = None) -> 
         for pattern in EMOTION_TELLING_PATTERNS:
             for m in pattern.finditer(text):
                 hits.append(m.group(0))
+                findings.append(
+                    _make_finding(
+                        "anti_ai_emotion_telling",
+                        "emotion_telling",
+                        "情绪直写",
+                        text=m.group(0),
+                        start=m.start(),
+                        end=m.end(),
+                    )
+                )
                 emotion_hits += 1
     else:
         weight_emotion = 0.0
@@ -254,6 +352,16 @@ def check_anti_ai_flavor(text: str, config: Optional[Dict[str, Any]] = None) -> 
             count = 0
             for m in pattern.finditer(text):
                 hits.append(m.group(0))
+                findings.append(
+                    _make_finding(
+                        "anti_ai_abstract_modifier",
+                        "abstract_modifier",
+                        desc,
+                        text=m.group(0),
+                        start=m.start(),
+                        end=m.end(),
+                    )
+                )
                 count += 1
             if count:
                 abstract_hits += count
@@ -271,6 +379,16 @@ def check_anti_ai_flavor(text: str, config: Optional[Dict[str, Any]] = None) -> 
             if len(block) >= 24 or comma_count >= 2:
                 dialogue_overcomplete_hits += 1
                 hits.append(m.group(0))
+                findings.append(
+                    _make_finding(
+                        "anti_ai_dialogue_overcomplete",
+                        "dialogue_overcomplete",
+                        "对话过完整",
+                        text=m.group(0),
+                        start=m.start(),
+                        end=m.end(),
+                    )
+                )
     else:
         weight_dialogue = 0.0
 
@@ -293,6 +411,17 @@ def check_anti_ai_flavor(text: str, config: Optional[Dict[str, Any]] = None) -> 
             bad_ending = desc
             ending_weight = float(cfg_end.get("weight", 1.0))
             hits.append(ending)
+            ending_start = max(0, len(text) - len(ending))
+            findings.append(
+                _make_finding(
+                    rule_id,
+                    "ending",
+                    desc,
+                    text=ending,
+                    start=ending_start,
+                    end=len(text),
+                )
+            )
             break
 
     has_hook_ending = any(pattern.search(ending) for pattern in HOOK_ENDING_PATTERNS)
@@ -341,6 +470,8 @@ def check_anti_ai_flavor(text: str, config: Optional[Dict[str, Any]] = None) -> 
         "ending_type": ending_type,
         "ending": ending,
         "hits": hits,
+        "findings": findings,
+        "clusters": _cluster_findings(findings),
     }
 
 

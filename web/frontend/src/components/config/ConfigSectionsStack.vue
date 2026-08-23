@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { defineAsyncComponent } from 'vue'
 import { Connection, Lock, Setting } from '@element-plus/icons-vue'
 
 import AgentBridgeConfig from '../AgentBridgeConfig.vue'
@@ -9,9 +10,12 @@ import LLMConfig from '../LLMConfig.vue'
 import ModelLibrary from '../ModelLibrary.vue'
 import PetAssistantConfig from '../PetAssistantConfig.vue'
 import PipelineRuntimeConfig from '../PipelineRuntimeConfig.vue'
-import PromptManager from '../PromptManager.vue'
 import WritingRulesConfig from '../WritingRulesConfig.vue'
 import ConfigTaskGroup from './ConfigTaskGroup.vue'
+
+// Keep the advanced prompt editor out of the main settings route chunk. It is
+// only needed after the user explicitly opens the prompt source section.
+const PromptManager = defineAsyncComponent(() => import('../PromptManager.vue'))
 </script>
 
 <template>

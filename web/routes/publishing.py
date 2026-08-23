@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
-import tempfile
 from pathlib import Path
 from typing import Literal
 
@@ -15,19 +13,19 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from novel_agent.control.platform_profiles import PLATFORM_PROFILES
-from novel_agent.exporters import export_novel
-from novel_agent.services.publishing_workspace import build_publishing_workspace
+from novel_agent.control.longform_flags import flag_enabled
+from novel_agent.services.publishing_workspace import build_publishing_workspace, publication_formats
 from novel_agent.state.sqlite_store import SQLiteStateStore
 from web.deps import (
     ProjectSession,
     RequireProjectDep,
     current_project_info,
+    task_manager_for,
     touch_project_activity,
 )
 from web.helpers import _validate_id
 
 router = APIRouter(tags=["publishing"])
-logger = logging.getLogger(__name__)
 
 
 class UpdatePlatformRequest(BaseModel):
@@ -64,10 +62,13 @@ def _safe_filename(title: str, extension: str) -> str:
     return f"{cleaned}{extension}"
 
 
-@router.get("/api/publishing/workspace")
-def get_publishing_workspace(
-    session: ProjectSession = RequireProjectDep,
-    chapter_id: str = Query(default="", max_length=64),
+def _publishing_workspace_payload(
+    session: ProjectSession,
+    *,
+    chapter_id: str = "",
+    query: str = "",
+    offset: int = 0,
+    limit: int = 100,
 ) -> dict:
     if chapter_id:
         _validate_id(chapter_id, "chapter_id")
@@ -76,7 +77,27 @@ def get_publishing_workspace(
         project_id=session.project_id or session.root_dir.name,
         project_info=current_project_info(session),
         selected_chapter_id=chapter_id,
+        query=query,
+        offset=offset,
+        limit=limit,
     ).model_dump(mode="json")
+
+
+@router.get("/api/publishing/workspace")
+def get_publishing_workspace(
+    session: ProjectSession = RequireProjectDep,
+    chapter_id: str = Query(default="", max_length=64),
+    query: str = Query(default="", max_length=120),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
+) -> dict:
+    return _publishing_workspace_payload(
+        session,
+        chapter_id=chapter_id,
+        query=query,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.put("/api/publishing/platform")
@@ -98,7 +119,7 @@ def put_publishing_platform(
     meta["platform"] = platform
     _atomic_json(meta_path, meta)
     touch_project_activity(session)
-    return get_publishing_workspace(session=session, chapter_id="")
+    return _publishing_workspace_payload(session)
 
 
 @router.put("/api/publishing/feedback")
@@ -117,14 +138,14 @@ def put_publishing_feedback(
         body.active_readers,
     )
     touch_project_activity(session)
-    return get_publishing_workspace(session=session, chapter_id=chapter_id)
+    return _publishing_workspace_payload(session, chapter_id=chapter_id)
 
 
 @router.post("/api/publishing/export")
-def post_publishing_export(
+async def post_publishing_export(
     body: PublicationExportRequest,
     session: ProjectSession = RequireProjectDep,
-) -> FileResponse:
+) -> dict:
     workspace = build_publishing_workspace(
         session.root_dir,
         project_id=session.project_id or session.root_dir.name,
@@ -153,32 +174,76 @@ def post_publishing_export(
     if not format_row["available"]:
         raise HTTPException(503, f"{format_row['label']} 导出组件尚未安装")
 
-    temporary = tempfile.NamedTemporaryFile(
-        suffix=str(format_row["extension"]),
-        delete=False,
-        prefix="inkrest-export-",
+    streaming_enabled = flag_enabled("m1_streaming_export", session.root_dir)
+    task_id = await task_manager_for(session).submit_export(
+        export_format=export_format,
+        title=body.title,
+        chapter_ids=body.chapter_ids or None,
+        extension=str(format_row["extension"]),
+        streaming=streaming_enabled,
     )
-    output = Path(temporary.name)
-    temporary.close()
-    try:
-        export_novel(
-            session.root_dir,
-            output,
-            export_format,
-            title=body.title,
-            chapter_ids=body.chapter_ids or None,
-        )
-    except (ImportError, ValueError) as exc:
-        output.unlink(missing_ok=True)
-        raise HTTPException(422, str(exc))
-    except Exception:
-        output.unlink(missing_ok=True)
-        logger.exception("Publication export failed")
-        raise HTTPException(500, "导出失败，请查看诊断日志")
     touch_project_activity(session)
+    return {
+        "task_id": task_id,
+        "status": "pending",
+        "format": export_format,
+        "mode": "streaming_background" if streaming_enabled else "background_compatibility",
+        "filename": _safe_filename(body.title, str(format_row["extension"])),
+    }
+
+
+@router.get("/api/publishing/export/{task_id}")
+async def get_publishing_export_task(
+    task_id: str,
+    session: ProjectSession = RequireProjectDep,
+) -> dict:
+    task = await task_manager_for(session).get_task_async(task_id)
+    if not task or task.get("task_type") != "export":
+        raise HTTPException(404, "导出任务不存在")
+    return task
+
+
+@router.post("/api/publishing/export/{task_id}/cancel")
+async def cancel_publishing_export(
+    task_id: str,
+    session: ProjectSession = RequireProjectDep,
+) -> dict:
+    manager = task_manager_for(session)
+    task = await manager.get_task_async(task_id)
+    if not task or task.get("task_type") != "export":
+        raise HTTPException(404, "导出任务不存在")
+    success = await manager.abort_task(task_id)
+    return {"task_id": task_id, "status": "cancelled" if success else task["status"]}
+
+
+@router.get("/api/publishing/export/{task_id}/download")
+async def download_publishing_export(
+    task_id: str,
+    session: ProjectSession = RequireProjectDep,
+) -> FileResponse:
+    task = await task_manager_for(session).get_task_async(task_id)
+    if not task or task.get("task_type") != "export":
+        raise HTTPException(404, "导出任务不存在")
+    if task.get("status") != "succeeded":
+        raise HTTPException(409, "导出任务尚未完成")
+    result = task.get("result") or {}
+    output = Path(str(result.get("path") or ""))
+    project_root = Path(session.root_dir).resolve()
+    try:
+        output.resolve().relative_to((project_root / "workspace" / "exports").resolve())
+    except ValueError as exc:
+        raise HTTPException(500, "导出文件路径无效") from exc
+    if not output.is_file():
+        raise HTTPException(410, "导出文件已清理，请重新导出")
+    filename = _safe_filename(
+        str(result.get("title") or "未命名小说"),
+        str(next(
+            item["extension"] for item in publication_formats() if item["id"] == result.get("format")
+        )),
+    )
     return FileResponse(
         output,
-        filename=_safe_filename(body.title, str(format_row["extension"])),
+        filename=filename,
         media_type="application/octet-stream",
         background=BackgroundTask(output.unlink, missing_ok=True),
     )

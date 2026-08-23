@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 import web.context as ws_server
 import web.helpers as ws_helpers
-from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, task_manager_for
 from web.security import ALLOW_RUNTIME_INSTALL_ENV, validate_outbound_model_base_url
 from web.model_library import ModelLibrary
 
@@ -29,7 +29,9 @@ from novel_agent.pipeline import (
     write_pipeline_file,
 )
 from novel_agent.config.io import ConfigValidationError
+from novel_agent.config.migration import apply_config_migration, migration_status
 from novel_agent.config.schema import CONFIG_SCHEMA_VERSION, pipeline_json_schema
+from novel_agent.control.longform_flags import flag_enabled, longform_flags
 
 router = APIRouter()
 
@@ -96,6 +98,25 @@ def get_config_schema() -> Dict[str, Any]:
         "schema_version": CONFIG_SCHEMA_VERSION,
         "schema": pipeline_json_schema(),
     }
+
+
+@router.get("/api/config/migration")
+def get_config_migration(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    """Inspect legacy config without loading or modifying it."""
+    session = coerce_project_session(session)
+    return migration_status(session.root_dir)
+
+
+@router.post("/api/config/migration")
+def post_config_migration(body: Dict[str, Any], session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    """Apply a reviewed migration after an exact user confirmation token."""
+    session = coerce_project_session(session)
+    path = session.root_dir / "config" / "pipeline.yaml"
+    try:
+        result = apply_config_migration(path, confirmation=str(body.get("confirmation") or ""))
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return result
 
 
 @router.get("/api/config")
@@ -642,6 +663,8 @@ def get_embedding_status(session: ProjectSession = RequireProjectDep):
     from novel_agent.pipeline import load_pipeline_settings
     from novel_agent.control.scale_profile import is_vector_enabled_for_project
     from novel_agent.control.runtime_policy import is_semantic_search_effective, resolve_runtime_policy
+    from novel_agent.state.sqlite_schema import safe_connection
+    from novel_agent.state.vector_readiness import vector_fallback_readiness
 
     root_dir = session.root_dir
     current = load_pipeline_settings(root_dir)
@@ -651,6 +674,34 @@ def get_embedding_status(session: ProjectSession = RequireProjectDep):
     policy = resolve_runtime_policy(root_dir)
     scale = str(policy.scale or "medium")
     long_form = scale in ("long", "epic", "infinite")
+    vector_rows = 0
+    try:
+        with safe_connection(root_dir / "data" / "novel.sqlite") as conn:
+            row = conn.execute(
+                "select count(*) from vector_embeddings where embedding is not null"
+            ).fetchone()
+            vector_rows = int(row[0] if row else 0)
+    except Exception:
+        vector_rows = 0
+    vector_readiness_enabled = flag_enabled("m1_vector_readiness", root_dir)
+    vector_readiness = (
+        vector_fallback_readiness(
+            root_dir,
+            scale=scale,
+            backend=str(current.get("embedding", {}).get("backend", "sqlite")),
+            scanned_rows=vector_rows,
+            capped=vector_rows >= 50000,
+        )
+        if vector_readiness_enabled
+        else {
+            "status": "disabled",
+            "degraded": False,
+            "reason": "m1_vector_readiness_disabled",
+            "scanned_rows": vector_rows,
+            "scan_cap": 50000,
+            "capped": False,
+        }
+    )
 
     return {
         "has_onnx": has_onnx,
@@ -664,24 +715,17 @@ def get_embedding_status(session: ProjectSession = RequireProjectDep):
         "pipeline_tier": policy.pipeline_tier,
         "audit_profile": policy.audit_profile,
         "long_form_vector_recommended": long_form and vector_enabled and not semantic_ok,
+        "longform_flags": longform_flags(root_dir),
+        "vector_readiness_enabled": vector_readiness_enabled,
+        "vector_fallback_readiness": vector_readiness,
     }
 
 
 @router.post("/api/config/embedding/rebuild-index")
-def rebuild_embedding_index(session: ProjectSession = RequireProjectDep):
+async def rebuild_embedding_index(session: ProjectSession = RequireProjectDep):
     session = coerce_project_session(session)
-    """Rebuild HNSW indices from SQLite vector_embeddings (long-run maintenance)."""
-    from novel_agent.pipeline import PipelineConfig
-    from novel_agent.orchestrator import NovelOrchestrator
-
-    root_dir = session.root_dir
-    config = PipelineConfig.from_config(root_dir)
-    orchestrator = NovelOrchestrator(config)
-    store = orchestrator.vector_store
-    if not hasattr(store, "rebuild_hnsw_indices"):
-        raise HTTPException(400, "当前向量后端不支持 HNSW 重建")
-    counts = store.rebuild_hnsw_indices()
-    return {"status": "ok", "dimensions": counts}
+    task_id = await task_manager_for(session).submit_vector_rebuild()
+    return {"status": "pending", "task_id": task_id}
 
 
 @router.post("/api/config/embedding/setup-local")

@@ -218,6 +218,7 @@ class OpenAILLM:
     model: str = "gpt-4o-mini"
     max_tokens: int = 4096
     temperature: float = 0.7
+    seed: Optional[int] = None
     timeout: float = 120.0
     max_retries: int = 3
     retry_delay: float = 1.0
@@ -261,6 +262,8 @@ class OpenAILLM:
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
         }
+        if self.seed is not None:
+            payload["seed"] = int(self.seed)
         return url, headers, payload
 
     _NON_RETRYABLE_STATUS: ClassVar[Set[int]] = {400, 401, 403, 404, 422}
@@ -573,6 +576,7 @@ def create_llm(config: Dict[str, Any]) -> LLMClient:
             model=config.get("model", "gpt-4o-mini"),
             max_tokens=config.get("max_tokens", 4096),
             temperature=config.get("temperature", 0.7),
+            seed=config.get("seed"),
             timeout=config.get("timeout", 120.0),
             max_retries=config.get("max_retries", 3),
             proxy=config.get("proxy", ""),

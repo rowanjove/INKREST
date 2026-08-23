@@ -6,12 +6,15 @@ Key features:
 - Configurable MAX_CONTEXT_CHARS to prevent LLM context window overflow
 """
 
+import hashlib
 import json
+import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from novel_agent.control.constraint_synthesizer import synthesize_constraints
 from novel_agent.control.scale_profile import is_vector_enabled_for_project
+from novel_agent.control.longform_flags import flag_enabled
 from novel_agent.control.narrative_debt import classify_debt
 from novel_agent.logging_config import get_logger
 from novel_agent.rules import RuleBook
@@ -54,6 +57,9 @@ class ContextBuilderAgent:
         self._prev_summary_cache: Dict[str, str] = {}
         self._prev_tail_cache: Dict[str, str] = {}
         self._prev_chars_cache: Dict[str, List[str]] = {}
+        # Exposed for generation/audit/style stages to bind their role to the
+        # exact pack emitted by the writer context build.
+        self.last_context_pack_id = ""
         
         # Load max_context_tokens from pipeline settings, default to 16000
         self.max_context_tokens = 16000
@@ -65,7 +71,13 @@ class ContextBuilderAgent:
                 self.max_context_tokens = int(tokens)
         except Exception:
             pass
-    def build(self, chapter_goal: str, scene: Dict[str, Any]) -> str:
+    def build(
+        self,
+        chapter_goal: str,
+        scene: Dict[str, Any],
+        *,
+        plan: Optional[Mapping[str, Any]] = None,
+    ) -> str:
         """Build the full context pack for a scene.
 
         Assembles context blocks in priority order, trimming lower-priority
@@ -80,7 +92,7 @@ class ContextBuilderAgent:
 
         # --- HIGH: characters, state, memories, constraints ---
         state = self._get_current_state(scene)
-        blocks.extend(self._build_high_priority_blocks(scene, state))
+        blocks.extend(self._build_high_priority_blocks(scene, state, plan=plan))
 
         # --- MEDIUM: history, vector recall, prev chapter tail ---
         blocks.extend(self._build_medium_priority_blocks(chapter_goal, scene))
@@ -97,7 +109,73 @@ class ContextBuilderAgent:
         # Output requirements (always included)
         blocks.append(("输出要求", "只输出小说正文，不要标题，不要说明，不要 Markdown。", PRIORITY_CRITICAL))
 
-        return self._assemble_with_budget(blocks)
+        assembled = self._assemble_with_budget(blocks)
+        self._persist_context_pack_contract(scene, assembled)
+        return assembled
+
+    def _persist_context_pack_contract(self, scene: Mapping[str, Any], context_text: str) -> None:
+        """Persist bounded Context Pack identity metadata for downstream stages."""
+
+        try:
+            from novel_agent.retrieval.context_contract import (
+                bind_context_role,
+                context_pack_id,
+                save_context_pack_contract,
+            )
+
+            scene_id = str(scene.get("scene_id") or scene.get("id") or "chapter")
+            chapter_id = str(scene.get("chapter_id") or scene_id.split("-")[0]).strip()
+            if not chapter_id:
+                return
+            required_ids = scene.get("required_memory_ids") or []
+            if isinstance(required_ids, str):
+                required_ids = [required_ids]
+            content_lock_id = ""
+            # The content lock is already persisted by _build_content_lock_block;
+            # link to its digest without copying the full contract into the pack.
+            safe_scene = re.sub(r"[^A-Za-z0-9_.-]+", "_", scene_id)
+            lock_path = (
+                self.root_dir
+                / "workspace"
+                / "chapters"
+                / f"chapter_{chapter_id}"
+                / "reports"
+                / f"scene_{safe_scene}_render_contract.json"
+            )
+            try:
+                render_contract = json.loads(lock_path.read_text(encoding="utf-8"))
+                lock = render_contract.get("content_lock") if isinstance(render_contract, Mapping) else {}
+                if isinstance(lock, Mapping):
+                    content_lock_id = str(lock.get("lock_digest") or render_contract.get("contract_id") or "")
+            except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+                pass
+            pack_id = context_pack_id(
+                chapter_id=chapter_id,
+                scene_id=scene_id,
+                context_text=context_text,
+                required_memory_ids=[str(item) for item in required_ids],
+                content_lock_id=content_lock_id,
+            )
+            save_context_pack_contract(
+                self.root_dir,
+                {
+                    "pack_id": pack_id,
+                    "chapter_id": chapter_id,
+                    "scene_id": scene_id,
+                    "context_sha256": hashlib.sha256(context_text.encode("utf-8")).hexdigest(),
+                    "content_lock_id": content_lock_id,
+                    "required_memory_ids": required_ids,
+                    "coverage": {"chars": len(context_text), "max_chars": self.max_context_chars},
+                    "status": "ready",
+                    "route_hits": {"context_builder": "assembled"},
+                    "roles": ["writer"],
+                },
+            )
+            bind_context_role(self.root_dir, chapter_id, role="writer", pack_id=pack_id)
+            self.last_context_pack_id = pack_id
+        except Exception as exc:
+            # Provenance must never make a normal generation unavailable.
+            logger.debug("Failed to persist Context Pack contract: %s", exc)
 
     def _writer_anti_ai_enabled(self) -> bool:
         try:
@@ -124,7 +202,13 @@ class ContextBuilderAgent:
         )
         return state
 
-    def _build_high_priority_blocks(self, scene: Dict[str, Any], state: Dict[str, Any]) -> List[Tuple[str, str, int]]:
+    def _build_high_priority_blocks(
+        self,
+        scene: Dict[str, Any],
+        state: Dict[str, Any],
+        *,
+        plan: Optional[Mapping[str, Any]] = None,
+    ) -> List[Tuple[str, str, int]]:
         blocks = []
         characters = self._prune_character_cards(scene)
         blocks.append(("人物资产", characters, PRIORITY_HIGH))
@@ -147,10 +231,374 @@ class ContextBuilderAgent:
         if debt_block:
             blocks.append(("剧情债务约束", debt_block, PRIORITY_HIGH))
 
+        expression_block = self._build_expression_avoidance_block(scene)
+        if expression_block:
+            blocks.append(("近期表达复读规避", expression_block, PRIORITY_HIGH))
+
+        content_lock_block = self._build_content_lock_block(
+            scene,
+            state,
+            plan=plan,
+            expression_contract=expression_block,
+        )
+        if content_lock_block:
+            blocks.append(("场景 CONTENT_LOCK", content_lock_block, PRIORITY_HIGH))
+
+        voice_block = self._build_character_voice_block(scene)
+        if voice_block:
+            blocks.append(("角色声口约束", voice_block, PRIORITY_HIGH))
+
+        evidence_block = self._build_event_evidence_block(scene)
+        if evidence_block:
+            blocks.append(("来源化剧情硬事实", evidence_block, PRIORITY_HIGH))
+
         constraints = synthesize_constraints(state=state, recall_items=[], scene=scene)
         if constraints:
             blocks.append(("本章硬约束", self._bullets(constraints), PRIORITY_HIGH))
         return blocks
+
+    def _build_content_lock_block(
+        self,
+        scene: Dict[str, Any],
+        state: Mapping[str, Any],
+        *,
+        plan: Optional[Mapping[str, Any]] = None,
+        expression_contract: str = "",
+    ) -> str:
+        """Compile and persist the scene's source-bound content contract."""
+
+        try:
+            from novel_agent.prompt_registry import inspect_prompt_sources
+            from novel_agent.quality.prose_identity import load_prose_identity_profile
+            from novel_agent.quality.render_contract import (
+                build_scene_render_contract,
+                persist_render_contract,
+            )
+
+            chapter_id = str(scene.get("chapter_id") or scene.get("scene_id", "")).split("-")[0]
+            if not chapter_id:
+                return ""
+            prompt_meta = inspect_prompt_sources(self.root_dir, "writer")
+            profile = load_prose_identity_profile(self.root_dir) or {}
+            contract = build_scene_render_contract(
+                chapter_id=chapter_id,
+                scene=scene,
+                plan=plan,
+                state_snapshot=state,
+                prose_profile=profile,
+                prompt_template_version=str(prompt_meta.get("selected_sha256") or ""),
+                source_memory_ids=scene.get("source_memory_ids") or [],
+                required_memory_ids=scene.get("required_memory_ids") or [],
+                expression_contract=expression_contract,
+            )
+            scene_id = re.sub(
+                r"[^A-Za-z0-9_.-]+",
+                "_",
+                str(scene.get("scene_id") or "scene"),
+            )
+            contract_path = (
+                self.root_dir
+                / "workspace"
+                / "chapters"
+                / f"chapter_{chapter_id}"
+                / "reports"
+                / f"scene_{scene_id}_render_contract.json"
+            )
+            persist_render_contract(
+                contract_path,
+                contract,
+                metadata={"chapter_id": chapter_id, "scene_id": scene_id, "stage": "scene_generation"},
+            )
+            lock = dict(contract.content_lock or {})
+            lock.pop("bindings", None)
+            return (
+                "[CONTENT_LOCK]\n"
+                + json.dumps(
+                    {
+                        "contract_id": contract.contract_id,
+                        "lock_digest": lock.get("lock_digest", ""),
+                        "lock": lock,
+                        "bindings": contract.bindings,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n[/CONTENT_LOCK]"
+            )
+        except Exception as exc:
+            logger.debug("Failed to build scene content lock: %s", exc)
+            return ""
+
+    def _build_expression_avoidance_block(self, scene: Dict[str, Any]) -> str:
+        """Inject only a bounded, source-labelled expression avoidance list."""
+
+        chapter_id = str(scene.get("chapter_id") or scene.get("scene_id", "")).split("-")[0]
+        if not chapter_id:
+            return ""
+        try:
+            from novel_agent.quality.scene_expression import build_scene_expression_contract
+
+            return build_scene_expression_contract(self.root_dir, chapter_id, scene, limit=10)
+        except Exception as exc:
+            logger.debug("Failed to build expression avoidance context: %s", exc)
+            return ""
+
+    def _build_event_evidence_block(self, scene: Dict[str, Any]) -> str:
+        """Fuse adjacent/entity/semantic/open-thread evidence into a short block."""
+
+        try:
+            from novel_agent.quality.event_memory import (
+                build_event_evidence_context,
+                load_narrative_event_projections,
+            )
+
+            current = str(scene.get("chapter_id") or scene.get("scene_id", "")).split("-")[0]
+            try:
+                current_number = int("".join(char for char in current if char.isdigit()))
+            except ValueError:
+                current_number = None
+            events = self.store.list_narrative_events(limit=160)
+            if not events:
+                # Existing projects may have the JSON projection before the
+                # SQLite backfill runs.  It is a read-only compatibility path.
+                events = load_narrative_event_projections(self.root_dir)
+            if current_number is not None:
+                events = [
+                    event
+                    for event in events
+                    if not str(event.get("chapter_id") or "").isdigit()
+                    or int(event.get("chapter_id")) < current_number
+                ]
+
+            scene_chars = scene.get("characters", [])
+            scene_objects = scene.get("objects", [])
+            scene_threads = scene.get("threads", [])
+            if isinstance(scene_chars, str):
+                scene_chars = [scene_chars]
+            if isinstance(scene_objects, str):
+                scene_objects = [scene_objects]
+            if isinstance(scene_threads, str):
+                scene_threads = [scene_threads]
+
+            # M3 canon visibility is deterministic and fail-closed for future,
+            # superseded, invalidated, or unknowable character-belief facts.
+            if flag_enabled("m3_canon_engine", self.root_dir):
+                try:
+                    from novel_agent.quality.canon_engine import filter_visible_canon
+
+                    events, _canon_violations = filter_visible_canon(
+                        events,
+                        current_chapter=current or "",
+                        known_character_ids={str(item) for item in scene_chars},
+                    )
+                except Exception as exc:
+                    logger.debug("Canon visibility filtering unavailable: %s", exc)
+
+            selected: Dict[str, str] = {}
+            hybrid_routes: Dict[str, List[Dict[str, Any]]] = {
+                "adjacent": [], "entity": [], "vector": [], "fts": []
+            }
+
+            def add(route: str, key: str, text: str) -> None:
+                if text.strip():
+                    selected.setdefault(f"{route}:{key}", f"[{route}] {text}")
+
+            # Route 1: deterministic chapter adjacency.  This gives the writer
+            # the latest state transition even when no entity was named in the
+            # scene card.
+            def chapter_value(item: Mapping[str, Any]) -> int:
+                raw = str(item.get("chapter_id") or "")
+                return int(raw) if raw.isdigit() else -1
+
+            adjacent = sorted(events, key=chapter_value, reverse=True)
+            for item in adjacent[:4]:
+                context = build_event_evidence_context([item], limit=1)
+                if context:
+                    add("邻近事件", str(item.get("event_id") or item.get("id") or "?"), context[0]["text"])
+                    hybrid_routes["adjacent"].append({
+                        "memory_id": str(item.get("event_id") or item.get("id") or ""),
+                        "kind": "event", "text": context[0]["text"],
+                        "source_chapter": str(item.get("chapter_id") or ""),
+                        "hardness": "required" if item.get("hardness") == "required" else "supporting",
+                    })
+
+            # Route 2: deterministic entity/relationship matches.
+            filters = [
+                ("actor", item) for item in scene_chars
+            ] + [
+                ("object_name", item) for item in scene_objects
+            ] + [
+                ("thread", item) for item in scene_threads
+            ]
+            if not filters:
+                filters = [("actor", None)]
+            for key, value in filters:
+                kwargs = {"limit": 8, key: value}
+                for item in build_event_evidence_context(events, **kwargs):
+                    add("实体关联", item["event_id"], item["text"])
+                    hybrid_routes["entity"].append({
+                        "memory_id": str(item.get("event_id") or ""),
+                        "kind": "event", "text": str(item.get("text") or ""),
+                        "source_chapter": str(item.get("chapter_id") or ""),
+                    })
+
+            # Route 3: semantic event recall.  Vector failures are deliberately
+            # ignored; deterministic routes remain useful offline.
+            query_parts = [
+                scene.get("purpose"),
+                scene.get("goal"),
+                scene.get("chapter_goal"),
+                *scene_chars,
+                *scene_objects,
+                *scene_threads,
+            ]
+            query = " ".join(str(item) for item in query_parts if str(item or "").strip())
+            if query:
+                try:
+                    from novel_agent.control.long_run import resolve_vector_search_window
+
+                    results = self.vector_store.search(
+                        query=query,
+                        top_k=6,
+                        filters={"type": "event"},
+                        near_chapter_id=current or None,
+                        chapter_window=resolve_vector_search_window(self.root_dir),
+                    )
+                    for item in results or []:
+                        meta = item.get("metadata") or {}
+                        result_chapter = str(meta.get("chapter") or meta.get("chapter_id") or "?")
+                        hybrid_routes["vector"].append({
+                            "memory_id": str(item.get("id") or result_chapter),
+                            "kind": "event", "text": str(item.get("text") or ""),
+                            "source_chapter": result_chapter,
+                        })
+                        add(
+                            "语义事件",
+                            str(item.get("id") or result_chapter),
+                            f"[硬事实][event:{item.get('id', '?')}][第{result_chapter}章] {str(item.get('text') or '')[:180]}",
+                        )
+                except Exception as exc:
+                    logger.debug("Semantic event recall unavailable: %s", exc)
+
+                # Route 3b: SQLite FTS5 proper-noun recall.  Chinese unicode61
+                # matching transparently falls back to the bounded projection
+                # LIKE pass in SearchRepositoryMixin.
+                if flag_enabled("m2_hybrid_retrieval", self.root_dir):
+                    try:
+                        for item in self.store.search_story(
+                            query,
+                            limit=6,
+                            before_chapter=current or None,
+                        ):
+                            hybrid_routes["fts"].append({
+                                "memory_id": str(item.get("memory_id") or ""),
+                                "kind": str(item.get("kind") or "memory"),
+                                "text": str(item.get("text") or ""),
+                                "source_chapter": str(item.get("source_chapter") or ""),
+                                "source_revision_id": str(item.get("source_revision_id") or ""),
+                                "hardness": str(item.get("hardness") or "supporting"),
+                                "superseded": bool(item.get("superseded")),
+                            })
+                            add(
+                                "关键词检索",
+                                str(item.get("memory_id") or "?"),
+                                f"[{item.get('hardness', 'supporting')}]"
+                                f"[{item.get('memory_id', '?')}] {str(item.get('text') or '')[:180]}",
+                            )
+                    except Exception as exc:
+                        logger.debug("SQLite FTS recall unavailable: %s", exc)
+
+                # M2 is opt-in.  Fuse the same bounded routes into a required-
+                # aware Context Pack so a high-priority fact cannot disappear
+                # merely because a vector/FTS route ranks distractors first.
+                if flag_enabled("m2_hybrid_retrieval", self.root_dir):
+                    try:
+                        from novel_agent.retrieval.context_pack import build_context_pack
+                        from novel_agent.retrieval.hybrid import hybrid_search
+                        from novel_agent.retrieval.reranker import deterministic_rerank
+
+                        fused = hybrid_search(
+                            self.store,
+                            query,
+                            before_chapter=current or None,
+                            route_results={name: values for name, values in hybrid_routes.items() if values},
+                            limit=12,
+                        )
+                        fused = deterministic_rerank(fused, limit=12)
+                        required_ids = scene.get("required_memory_ids") or []
+                        pack = build_context_pack(
+                            fused,
+                            required_memory_ids=[str(item) for item in required_ids],
+                            max_chars=min(self.max_context_chars, 4000),
+                        )
+                        try:
+                            retrieval_report = self.root_dir / "workspace" / "reports" / "retrieval_latest.json"
+                            retrieval_report.parent.mkdir(parents=True, exist_ok=True)
+                            retrieval_report.write_text(
+                                json.dumps(
+                                    {
+                                        "chapter_id": current,
+                                        "coverage": pack.get("coverage"),
+                                        "status": pack.get("status"),
+                                        "missing_required_memory_ids": pack.get("missing_required_memory_ids") or [],
+                                        "route_hits": pack.get("route_hits") or {},
+                                        "candidate_count": len(fused),
+                                    },
+                                    ensure_ascii=False,
+                                ),
+                                encoding="utf-8",
+                            )
+                        except OSError:
+                            pass
+                        if pack.get("text"):
+                            add(
+                                "混合检索",
+                                "context-pack",
+                                f"[coverage:{pack.get('coverage', 1.0)}] {pack['text'][:1200]}",
+                            )
+                    except Exception as exc:
+                        logger.debug("Hybrid context pack unavailable: %s", exc)
+
+            # Route 4: open threads/debts are not events, but are narrative
+            # constraints that should accompany event evidence.
+            debt_rows = [
+                ("伏笔", self.store.list_foreshadows()),
+                ("钩子", self.store.list_hooks()),
+                ("秘密", self.store.list_secrets()),
+            ]
+            for debt_kind, rows in debt_rows:
+                for item in rows:
+                    status = str(item.get("status") or "").lower()
+                    if status not in {"open", "hidden", "active", "pending"}:
+                        continue
+                    related = item.get("related_characters") or []
+                    if scene_chars and related and not set(map(str, scene_chars)).intersection(map(str, related)):
+                        continue
+                    add(
+                        "开放线程",
+                        f"{debt_kind}:{item.get('id', '?')}",
+                        f"[{debt_kind}:{item.get('id', '?')}][第{item.get('chapter_id', '?')}章] "
+                        f"{item.get('title', '')}：{item.get('description', '')}",
+                    )
+
+            return "\n".join(list(selected.values())[:12])
+        except Exception as exc:
+            logger.debug("Failed to build event evidence context: %s", exc)
+            return ""
+
+    def _build_character_voice_block(self, scene: Dict[str, Any]) -> str:
+        scene_chars = scene.get("characters", [])
+        if isinstance(scene_chars, str):
+            scene_chars = [scene_chars]
+        if not scene_chars:
+            return ""
+        try:
+            from novel_agent.quality.character_voice import build_character_voice_context
+
+            return build_character_voice_context(self.root_dir, [str(item) for item in scene_chars])
+        except Exception as exc:
+            logger.debug("Failed to build character voice context: %s", exc)
+            return ""
 
     def _build_medium_priority_blocks(self, chapter_goal: str, scene: Dict[str, Any]) -> List[Tuple[str, str, int]]:
         blocks = []
@@ -302,8 +750,10 @@ class ContextBuilderAgent:
         sorted_blocks = sorted(blocks, key=lambda b: b[2])
 
         total_tokens = 0
+        total_chars = 0
         assembled: List[str] = []
         budget = self.max_context_tokens
+        char_budget = max(1, int(self.max_context_chars))
         trimmed_count = 0
 
         for title, content, priority in sorted_blocks:
@@ -314,21 +764,24 @@ class ContextBuilderAgent:
                 # Always include critical blocks
                 assembled.append(block_text)
                 total_tokens += block_tokens
+                total_chars += len(block_text)
                 continue
 
             remaining = budget - total_tokens
-            if remaining <= 0:
+            remaining_chars = char_budget - total_chars
+            if remaining <= 0 or remaining_chars <= 0:
                 trimmed_count += 1
                 continue
 
-            if block_tokens > remaining:
+            if block_tokens > remaining or len(block_text) > remaining_chars:
                 # Truncate this block to fit.
                 # Assuming ~1.3 tokens per char for Chinese, we estimate char_len = remaining / 1.3
-                char_len = int(remaining / 1.3)
+                char_len = min(int(remaining / 1.3), remaining_chars)
                 if char_len > 15:
                     truncated = block_text[:char_len - 15] + "\n\n…（已裁剪以控制上下文长度）"
                     assembled.append(truncated)
                     total_tokens += self._estimate_tokens(truncated)
+                    total_chars += len(truncated)
                 else:
                     trimmed_count += 1
                     continue
@@ -340,6 +793,7 @@ class ContextBuilderAgent:
             else:
                 assembled.append(block_text)
                 total_tokens += block_tokens
+                total_chars += len(block_text)
 
         if trimmed_count > 0:
             logger.info(

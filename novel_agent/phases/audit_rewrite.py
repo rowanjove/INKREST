@@ -13,11 +13,56 @@ from novel_agent.progress import emit_progress
 from novel_agent.quality.audit_rewrite import audit_requires_rewrite
 from novel_agent.quality.generation_policy import should_length_fix_after_audit_rewrite
 from novel_agent.quality.audit_schema import validate_audit_report
+from novel_agent.quality.render_contract import (
+    build_render_contract,
+    persist_render_candidate,
+    validate_render_candidate,
+)
 
 if TYPE_CHECKING:
     from novel_agent.phases.audit import AuditPhase
 
 logger = get_logger("audit_phase.rewrite")
+
+
+def _guard_audit_candidate(
+    ctx: ChapterContext,
+    original: str,
+    candidate: Any,
+    *,
+    stage: str,
+    artifact_name: str,
+    min_length_ratio: float = 0.55,
+    max_length_ratio: float = 1.45,
+) -> Tuple[str | None, ChapterContext]:
+    candidate_text = str(candidate or "").strip()
+    contract = build_render_contract(
+        original,
+        min_length_ratio=min_length_ratio,
+        max_length_ratio=max_length_ratio,
+    )
+    validation = validate_render_candidate(original, candidate_text, contract)
+    persist_render_candidate(
+        ctx.reports_dir / artifact_name,
+        candidate_text,
+        validation,
+        metadata={"chapter_id": ctx.chapter_id, "stage": stage},
+    )
+    if validation["blocking"]:
+        reasons = ", ".join(validation["reasons"])
+        logger.warning(
+            "Render contract rejected %s output for chapter %s: %s",
+            stage,
+            ctx.chapter_id,
+            reasons,
+        )
+        ctx = dataclasses.replace(
+            ctx,
+            warnings=ctx.warnings
+            + (f"{stage} output failed render contract ({reasons}); kept prior text.",),
+        )
+        return None, ctx
+    return candidate_text, ctx
 
 
 class AuditRewriteMixin:
@@ -90,6 +135,7 @@ class AuditRewriteMixin:
         import re
 
         rebuilt_any = False
+        target_found = False
         paragraphs = [p.strip() for p in re.split(r"\n{2,}", final_text) if p.strip()]
 
         for issue in text_issues:
@@ -100,6 +146,7 @@ class AuditRewriteMixin:
             target_p, target_idx = find_best_paragraph_match(paragraphs, target_text)
 
             if target_p:
+                target_found = True
                 prev_p = paragraphs[target_idx - 1] if target_idx > 0 else ""
                 next_p = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
 
@@ -135,15 +182,17 @@ class AuditRewriteMixin:
                             "不要添加任何多余的引言、Markdown 标记、小标题或修饰说明，只输出这一个新段落的文本。"
                         ).strip()
                         new_p = self.orchestrator.style_editor.edit(prompt)
-                    new_p = new_p.strip("` \n")
-                    if new_p.startswith("```"):
-                        lines = new_p.split("\n")
-                        if lines[0].startswith("```"):
-                            lines = lines[1:]
-                        if lines and lines[-1].startswith("```"):
-                            lines = lines[:-1]
-                        new_p = "\n".join(lines).strip()
-
+                    new_p, ctx = _guard_audit_candidate(
+                        ctx,
+                        target_p,
+                        new_p,
+                        stage="audit_paragraph_rewrite",
+                        artifact_name=f"audit_rewrite_candidate_{attempt + 1}_{target_idx + 1}.txt",
+                        min_length_ratio=0.35,
+                        max_length_ratio=1.65,
+                    )
+                    if new_p is None:
+                        continue
                     paragraphs[target_idx] = new_p
                     rebuilt_any = True
                 except Exception as exc:
@@ -156,6 +205,8 @@ class AuditRewriteMixin:
 
         if rebuilt_any:
             final_text = "\n\n".join(paragraphs)
+        elif target_found:
+            logger.info("Smart Rewrite: paragraph candidates were rejected; keeping prior chapter text")
         else:
             logger.info(
                 "Smart Rewrite: no specific target paragraph found, falling back to full-chapter style edit"
@@ -163,7 +214,16 @@ class AuditRewriteMixin:
             issues_summary = json.dumps(issues, ensure_ascii=False)
             feedback_prompt = f"{final_text}\n\n## 审计问题（需修正）\n{issues_summary}"
             try:
-                final_text = self.orchestrator.style_editor.edit(feedback_prompt)
+                candidate = self.orchestrator.style_editor.edit(feedback_prompt)
+                candidate, ctx = _guard_audit_candidate(
+                    ctx,
+                    final_text,
+                    candidate,
+                    stage="audit_full_rewrite",
+                    artifact_name=f"audit_rewrite_candidate_full_{attempt + 1}.txt",
+                )
+                if candidate is not None:
+                    final_text = candidate
             except Exception as exc:
                 logger.error("Rewrite style edit failed: %s", exc)
                 ctx = dataclasses.replace(

@@ -4,7 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import type { LocationQueryRaw } from 'vue-router'
 
 import {
+  cancelPublishingExport,
+  downloadPublishingExport,
   exportPublication,
+  getPublishingExportTask,
   getPublishingWorkspace,
   savePublishingFeedback,
   updatePublishingPlatform,
@@ -12,6 +15,7 @@ import {
 import type {
   ExportFormat,
   PublishingTab,
+  PublishingExportTask,
   PublishingWorkspace,
   ReaderSettings,
 } from '../entities/publishing/publishing'
@@ -58,8 +62,10 @@ export function usePublishingWorkspace() {
   const workspace = ref<PublishingWorkspace | null>(null)
   const loading = ref(false)
   const chapterLoading = ref(false)
+  const catalogLoadingMore = ref(false)
   const saving = ref(false)
   const exporting = ref(false)
+  const exportTask = ref<PublishingExportTask | null>(null)
   const error = ref('')
   const activeTab = ref<PublishingTab>(routeTab(route.query.tab))
   const selectedChapterId = ref(
@@ -71,15 +77,9 @@ export function usePublishingWorkspace() {
   const exportScope = ref<'all' | 'chapter'>('all')
   const exportTitle = ref('')
   let loadSequence = 0
+  const catalogNextOffset = ref(0)
 
-  const filteredChapters = computed(() => {
-    const chapters = workspace.value?.chapters.filter((chapter) => chapter.has_content) || []
-    const needle = catalogQuery.value.trim().toLocaleLowerCase()
-    if (!needle) return chapters
-    return chapters.filter((chapter) =>
-      `${chapter.chapter_id} ${chapter.title}`.toLocaleLowerCase().includes(needle),
-    )
-  })
+  const filteredChapters = computed(() => workspace.value?.chapters || [])
   const paragraphs = computed(() =>
     (workspace.value?.selected_chapter?.plain_text || '')
       .split(/\n+/u)
@@ -96,21 +96,30 @@ export function usePublishingWorkspace() {
       (chapter) => chapter.chapter_id === selectedChapterId.value,
     ),
   )
+  const selectedGlobalIndex = computed(() => workspace.value?.selected_catalog_index ?? -1)
   const currentFeedback = computed(() =>
     workspace.value?.feedback.find(
       (item) => item.chapter_id === selectedChapterId.value,
     ),
   )
 
-  async function load(chapterId = selectedChapterId.value, options: { quiet?: boolean } = {}) {
+  async function load(
+    chapterId = selectedChapterId.value,
+    options: { quiet?: boolean; offset?: number } = {},
+  ) {
     const sequence = ++loadSequence
     if (workspace.value && chapterId) chapterLoading.value = true
     else if (!options.quiet) loading.value = true
     error.value = ''
     try {
-      const { data } = await getPublishingWorkspace(chapterId)
+      const { data } = await getPublishingWorkspace(chapterId, {
+        query: catalogQuery.value || undefined,
+        offset: options.offset ?? 0,
+        limit: workspace.value?.catalog_limit || 100,
+      })
       if (sequence !== loadSequence) return
       workspace.value = data
+      catalogNextOffset.value = (data.catalog_offset || 0) + data.chapters.length
       selectedChapterId.value = data.selected_chapter_id
       if (!exportTitle.value) exportTitle.value = data.book.title
     } catch (reason: any) {
@@ -125,6 +134,32 @@ export function usePublishingWorkspace() {
     }
   }
 
+  async function loadMore() {
+    const current = workspace.value
+    if (!current?.catalog_has_more || catalogLoadingMore.value) return
+    catalogLoadingMore.value = true
+    try {
+      const { data } = await getPublishingWorkspace(selectedChapterId.value, {
+        query: catalogQuery.value || undefined,
+        offset: catalogNextOffset.value,
+        limit: current.catalog_limit || 100,
+      })
+      if (data.catalog_offset !== catalogNextOffset.value) return
+      const seen = new Set(current.chapters.map((chapter) => chapter.chapter_id))
+      const appended = data.chapters.filter((chapter) => !seen.has(chapter.chapter_id))
+      workspace.value = {
+        ...current,
+        ...data,
+        chapters: [...current.chapters, ...appended],
+      }
+      catalogNextOffset.value = (data.catalog_offset || 0) + data.chapters.length
+    } catch (reason: any) {
+      ElMessage.error(reason?.response?.data?.detail || reason?.message || '目录加载失败')
+    } finally {
+      catalogLoadingMore.value = false
+    }
+  }
+
   function syncQuery() {
     const query: LocationQueryRaw = { ...route.query, tab: activeTab.value }
     if (selectedChapterId.value) query.chapter = selectedChapterId.value
@@ -135,13 +170,41 @@ export function usePublishingWorkspace() {
   async function selectChapter(chapterId: string) {
     if (!chapterId || chapterId === selectedChapterId.value) return
     selectedChapterId.value = chapterId
-    await load(chapterId, { quiet: true })
+    await load(chapterId, {
+      quiet: true,
+      offset: workspace.value?.catalog_offset || 0,
+    })
     requestAnimationFrame(() => {
       document.querySelector('.publication-reader-scroll')?.scrollTo({
         top: 0,
         behavior: 'smooth',
       })
     })
+  }
+
+  async function navigateChapter(offset: number) {
+    const current = workspace.value
+    const targetIndex = selectedGlobalIndex.value + offset
+    if (!current || targetIndex < 0 || targetIndex >= (current.catalog_total || 0)) return
+    const pageOffset = current.catalog_offset || 0
+    const loaded = current.chapters[targetIndex - pageOffset]
+    if (loaded) {
+      await selectChapter(loaded.chapter_id)
+      return
+    }
+    if (targetIndex >= pageOffset + current.chapters.length && current.catalog_has_more) {
+      await loadMore()
+      const refreshed = workspace.value
+      const appended = refreshed?.chapters[targetIndex - (refreshed.catalog_offset || 0)]
+      if (appended) await selectChapter(appended.chapter_id)
+      return
+    }
+    const pageSize = current.catalog_limit || 100
+    const targetPageOffset = Math.floor(targetIndex / pageSize) * pageSize
+    await load('', { quiet: true, offset: targetPageOffset })
+    const refreshed = workspace.value
+    const target = refreshed?.chapters[targetIndex - (refreshed.catalog_offset || 0)]
+    if (target) await selectChapter(target.chapter_id)
   }
 
   async function savePlatform(platform: string) {
@@ -218,7 +281,7 @@ export function usePublishingWorkspace() {
     }
     exporting.value = true
     try {
-      const { data } = await exportPublication({
+      const { data: queued } = await exportPublication({
         format: exportFormat.value,
         title: exportTitle.value.trim() || value.book.title,
         chapter_ids:
@@ -227,6 +290,19 @@ export function usePublishingWorkspace() {
             : [],
         acknowledge_warnings: true,
       })
+      exportTask.value = queued
+      let task = queued
+      for (let attempt = 0; attempt < 240; attempt += 1) {
+        if (task.status === 'succeeded' || task.status === 'failed' || task.status === 'cancelled') break
+        await new Promise((resolve) => window.setTimeout(resolve, 250))
+        const response = await getPublishingExportTask(queued.task_id)
+        task = response.data
+        exportTask.value = task
+      }
+      if (task.status !== 'succeeded') {
+        throw new Error(task.error || `导出任务未完成（${task.status}）`)
+      }
+      const { data } = await downloadPublishingExport(queued.task_id)
       saveBlob(
         data,
         `${exportTitle.value.trim() || value.book.title}${format.extension}`,
@@ -236,9 +312,24 @@ export function usePublishingWorkspace() {
       ElMessage.error(reason?.message || '导出失败，请查看诊断日志')
     } finally {
       exporting.value = false
+      exportTask.value = null
     }
   }
 
+  async function cancelExport() {
+    const taskId = exportTask.value?.task_id
+    if (!taskId || !exporting.value) return
+    await cancelPublishingExport(taskId)
+    ElMessage.info('已请求取消导出')
+  }
+
+  let catalogTimer: number | null = null
+  watch(catalogQuery, () => {
+    if (catalogTimer !== null) window.clearTimeout(catalogTimer)
+    catalogTimer = window.setTimeout(() => {
+      void load(selectedChapterId.value, { quiet: true, offset: 0 })
+    }, 200)
+  })
   watch([activeTab, selectedChapterId], syncQuery)
   watch(
     () => route.query.tab,
@@ -260,11 +351,14 @@ export function usePublishingWorkspace() {
     chapterLoading,
     saving,
     exporting,
+    exportTask,
     error,
     activeTab,
     selectedChapterId,
     selectedIndex,
+    selectedGlobalIndex,
     catalogQuery,
+    catalogLoadingMore,
     readerSettings,
     readerStyle,
     filteredChapters,
@@ -274,9 +368,12 @@ export function usePublishingWorkspace() {
     exportScope,
     exportTitle,
     load,
+    loadMore,
+    navigateChapter,
     selectChapter,
     savePlatform,
     saveFeedback,
     download,
+    cancelExport,
   }
 }

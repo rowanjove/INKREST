@@ -2,7 +2,7 @@ import re
 import dataclasses
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from novel_agent.phases.base import ChapterContext, PipelinePhase
 from novel_agent.logging_config import get_logger
@@ -12,6 +12,10 @@ from novel_agent.quality.generation_policy import (
     BOUNDARY_RECHECK_INSTRUCTION,
     should_run_boundary_recheck,
     should_run_generation_style_edit,
+)
+from novel_agent.quality.render_contract import (
+    persist_render_candidate,
+    validate_render_candidate,
 )
 
 logger = get_logger("generation_phase")
@@ -43,6 +47,47 @@ def _detect_truncation(original: str, edited: str) -> bool:
         return True
 
     return False
+
+
+def _guard_render_candidate(
+    ctx: ChapterContext,
+    original: str,
+    candidate: Any,
+    *,
+    stage: str,
+    artifact_name: str,
+) -> Tuple[str, ChapterContext]:
+    """Validate an editor output before it can replace the current text."""
+
+    candidate_text = str(candidate or "").strip()
+    validation = validate_render_candidate(original, candidate_text)
+    persist_render_candidate(
+        ctx.reports_dir / artifact_name,
+        candidate_text,
+        validation,
+        metadata={"chapter_id": ctx.chapter_id, "stage": stage},
+    )
+    if validation["blocking"]:
+        reasons = ", ".join(validation["reasons"])
+        logger.warning(
+            "Render contract rejected %s output for chapter %s: %s",
+            stage,
+            ctx.chapter_id,
+            reasons,
+        )
+        ctx = dataclasses.replace(
+            ctx,
+            warnings=ctx.warnings
+            + (f"{stage} output failed render contract ({reasons}); kept prior text.",),
+        )
+        emit_progress(
+            stage,
+            "rejected",
+            {"reasons": validation["reasons"], "metrics": validation["metrics"]},
+            ctx.chapter_id,
+        )
+        return original, ctx
+    return candidate_text, ctx
 
 
 class GenerationPhase(PipelinePhase):
@@ -90,7 +135,13 @@ class GenerationPhase(PipelinePhase):
         async def _safe_generate(scene):
             scene_id = scene.get("scene_id")
             try:
-                await self._agenerate_scene(ctx.chapter_goal, ctx.chapter_dir, ctx.scenes_dir, scene)
+                await self._agenerate_scene(
+                    ctx.chapter_goal,
+                    ctx.chapter_dir,
+                    ctx.scenes_dir,
+                    scene,
+                    plan=ctx.plan,
+                )
                 emit_progress("writer", "done", {"scene_id": scene_id}, ctx.chapter_id)
             except Exception as exc:
                 logger.error("Scene %s generation failed: %s", scene_id, exc)
@@ -105,12 +156,20 @@ class GenerationPhase(PipelinePhase):
             if len(failed_scenes) == scene_count:
                 raise RuntimeError(f"All {scene_count} scenes failed to generate. Cannot proceed.")
 
-    async def _agenerate_scene(self, chapter_goal: str, chapter_dir: Path, scenes_dir: Path, scene: Dict[str, Any]) -> None:
+    async def _agenerate_scene(
+        self,
+        chapter_goal: str,
+        chapter_dir: Path,
+        scenes_dir: Path,
+        scene: Dict[str, Any],
+        *,
+        plan: Optional[Mapping[str, Any]] = None,
+    ) -> None:
         """Generate a single scene asynchronously, adjust length, and write to file."""
         scene_id = scene.get("scene_id", "unknown")
         logger.debug("Generating scene %s (Async)", scene_id)
         
-        context = self.orchestrator.context_builder.build(chapter_goal, scene)
+        context = self.orchestrator.context_builder.build(chapter_goal, scene, plan=plan)
         (chapter_dir / f"scene_{scene_id}_context.md").write_text(context, encoding="utf-8")
         
         max_retries = getattr(self.orchestrator.config, "continuity_max_retries", 3)
@@ -206,6 +265,12 @@ class GenerationPhase(PipelinePhase):
         logger.info("Step 5: Style editing (Async)")
         emit_progress("style_editor", "running", chapter_id=ctx.chapter_id)
         try:
+            try:
+                from novel_agent.retrieval.context_contract import bind_latest_context_role
+
+                bind_latest_context_role(self.orchestrator.root_dir, ctx.chapter_id, role="style_editor")
+            except Exception as exc:
+                logger.debug("Unable to bind style-editor Context Pack: %s", exc)
             if hasattr(self.orchestrator.style_editor, "aedit"):
                 final_text = await self.orchestrator.style_editor.aedit(stitched_text)
             else:
@@ -214,6 +279,13 @@ class GenerationPhase(PipelinePhase):
             logger.error("Style editing failed: %s", exc)
             final_text = stitched_text
             ctx = dataclasses.replace(ctx, warnings=ctx.warnings + (f"Style editing failed: {exc}. Fallback to stitched content.",))
+        final_text, ctx = _guard_render_candidate(
+            ctx,
+            stitched_text,
+            final_text,
+            stage="style_editor",
+            artifact_name="style_editor_candidate.txt",
+        )
         emit_progress("style_editor", "done", {"chars": len(final_text)}, ctx.chapter_id)
 
         # Truncation detection and fallback
@@ -240,18 +312,27 @@ class GenerationPhase(PipelinePhase):
     ) -> Tuple[str, ChapterContext]:
         if not revised or not revised.strip():
             return original, ctx
-        cleaned = revised.strip()
-        if _detect_truncation(original, cleaned):
+        cleaned, ctx = _guard_render_candidate(
+            ctx,
+            original,
+            revised,
+            stage="boundary_recheck",
+            artifact_name="boundary_recheck_candidate.txt",
+        )
+        raw_cleaned = str(revised or "").strip()
+        if _detect_truncation(original, raw_cleaned):
             logger.warning(
                 "Truncation detected in boundary recheck (before=%d, after=%d). Keeping prior text.",
                 len(original),
-                len(cleaned),
+                len(raw_cleaned),
             )
             ctx = dataclasses.replace(
                 ctx,
                 warnings=ctx.warnings
                 + ("Boundary recheck output truncated; kept pre-recheck chapter text.",),
             )
+            return original, ctx
+        if cleaned == original:
             return original, ctx
         (ctx.chapter_dir / "chapter_boundary_recheck.txt").write_text(cleaned, encoding="utf-8")
         return cleaned, ctx
@@ -326,7 +407,12 @@ class GenerationPhase(PipelinePhase):
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(
-                    self._generate_scene, ctx.chapter_goal, ctx.chapter_dir, ctx.scenes_dir, scene
+                    self._generate_scene,
+                    ctx.chapter_goal,
+                    ctx.chapter_dir,
+                    ctx.scenes_dir,
+                    scene,
+                    plan=ctx.plan,
                 ): scene for scene in scenes
             }
             try:
@@ -353,12 +439,20 @@ class GenerationPhase(PipelinePhase):
             if len(failed_scenes) == scene_count:
                 raise RuntimeError(f"All {scene_count} scenes failed to generate. Cannot proceed.")
 
-    def _generate_scene(self, chapter_goal: str, chapter_dir: Path, scenes_dir: Path, scene: Dict[str, Any]) -> None:
+    def _generate_scene(
+        self,
+        chapter_goal: str,
+        chapter_dir: Path,
+        scenes_dir: Path,
+        scene: Dict[str, Any],
+        *,
+        plan: Optional[Mapping[str, Any]] = None,
+    ) -> None:
         """Generate a single scene, adjust length, and write to file."""
         scene_id = scene.get("scene_id", "unknown")
         logger.debug("Generating scene %s", scene_id)
         
-        context = self.orchestrator.context_builder.build(chapter_goal, scene)
+        context = self.orchestrator.context_builder.build(chapter_goal, scene, plan=plan)
         (chapter_dir / f"scene_{scene_id}_context.md").write_text(context, encoding="utf-8")
         
         max_retries = getattr(self.orchestrator.config, "continuity_max_retries", 3)
@@ -450,11 +544,24 @@ class GenerationPhase(PipelinePhase):
         logger.info("Step 5: Style editing")
         emit_progress("style_editor", "running", chapter_id=ctx.chapter_id)
         try:
+            try:
+                from novel_agent.retrieval.context_contract import bind_latest_context_role
+
+                bind_latest_context_role(self.orchestrator.root_dir, ctx.chapter_id, role="style_editor")
+            except Exception as exc:
+                logger.debug("Unable to bind style-editor Context Pack: %s", exc)
             final_text = self.orchestrator.style_editor.edit(stitched_text)
         except Exception as exc:
             logger.error("Style editing failed: %s", exc)
             final_text = stitched_text
             ctx = dataclasses.replace(ctx, warnings=ctx.warnings + (f"Style editing failed: {exc}. Fallback to stitched content.",))
+        final_text, ctx = _guard_render_candidate(
+            ctx,
+            stitched_text,
+            final_text,
+            stage="style_editor",
+            artifact_name="style_editor_candidate.txt",
+        )
         emit_progress("style_editor", "done", {"chars": len(final_text)}, ctx.chapter_id)
 
         # Truncation detection and fallback

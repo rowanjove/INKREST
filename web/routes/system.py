@@ -61,6 +61,19 @@ def system_readiness(session: ProjectSession = Depends(get_project_session)) -> 
             }
         except Exception as exc:
             checks["tasks"] = {"ok": False, "label": "后台任务", "error": str(exc)}
+        try:
+            from novel_agent.control.longform_readiness import build_longform_readiness
+
+            longform = build_longform_readiness(root)
+            degraded = longform.get("retrieval", {}).get("degraded") or []
+            checks["longform"] = {
+                "ok": not bool(degraded),
+                "label": "长篇能力",
+                "detail": longform,
+                "hint": "；".join(str(item) for item in degraded) or "检索与正典能力可用",
+            }
+        except Exception as exc:
+            checks["longform"] = {"ok": False, "label": "长篇能力", "error": str(exc)}
     else:
         checks["book"] = {
             "ok": False,
@@ -99,6 +112,15 @@ def system_readiness(session: ProjectSession = Depends(get_project_session)) -> 
 
     all_ok = all(c.get("ok", True) for c in checks.values() if isinstance(c, dict))
     return {"ok": all_ok, "checks": checks, "active_project_id": session.project_id}
+
+
+@router.get("/api/longform/readiness")
+def longform_readiness(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    if not session.has_project:
+        return {"status": "no_project", "detail": {}}
+    from novel_agent.control.longform_readiness import build_longform_readiness
+
+    return {"status": "ready", "detail": build_longform_readiness(session.root_dir)}
 
 
 @router.get("/api/system/onboarding")

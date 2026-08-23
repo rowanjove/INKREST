@@ -56,7 +56,7 @@ const newGuard = defineModel<string>('newGuard', { required: true })
         <el-input v-model="form.genre" placeholder="都市 / 玄幻 / 科幻 / 历史..." />
       </el-form-item>
       <el-form-item label="目标章数">
-        <el-input-number v-model="form.target_chapters" :min="1" :max="3000" />
+        <el-input-number v-model="form.target_chapters" :min="1" :max="999999" />
       </el-form-item>
       <el-form-item label="额外要求">
         <el-input v-model="form.special_requirements" type="textarea" :rows="5" resize="none" />

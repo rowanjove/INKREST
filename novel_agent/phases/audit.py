@@ -7,13 +7,13 @@ from typing import Any, Dict, List, Tuple, Optional
 from novel_agent.phases.base import ChapterContext, PipelinePhase
 from novel_agent.logging_config import get_logger
 from novel_agent.progress import emit_progress
-from novel_agent.quality.audit_schema import validate_audit_report
+from novel_agent.quality.audit_schema import build_audit_error, validate_audit_report
 from novel_agent.quality.audit_rewrite import audit_requires_rewrite
 from novel_agent.quality.generation_policy import should_length_fix_after_audit_rewrite
 from novel_agent.quality.audit_persist import split_audit_for_persist
 from novel_agent.quality.style_precheck import write_style_precheck_cache
 from novel_agent.phases.audit_matching import find_best_paragraph_match
-from novel_agent.phases.audit_rewrite import AuditRewriteMixin
+from novel_agent.phases.audit_rewrite import AuditRewriteMixin, _guard_audit_candidate
 from novel_agent.scripts.count_chars import wordcount_report
 
 logger = get_logger("audit_phase")
@@ -243,6 +243,12 @@ class AuditPhase(AuditRewriteMixin, PipelinePhase):
         async def _run_audit():
             nonlocal ctx
             try:
+                try:
+                    from novel_agent.retrieval.context_contract import bind_latest_context_role
+
+                    bind_latest_context_role(self.orchestrator.root_dir, ctx.chapter_id, role="auditor")
+                except Exception as exc:
+                    logger.debug("Unable to bind auditor Context Pack: %s", exc)
                 state, target_chars, sensitive_words, plan = self._get_audit_args(ctx)
                 if hasattr(self.orchestrator.auditor, "aaudit"):
                     audit_res = await self.orchestrator.auditor.aaudit(
@@ -258,9 +264,9 @@ class AuditPhase(AuditRewriteMixin, PipelinePhase):
                 logger.warning("Audit failed or invalid: %s", exc)
                 ctx = dataclasses.replace(
                     ctx,
-                    warnings=ctx.warnings + (f"Audit agent failed or output invalid: {exc}. Fallback to low-risk audit schema.",)
+                    warnings=ctx.warnings + (f"Audit agent failed or output invalid: {exc}. Audit marked incomplete.",)
                 )
-                return {"risk_level": "低", "issues": [], "state_update": {}}
+                return build_audit_error(exc, stage="audit")
 
         async def _run_extract():
             nonlocal ctx
@@ -342,6 +348,7 @@ class AuditPhase(AuditRewriteMixin, PipelinePhase):
     ) -> Tuple[str, ChapterContext]:
         import re
         rebuilt_any = False
+        target_found = False
         paragraphs = [p.strip() for p in re.split(r'\n{2,}', final_text) if p.strip()]
         
         for issue in text_issues:
@@ -352,6 +359,7 @@ class AuditPhase(AuditRewriteMixin, PipelinePhase):
             target_p, target_idx = find_best_paragraph_match(paragraphs, target_text)
                     
             if target_p:
+                target_found = True
                 prev_p = paragraphs[target_idx - 1] if target_idx > 0 else ""
                 next_p = paragraphs[target_idx + 1] if target_idx < len(paragraphs) - 1 else ""
                 
@@ -392,15 +400,17 @@ class AuditPhase(AuditRewriteMixin, PipelinePhase):
                         else:
                             new_p = self.orchestrator.style_editor.edit(prompt)
                         
-                    new_p = new_p.strip("` \n")
-                    if new_p.startswith("```"):
-                        lines = new_p.split("\n")
-                        if lines[0].startswith("```"):
-                            lines = lines[1:]
-                        if lines and lines[-1].startswith("```"):
-                            lines = lines[:-1]
-                        new_p = "\n".join(lines).strip()
-                    
+                    new_p, ctx = _guard_audit_candidate(
+                        ctx,
+                        target_p,
+                        new_p,
+                        stage="audit_paragraph_rewrite",
+                        artifact_name=f"audit_rewrite_candidate_{attempt + 1}_{target_idx + 1}.txt",
+                        min_length_ratio=0.35,
+                        max_length_ratio=1.65,
+                    )
+                    if new_p is None:
+                        continue
                     paragraphs[target_idx] = new_p
                     rebuilt_any = True
                 except Exception as exc:
@@ -411,15 +421,26 @@ class AuditPhase(AuditRewriteMixin, PipelinePhase):
         
         if rebuilt_any:
             final_text = "\n\n".join(paragraphs)
+        elif target_found:
+            logger.info("Smart Rewrite (Async): paragraph candidates were rejected; keeping prior chapter text")
         else:
             logger.info("Smart Rewrite (Async): no specific target paragraph found, falling back to full-chapter style edit")
             issues_summary = json.dumps(issues, ensure_ascii=False)
             feedback_prompt = f"{final_text}\n\n## 审计问题（需修正）\n{issues_summary}"
             try:
                 if hasattr(self.orchestrator.style_editor, "aedit"):
-                    final_text = await self.orchestrator.style_editor.aedit(feedback_prompt)
+                    candidate = await self.orchestrator.style_editor.aedit(feedback_prompt)
                 else:
-                    final_text = self.orchestrator.style_editor.edit(feedback_prompt)
+                    candidate = self.orchestrator.style_editor.edit(feedback_prompt)
+                candidate, ctx = _guard_audit_candidate(
+                    ctx,
+                    final_text,
+                    candidate,
+                    stage="audit_full_rewrite",
+                    artifact_name=f"audit_rewrite_candidate_full_{attempt + 1}.txt",
+                )
+                if candidate is not None:
+                    final_text = candidate
             except Exception as exc:
                 logger.error("Rewrite style edit failed: %s", exc)
                 ctx = dataclasses.replace(ctx, warnings=ctx.warnings + (f"Rewrite style edit failed (attempt {attempt+1}): {exc}.",))
@@ -484,7 +505,11 @@ class AuditPhase(AuditRewriteMixin, PipelinePhase):
             validate_audit_report(new_audit)
         except Exception as exc:
             logger.error("Rewrite audit failed: %s", exc)
-            ctx = dataclasses.replace(ctx, warnings=ctx.warnings + (f"Rewrite audit failed (attempt {attempt+1}): {exc}.",))
+            new_audit = build_audit_error(exc, stage=f"rewrite_attempt_{attempt + 1}")
+            ctx = dataclasses.replace(
+                ctx,
+                warnings=ctx.warnings + (f"Rewrite audit failed (attempt {attempt+1}): {exc}. Audit marked incomplete.",),
+            )
             
         self._persist_audit_report(ctx, new_audit)
         self.orchestrator._write_json(ctx.chapter_dir / "state_update.json", new_audit.get("state_update", {}))
@@ -543,6 +568,12 @@ class AuditPhase(AuditRewriteMixin, PipelinePhase):
         emit_progress("state_extractor", "running", chapter_id=ctx.chapter_id)
         
         state, target_chars, sensitive_words, plan = self._get_audit_args(ctx)
+        try:
+            from novel_agent.retrieval.context_contract import bind_latest_context_role
+
+            bind_latest_context_role(self.orchestrator.root_dir, ctx.chapter_id, role="auditor")
+        except Exception as exc:
+            logger.debug("Unable to bind auditor Context Pack: %s", exc)
         with ThreadPoolExecutor(max_workers=2) as parallel_exec:
             audit_future = parallel_exec.submit(
                 self.orchestrator.auditor.audit,
@@ -560,10 +591,10 @@ class AuditPhase(AuditRewriteMixin, PipelinePhase):
                 validate_audit_report(audit)
             except Exception as exc:
                 logger.warning("Audit failed or invalid: %s", exc)
-                audit = {"risk_level": "低", "issues": [], "state_update": {}}
+                audit = build_audit_error(exc, stage="audit")
                 ctx = dataclasses.replace(
                     ctx,
-                    warnings=ctx.warnings + (f"Audit agent failed or output invalid: {exc}. Fallback to low-risk audit schema.",)
+                    warnings=ctx.warnings + (f"Audit agent failed or output invalid: {exc}. Audit marked incomplete.",)
                 )
             try:
                 ext_state = state_future.result(timeout=300)

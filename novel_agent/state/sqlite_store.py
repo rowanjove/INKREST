@@ -11,6 +11,7 @@ from novel_agent.state.sqlite_schema import (
     SQLiteWriteQueue,
 )
 from novel_agent.state.state_repository import StateRepositoryMixin
+from novel_agent.state.search_repository import SearchRepositoryMixin
 from novel_agent.state.history_repository import HistoryRepositoryMixin
 from novel_agent.state.manuscript_repository import ManuscriptRepositoryMixin
 from novel_agent.state.schema_version import (
@@ -27,6 +28,7 @@ logger = logging.getLogger("novel_agent.state.sqlite_store")
 class SQLiteStateStore(
     SchemaMixin,
     StateRepositoryMixin,
+    SearchRepositoryMixin,
     HistoryRepositoryMixin,
     ManuscriptRepositoryMixin,
 ):

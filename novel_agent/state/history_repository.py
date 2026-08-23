@@ -157,36 +157,116 @@ class HistoryRepositoryMixin(HistoryLegacySearchMixin):
         self,
         offset: int = 0,
         limit: int = 100,
+        *,
+        query: str = "",
+        status: str = "all",
+        has_content: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         offset = max(0, int(offset))
-        limit = max(1, min(int(limit), 500))
+        requested = int(limit)
+        if requested <= 0:
+            return []
+        limit = min(max(1, requested), 1_000_000)
+        where, params = self._chapter_catalog_filters(
+            query=query, status=status, has_content=has_content
+        )
         with safe_connection(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                """
+                f"""
                 select id, title, final_path, word_count, risk_level,
                        coalesce(has_final, 0) as has_final,
                        coalesce(gate_status, '') as gate_status,
                        coalesce(indexed_at, 0) as indexed_at
                 from chapters
+                {where}
                 order by cast(id as integer), id
                 limit ? offset ?
                 """,
-                (limit, offset),
+                [*params, limit, offset],
             ).fetchall()
-        return [
-            {
-                "id": r["id"],
-                "title": r["title"],
-                "final_path": r["final_path"],
-                "word_count": r["word_count"],
-                "risk_level": r["risk_level"],
-                "has_final": bool(r["has_final"]),
-                "gate_status": r["gate_status"],
-                "indexed_at": float(r["indexed_at"] or 0),
-            }
-            for r in rows
-        ]
+        return [self._chapter_index_row(row) for row in rows]
+
+    def count_chapters_filtered(
+        self,
+        *,
+        query: str = "",
+        status: str = "all",
+        has_content: Optional[bool] = None,
+    ) -> int:
+        where, params = self._chapter_catalog_filters(
+            query=query, status=status, has_content=has_content
+        )
+        with safe_connection(self.db_path) as conn:
+            row = conn.execute(
+                f"select count(*) from chapters{where}",
+                params,
+            ).fetchone()
+        return int(row[0] if row else 0)
+
+    def get_chapter_index(self, chapter_id: str) -> Optional[Dict[str, Any]]:
+        with safe_connection(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                select id, title, final_path, word_count, risk_level,
+                       coalesce(has_final, 0) as has_final,
+                       coalesce(gate_status, '') as gate_status,
+                       coalesce(indexed_at, 0) as indexed_at
+                from chapters where id = ?
+                """,
+                (chapter_id,),
+            ).fetchone()
+        return self._chapter_index_row(row) if row else None
+
+    @staticmethod
+    def _chapter_index_row(row: sqlite3.Row) -> Dict[str, Any]:
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "final_path": row["final_path"],
+            "word_count": row["word_count"],
+            "risk_level": row["risk_level"],
+            "has_final": bool(row["has_final"]),
+            "gate_status": row["gate_status"],
+            "indexed_at": float(row["indexed_at"] or 0),
+        }
+
+    @staticmethod
+    def _chapter_catalog_filters(
+        *,
+        query: str = "",
+        status: str = "all",
+        has_content: Optional[bool] = None,
+    ) -> tuple[str, list[Any]]:
+        attention = (
+            "(lower(coalesce(gate_status,'')) in ('failed','blocked','fail') "
+            "or lower(coalesce(risk_level,'')) in ('high','critical','高','严重'))"
+        )
+        ready = (
+            "(coalesce(has_final,0) = 1 or lower(coalesce(gate_status,'')) "
+            "in ('passed','pass','ready'))"
+        )
+        clauses: list[str] = []
+        params: list[Any] = []
+        needle = str(query or "").strip()
+        if needle:
+            clauses.append("(id LIKE ? OR title LIKE ?)")
+            like = f"%{needle}%"
+            params.extend([like, like])
+        if has_content is True:
+            clauses.append("coalesce(has_final,0) = 1")
+        elif has_content is False:
+            clauses.append("coalesce(has_final,0) = 0")
+        normalized = str(status or "all").strip().lower()
+        if normalized == "attention":
+            clauses.append(attention)
+        elif normalized == "ready":
+            clauses.append(f"{ready} and not {attention}")
+        elif normalized == "draft":
+            clauses.append(f"not {ready} and not {attention}")
+        sql = (" where " + " and ".join(clauses)) if clauses else ""
+        return sql, params
 
     @db_write_lock
     def set_debt_priority(self, table: str, debt_id: str, priority: int) -> None:

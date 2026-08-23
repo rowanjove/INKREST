@@ -230,6 +230,27 @@ class ChapterPipelineRunner:
                     default=plan,
                 )
 
+        # Optional M3 contract gate: sealed arc contracts are immutable for a
+        # chapter plan.  The default flag is off, preserving legacy projects;
+        # when enabled, a mismatch is persisted as replan evidence and stops
+        # before generation rather than silently changing the arc objective.
+        from novel_agent.control.longform_flags import flag_enabled
+
+        if flag_enabled("m3_canon_engine", self._o.root_dir):
+            arc_id = str(plan.get("arc_id") or "")
+            if arc_id:
+                from novel_agent.control.arc_contract_store import load_arc_contract, validate_saved_plan
+
+                contract = load_arc_contract(self._o.root_dir, arc_id)
+                if contract:
+                    issues = validate_saved_plan(self._o.root_dir, arc_id, plan)
+                    self._o._write_json(
+                        reports_dir / "arc_contract.json",
+                        {"arc_id": arc_id, "contract": contract.to_dict(), "issues": issues, "status": "blocked" if issues else "pass"},
+                    )
+                    if issues:
+                        raise RuntimeError(f"arc contract requires replan: {issues[0].get('code', 'mismatch')}")
+
         self._o._write_json(chapter_dir / "plan.json", plan)
         ctx = dataclasses.replace(ctx, plan=plan)
         self._o._save_checkpoint(

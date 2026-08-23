@@ -20,7 +20,9 @@ const {
   activeTab,
   selectedChapterId,
   selectedIndex,
+  selectedGlobalIndex,
   catalogQuery,
+  catalogLoadingMore,
   readerSettings,
   readerStyle,
   filteredChapters,
@@ -28,11 +30,15 @@ const {
   exportFormat,
   exportScope,
   exportTitle,
+  exportTask,
   load,
+  loadMore,
+  navigateChapter,
   selectChapter,
   savePlatform,
   saveFeedback,
   download,
+  cancelExport,
 } = usePublishingWorkspace()
 
 function openWriter(chapterId: string) {
@@ -114,10 +120,16 @@ function openWriter(chapterId: string) {
           :selected-chapter="workspace.selected_chapter"
           :selected-chapter-id="selectedChapterId"
           :selected-index="selectedIndex"
+          :selected-global-index="selectedGlobalIndex"
+          :catalog-total="workspace.catalog_total || 0"
+          :catalog-has-more="Boolean(workspace.catalog_has_more)"
+          :catalog-loading-more="catalogLoadingMore"
           :paragraphs="paragraphs"
           :chapter-loading="chapterLoading"
           :reader-style="readerStyle"
           @select="selectChapter"
+          @navigate="navigateChapter"
+          @load-more="loadMore"
           @edit="openWriter"
         />
         <PublishingPlatformPanel
@@ -136,7 +148,9 @@ function openWriter(chapterId: string) {
           :workspace="workspace"
           :selected-chapter-id="selectedChapterId"
           :exporting="exporting"
+          :export-task="exportTask"
           @download="download"
+          @cancel="cancelExport"
           @navigate="router.push($event)"
         />
       </main>

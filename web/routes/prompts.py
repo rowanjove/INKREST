@@ -4,6 +4,13 @@ from fastapi import APIRouter, HTTPException
 import web.context as ws_server
 import web.helpers as ws_helpers
 from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
+from novel_agent.prompt_registry import prompt_manifest
+from novel_agent.quality.prose_identity import (
+    list_prose_identity_profile_versions,
+    load_prose_identity_profile,
+    restore_prose_identity_profile,
+)
+from novel_agent.quality.voice_lab import is_voice_lab_frozen
 
 ws_server._copy_default_prompts = ws_helpers._copy_default_prompts
 ws_server.PROMPT_ROLES = ws_helpers.PROMPT_ROLES
@@ -32,6 +39,65 @@ def list_prompts(session: ProjectSession = RequireProjectDep) -> List[Dict[str, 
             "has_default": default_path.exists(),
         })
     return result
+
+
+@router.get("/api/prompts/manifest")
+def get_prompt_manifest(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    """Return prompt source/digest metadata without changing prompt content."""
+
+    session = coerce_project_session(session)
+    root = session.root_dir
+    ws_server._copy_default_prompts(root / "prompts")
+    return prompt_manifest(root, roles=ws_server.PROMPT_ROLES)
+
+
+@router.get("/api/prose-profile")
+def get_prose_profile(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    """Return the active prose profile and revision summaries."""
+
+    session = coerce_project_session(session)
+    root = session.root_dir
+    return {
+        "profile": load_prose_identity_profile(root),
+        "versions": list_prose_identity_profile_versions(root),
+    }
+
+
+@router.get("/api/prose-profile/versions")
+def get_prose_profile_versions(session: ProjectSession = RequireProjectDep) -> List[Dict[str, Any]]:
+    session = coerce_project_session(session)
+    return list_prose_identity_profile_versions(session.root_dir)
+
+
+@router.post("/api/prose-profile/restore")
+def restore_prose_profile(
+    body: Dict[str, Any],
+    session: ProjectSession = RequireProjectDep,
+) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    if is_voice_lab_frozen(session.root_dir) and not bool(body.get("force")):
+        raise HTTPException(
+            409,
+            {
+                "code": "VOICE_PROFILE_FROZEN",
+                "message": "声线档案已冻结，请先在质量中心解除冻结。",
+            },
+        )
+    raw_revision = body.get("revision")
+    try:
+        revision = int(raw_revision)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "revision must be an integer")
+    try:
+        target = restore_prose_identity_profile(session.root_dir, revision=revision)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+    return {
+        "status": "restored",
+        "path": str(target),
+        "revision": revision,
+        "profile": load_prose_identity_profile(session.root_dir),
+    }
 
 
 @router.get("/api/prompts/{role}")

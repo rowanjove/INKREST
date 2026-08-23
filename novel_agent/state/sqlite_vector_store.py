@@ -16,11 +16,12 @@ except ImportError:
 
 import numpy as np
 from novel_agent.state.sqlite_schema import db_write_lock, safe_connection
+from novel_agent.state.vector_readiness import SQLITE_VECTOR_SCAN_CAP, vector_fallback_readiness
 from novel_agent.state.vector_store import VectorChunk, VectorStore, LocalONNXEmbedder
 
 logger = logging.getLogger(__name__)
 
-_SQLITE_VECTOR_SCAN_CAP = 50000
+_SQLITE_VECTOR_SCAN_CAP = SQLITE_VECTOR_SCAN_CAP
 
 def normalize_chapter_id_value(val: Any) -> str:
     if not val:
@@ -68,6 +69,12 @@ class SQLiteEmbeddingVectorStore(VectorStore):
         self.backend = config.get("backend", "sqlite").strip().lower()
 
         self._lock = threading.Lock()
+        self._last_scan_stats: Dict[str, Any] = {
+            "backend": "sqlite",
+            "scanned_rows": 0,
+            "scan_cap": _SQLITE_VECTOR_SCAN_CAP,
+            "capped": False,
+        }
         self._client: Optional[httpx.Client] = None
 
         self._init_db()
@@ -681,21 +688,23 @@ class SQLiteEmbeddingVectorStore(VectorStore):
         """Bounded SQLite scan with optional chapter window filter."""
         dim_bytes = len(query_vec) * 4
         scanned = 0
+        capped = False
         candidates: List[Dict[str, Any]] = []
         vectors: List[np.ndarray] = []
         with self._lock, safe_connection(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT id, type, text, embedding, metadata FROM vector_embeddings WHERE embedding IS NOT NULL"
-            ).fetchall()
+            )
             for r in rows:
-                scanned += 1
-                if scanned > _SQLITE_VECTOR_SCAN_CAP:
+                if scanned >= _SQLITE_VECTOR_SCAN_CAP:
+                    capped = True
                     logger.warning(
                         "Vector scan capped at %d rows; enable Chroma/HNSW or narrow chapter_window",
                         _SQLITE_VECTOR_SCAN_CAP,
                     )
                     break
+                scanned += 1
                 if len(r["embedding"]) != dim_bytes:
                     continue
                 meta = json.loads(r["metadata"]) if r["metadata"] else {}
@@ -711,6 +720,13 @@ class SQLiteEmbeddingVectorStore(VectorStore):
                     continue
                 vectors.append(np.frombuffer(r["embedding"], dtype=np.float32))
                 candidates.append(chunk)
+
+        self._last_scan_stats = {
+            "backend": "sqlite",
+            "scanned_rows": scanned,
+            "scan_cap": _SQLITE_VECTOR_SCAN_CAP,
+            "capped": capped,
+        }
 
         if not candidates:
             return []
@@ -740,14 +756,20 @@ class SQLiteEmbeddingVectorStore(VectorStore):
 
         with self._lock, safe_connection(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT id, type, text, metadata FROM vector_embeddings").fetchall()
+            rows = conn.execute("SELECT id, type, text, metadata FROM vector_embeddings")
 
             candidates = []
             scanned = 0
             for r in rows:
-                scanned += 1
-                if scanned > _SQLITE_VECTOR_SCAN_CAP:
+                if scanned >= _SQLITE_VECTOR_SCAN_CAP:
+                    self._last_scan_stats = {
+                        "backend": "sqlite",
+                        "scanned_rows": scanned,
+                        "scan_cap": _SQLITE_VECTOR_SCAN_CAP,
+                        "capped": True,
+                    }
                     break
+                scanned += 1
                 meta = json.loads(r["metadata"]) if r["metadata"] else {}
                 chunk = {
                     "id": r["id"],
@@ -762,6 +784,13 @@ class SQLiteEmbeddingVectorStore(VectorStore):
                 candidates.append(chunk)
 
             if not candidates:
+                if scanned < _SQLITE_VECTOR_SCAN_CAP:
+                    self._last_scan_stats = {
+                        "backend": "sqlite",
+                        "scanned_rows": scanned,
+                        "scan_cap": _SQLITE_VECTOR_SCAN_CAP,
+                        "capped": False,
+                    }
                 return []
 
             # 计算 TF-based 相似度
@@ -788,7 +817,18 @@ class SQLiteEmbeddingVectorStore(VectorStore):
                     results.append(chunk)
 
             results.sort(key=lambda x: x["score"], reverse=True)
+            self._last_scan_stats = {
+                "backend": "sqlite",
+                "scanned_rows": scanned,
+                "scan_cap": _SQLITE_VECTOR_SCAN_CAP,
+                "capped": scanned >= _SQLITE_VECTOR_SCAN_CAP,
+            }
             return results[:top_k]
+
+    def vector_scan_readiness(self) -> Dict[str, Any]:
+        """Return the latest fallback scan status for diagnostics and UI."""
+
+        return vector_fallback_readiness(**self._last_scan_stats)
 
     @staticmethod
     def _chapter_value(value: Any, default: int) -> int:
