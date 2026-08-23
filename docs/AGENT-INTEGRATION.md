@@ -69,9 +69,9 @@ python -m mcp_server.server
     "novel-agent": {
       "command": "python",
       "args": ["-m", "mcp_server.server"],
-      "cwd": "F:\\AI\\vibecoding\\小说生成agent",
+      "cwd": "<PROJECT_ROOT>",
       "env": {
-        "NOVEL_AGENT_ROOT": "F:\\AI\\vibecoding\\小说生成agent",
+        "NOVEL_AGENT_ROOT": "<PROJECT_ROOT>",
         "NOVEL_AGENT_API_URL": "http://127.0.0.1:8000"
       }
     }

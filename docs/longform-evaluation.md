@@ -23,7 +23,7 @@ py -3.12 scripts/run_longform_acceptance.py --chapters 20 --output logs/longform
 
 ```powershell
 py -3.12 scripts/run_longform_acceptance.py --chapters 20 `
-  --root F:\AI\vibecoding\小说生成agent\projects\<project_id> `
+  --root "$env:NOVEL_AGENT_ROOT\projects\<project_id>" `
   --output logs/longform-20.json --start --execute --budget 20
 ```
 
