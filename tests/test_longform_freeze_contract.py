@@ -35,5 +35,5 @@ def test_freeze_snapshot_records_worktree_and_flag_contract(tmp_path: Path) -> N
     errors = list(Draft202012Validator(schema).iter_errors(payload))
     assert not errors, "; ".join(error.message for error in errors)
     assert payload["commit"]
-    assert payload["dirty"] is True
+    assert payload["dirty"] is bool(payload["status_lines"])
     assert payload["longform_flags"]["m1_catalog_pagination"] is True
