@@ -1,5 +1,7 @@
 import type { SnapshotAction } from '../../entities/project/projectSnapshot'
+import type { PluginNavigationContribution } from '../../entities/plugin/pluginNavigation'
 import { GLOBAL_NAV_ITEMS, PROJECT_NAV_ITEMS } from '../router/navigation'
+import { resolveSnapshotActionHref } from '../shell/workflowActions'
 
 export type CommandGroup = '全局' | '项目' | '设置' | '章节' | '人物' | '下一步'
 
@@ -68,10 +70,7 @@ export function buildNavigationCommands(inProject: boolean): AppCommand[] {
 }
 
 export function commandFromSnapshotAction(action: SnapshotAction): AppCommand {
-  const path =
-    action.kind === 'navigate'
-      ? action.target
-      : `/workspace?intent=${encodeURIComponent(action.target)}`
+  const path = resolveSnapshotActionHref(action)
   return {
     id: `snapshot-${action.id}`,
     label: action.label,
@@ -147,4 +146,18 @@ export function searchCommands(
     .sort((left, right) => left.score - right.score || left.command.label.localeCompare(right.command.label))
     .slice(0, limit)
     .map((entry) => entry.command)
+}
+
+export function commandsFromPluginNavigation(
+  items: ReadonlyArray<PluginNavigationContribution>,
+): AppCommand[] {
+  return items.map((item) => ({
+    id: `plugin-nav-${item.id}`,
+    label: item.title,
+    description: `打开插件：${item.plugin_name}`,
+    group: item.surface === 'project_sidebar' ? '项目' : '全局',
+    path: item.path,
+    keywords: [item.title, item.plugin_name, item.plugin_id, item.view, '插件', '扩展'],
+    executeMode: 'navigate',
+  }))
 }

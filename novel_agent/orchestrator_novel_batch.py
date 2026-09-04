@@ -18,6 +18,21 @@ if TYPE_CHECKING:
 
 logger = get_logger("orchestrator.novel_batch")
 
+
+class BatchRunResult(list):
+    """List-compatible batch result that cannot lose its stop outcome."""
+
+    def __init__(
+        self,
+        values=(),
+        *,
+        paused: bool = False,
+        stopped_reason: str = "",
+    ):
+        super().__init__(values)
+        self.paused = bool(paused)
+        self.stopped_reason = str(stopped_reason or "")
+
 async def run_chapter_briefs(
     orch: "NovelOrchestrator",
     chapter_briefs: List[Dict[str, Any]],
@@ -347,7 +362,7 @@ async def arun_arcs(
     start_arc_id: Optional[str] = None,
     resume: bool = True,
     max_chapters: Optional[int] = None,
-    ) -> List[ChapterResult]:
+    ) -> BatchRunResult:
     """Generate chapters arc-by-arc using workspace/arc_*.json queues."""
     from novel_agent.services.arc_queue import (
         clear_batch_pause_for_resume,
@@ -482,8 +497,8 @@ async def arun_arcs(
         await replenish_rolling_window(orch)
         await maybe_open_next_episode(orch)
 
+    pending_left = 0
     if not circuit_stopped:
-        pending_left = 0
         try:
             from novel_agent.services.rolling_planner import count_pending_briefs
 
@@ -496,7 +511,23 @@ async def arun_arcs(
             from novel_agent.services.arc_queue import mark_novel_batch_finished
 
             mark_novel_batch_finished(orch.root_dir)
-    return all_results
+    stopped_reason = ""
+    if circuit_stopped:
+        try:
+            from novel_agent.services.arc_queue import novel_batch_pause_reason
+
+            stopped_reason = novel_batch_pause_reason(orch.root_dir) or "batch_paused"
+        except Exception:
+            stopped_reason = "batch_paused"
+    elif pending_left == 0:
+        stopped_reason = "queue_empty" if all_results else "idle"
+    elif chapters_budget and len(all_results) >= chapters_budget:
+        stopped_reason = "max_chapters"
+    return BatchRunResult(
+        all_results,
+        paused=circuit_stopped,
+        stopped_reason=stopped_reason,
+    )
 
 async def arun_novel_continue(
     orch,
@@ -504,7 +535,7 @@ async def arun_novel_continue(
     max_chapters: Optional[int] = None,
     *,
     full_book: bool = False,
-    ) -> List[ChapterResult]:
+    ) -> BatchRunResult:
     """Resume novel generation from last arc progress.
 
     full_book=True: drain all arcs with replenish (全书续跑排空), not only from last_arc_id.

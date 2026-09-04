@@ -34,8 +34,12 @@ try {
     (candidate) => new URL(candidate.url()).pathname === '/pet',
   )
   if (!petPage) throw new Error('Packaged pet renderer was not found')
+  await petPage.waitForLoadState('domcontentloaded')
   const petHitArea = petPage.locator('.pet-hit-area')
   await petHitArea.waitFor({ state: 'visible' })
+  await petPage.waitForFunction(
+    () => typeof window.electronAPI?.togglePetBubble === 'function',
+  )
   const boundsBeforeDrag = await petPage.evaluate(
     () => window.electronAPI?.getPetWindowBounds?.() ?? null,
   )
@@ -43,7 +47,7 @@ try {
 
   await petHitArea.click()
   let bubblePage = null
-  for (let attempt = 0; attempt < 30 && !bubblePage; attempt += 1) {
+  for (let attempt = 0; attempt < 60 && !bubblePage; attempt += 1) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 100))
     bubblePage = context
       .pages()
@@ -118,17 +122,26 @@ try {
   await page.getByRole('button', { name: '检查并下载' }).click()
   const confirmation = page.getByRole('dialog', { name: '确认导出' })
   await confirmation.waitFor({ state: 'visible' })
-  const responsePromise = page.waitForResponse(
+  const queuedResponsePromise = page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/publishing/export') &&
       response.request().method() === 'POST',
   )
+  const downloadResponsePromise = page.waitForResponse(
+    (response) =>
+      /\/api\/publishing\/export\/[^/]+\/download$/.test(response.url()) &&
+      response.request().method() === 'GET',
+  )
   await confirmation.getByRole('button', { name: '确认下载' }).click()
-  const response = await responsePromise
-  if (response.status() !== 200) {
-    throw new Error(`Packaged UI export failed: ${response.status()}`)
+  const queuedResponse = await queuedResponsePromise
+  if (queuedResponse.status() !== 200) {
+    throw new Error(`Packaged UI export queue failed: ${queuedResponse.status()}`)
   }
-  const exported = await response.body()
+  const downloadResponse = await downloadResponsePromise
+  if (downloadResponse.status() !== 200) {
+    throw new Error(`Packaged UI export download failed: ${downloadResponse.status()}`)
+  }
+  const exported = await downloadResponse.body()
   if (!exported.toString('utf8').includes('林越')) {
     throw new Error('Packaged UI export did not use the canonical SQLite manuscript')
   }
@@ -139,7 +152,7 @@ try {
         project_id: seed.project_id,
         renderer_url: page.url(),
         formats,
-        export_status: response.status(),
+        export_status: downloadResponse.status(),
         export_bytes: exported.length,
         no_horizontal_overflow: noHorizontalOverflow,
         pet_click_opened_bubble: true,

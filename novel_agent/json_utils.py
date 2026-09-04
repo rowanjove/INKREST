@@ -43,7 +43,57 @@ def loads_json_object(text: str):
                 return json.loads(text[start:end + 1])
             except json.JSONDecodeError:
                 continue
+
         raise
+
+
+def repair_truncated_json(text: str) -> Any:
+    """Attempt to repair and parse a truncated JSON text (e.g. cut off by max_tokens).
+
+    Finds the last balanced structural boundary (e.g. after a completed array element),
+    computes the missing closing brackets/braces, and parses the recovered data.
+    """
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = _strip_code_fence(cleaned)
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+
+    # Reverse scan for potential cut-off points ending with '}' or ']'
+    for i in range(len(cleaned) - 1, 0, -1):
+        if cleaned[i] in ("}", "]"):
+            sub = cleaned[:i + 1]
+            stack = []
+            in_str = False
+            esc = False
+            for c in sub:
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif c == "\\":
+                        esc = True
+                    elif c == '"':
+                        in_str = False
+                else:
+                    if c == '"':
+                        in_str = True
+                    elif c in ("{", "["):
+                        stack.append(c)
+                    elif c == "}" and stack and stack[-1] == "{":
+                        stack.pop()
+                    elif c == "]" and stack and stack[-1] == "[":
+                        stack.pop()
+            if not in_str and stack:
+                closing = "".join("}" if b == "{" else "]" for b in reversed(stack))
+                try:
+                    recovered = json.loads(sub + closing)
+                    logger.info("Successfully repaired truncated JSON (recovered %d bytes)", len(sub))
+                    return recovered
+                except Exception:
+                    continue
+    return None
 
 
 def safe_loads_json(text: str, fallback: Any = None) -> Any:

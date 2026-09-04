@@ -5,7 +5,8 @@ import uuid
 import logging
 from functools import partial
 from typing import Any, Dict, List, Optional
-from novel_agent.domain.tasks import TaskType
+from novel_agent.domain.tasks import TaskType, TaskStatus, BatchOutcome, is_successful_empty_stop
+from novel_agent.exceptions import TaskPausedError
 from novel_agent.pipeline import PipelineConfig
 from novel_agent.orchestrator import NovelOrchestrator
 
@@ -29,7 +30,7 @@ def active_novel_batch_task_id_helper(task_manager) -> Optional[str]:
             tid = str(row.get("id") or "")
             if row.get("task_type") not in {"novel_autopilot", "novel_continue"}:
                 continue
-            if str(row.get("status") or "") in ("pending", "claimed", "running"):
+            if str(row.get("status") or "") in ("pending", "claimed", "running", "paused"):
                 return tid
     except Exception:
         pass
@@ -173,8 +174,15 @@ async def run_novel_autopilot_helper(
             outcome.chapter_ids,
             revisions,
         )
+        completed_ids = list(getattr(outcome, "chapter_ids", []) or [])
         if outcome.paused:
             status = "paused"
+            batch_outcome = BatchOutcome(
+                status=TaskStatus.PAUSED,
+                completed_chapters=completed_ids,
+                reason=outcome.stopped_reason or "circuit_breaker",
+                resumable_from="autopilot",
+            )
             payload = {
                 "autopilot": True,
                 "rounds": outcome.rounds,
@@ -184,10 +192,33 @@ async def run_novel_autopilot_helper(
                 "circuit_breaker": True,
                 "round_summaries": outcome.round_summaries,
                 "manuscript_conflicts": conflicts,
+                "batch_outcome": batch_outcome.model_dump(),
                 "message": "全书自动续跑因批量熔断暂停，请处理章节后于生产中心续跑。",
+            }
+        elif outcome.chapters_completed == 0 and not dry_run and not is_successful_empty_stop(outcome.stopped_reason):
+            status = "failed"
+            batch_outcome = BatchOutcome(
+                status=TaskStatus.FAILED,
+                completed_chapters=[],
+                reason=outcome.stopped_reason or "未生成任何章节",
+            )
+            payload = {
+                "autopilot": True,
+                "rounds": outcome.rounds,
+                "chapters_completed": 0,
+                "stopped_reason": outcome.stopped_reason,
+                "paused": False,
+                "round_summaries": outcome.round_summaries,
+                "manuscript_conflicts": conflicts,
+                "batch_outcome": batch_outcome.model_dump(),
             }
         else:
             status = "completed"
+            batch_outcome = BatchOutcome(
+                status=TaskStatus.SUCCEEDED,
+                completed_chapters=completed_ids,
+                reason=outcome.stopped_reason or "completed",
+            )
             payload = {
                 "autopilot": True,
                 "rounds": outcome.rounds,
@@ -196,6 +227,7 @@ async def run_novel_autopilot_helper(
                 "paused": False,
                 "round_summaries": outcome.round_summaries,
                 "manuscript_conflicts": conflicts,
+                "batch_outcome": batch_outcome.model_dump(),
             }
         await asyncio.get_running_loop().run_in_executor(
             None,
@@ -203,7 +235,13 @@ async def run_novel_autopilot_helper(
             task_id,
             status,
             payload,
+            None if status in ("completed", "paused") else batch_outcome.reason,
+            None,
+            batch_outcome.reason or None,
+            batch_outcome.resumable_from or None,
         )
+    except TaskPausedError:
+        await task_manager._mark_task_paused(task_id, resumable_from="autopilot")
     except Exception as exc:
         logger.exception("Novel autopilot %s failed: %s", task_id, exc)
         await task_manager._mark_task_failed(task_id, exc)
@@ -259,17 +297,58 @@ async def run_novel_continue_helper(
             results,
             revisions,
         )
+        paused = bool(getattr(results, "paused", False))
+        stopped_reason = str(getattr(results, "stopped_reason", "") or "")
+        completed_ids = [getattr(r, "chapter_id", str(r)) for r in results]
+        if paused:
+            status = "paused"
+            outcome = BatchOutcome(
+                status=TaskStatus.PAUSED,
+                completed_chapters=completed_ids,
+                reason=stopped_reason or "novel_continue_paused",
+                resumable_from="novel_batch",
+            )
+        elif task_manager.is_aborted(task_id):
+            status = "cancelled"
+            outcome = BatchOutcome(
+                status=TaskStatus.CANCELLED,
+                completed_chapters=completed_ids,
+                reason="user_cancelled",
+            )
+        elif len(results) == 0 and not dry_run and not is_successful_empty_stop(stopped_reason):
+            status = "failed"
+            outcome = BatchOutcome(
+                status=TaskStatus.FAILED,
+                completed_chapters=[],
+                reason=stopped_reason or "未生成任何章节",
+            )
+        else:
+            status = "completed"
+            outcome = BatchOutcome(
+                status=TaskStatus.SUCCEEDED,
+                completed_chapters=completed_ids,
+                reason=stopped_reason or "completed",
+            )
         await asyncio.get_running_loop().run_in_executor(
             None,
             task_manager._update_task_status,
             task_id,
-            "completed",
+            status,
             {
                 "chapters_completed": len(results),
                 "full_book": full_book,
                 "manuscript_conflicts": conflicts,
+                "paused": outcome.is_paused,
+                "stopped_reason": outcome.reason,
+                "batch_outcome": outcome.model_dump(),
             },
+            None if outcome.is_success or outcome.is_paused else outcome.reason,
+            None,
+            outcome.reason or None,
+            outcome.resumable_from or None,
         )
+    except TaskPausedError:
+        await task_manager._mark_task_paused(task_id, resumable_from="novel_batch")
     except Exception as exc:
         logger.exception("Novel continue %s failed: %s", task_id, exc)
         await task_manager._mark_task_failed(task_id, exc)

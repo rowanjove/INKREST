@@ -87,7 +87,7 @@ def resolve_factory_runtime_effects(root_dir: Path) -> Dict[str, Any]:
     """Runtime overrides; empty unless factory_mode is explicitly saved in project_meta."""
     mode = read_explicit_factory_mode(root_dir)
     if mode is None:
-        return {"factory_mode": DEFAULT_FACTORY_MODE}
+        return {}
     base = dict(FACTORY_RUNTIME_EFFECTS.get(mode, FACTORY_RUNTIME_EFFECTS[DEFAULT_FACTORY_MODE]))
     base["factory_mode"] = mode
     return base

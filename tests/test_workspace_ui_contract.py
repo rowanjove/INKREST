@@ -28,6 +28,7 @@ DASHBOARD = ROOT / "web" / "frontend" / "src" / "views" / "Dashboard.vue"
 APP = ROOT / "web" / "frontend" / "src" / "App.vue"
 APP_SHELL = ROOT / "web" / "frontend" / "src" / "app" / "shell" / "AppShell.vue"
 APP_SIDEBAR = ROOT / "web" / "frontend" / "src" / "app" / "shell" / "AppSidebar.vue"
+WORKFLOW_ACTIONS = ROOT / "web" / "frontend" / "src" / "app" / "shell" / "workflowActions.ts"
 DESKTOP_LIFECYCLE = (
     ROOT / "web" / "frontend" / "src" / "app" / "bootstrap" / "useDesktopLifecycle.ts"
 )
@@ -54,6 +55,7 @@ PRODUCTION_COSTS = (
 PRODUCTION_LOGS = (
     ROOT / "web" / "frontend" / "src" / "components" / "production" / "ProductionLogsPanel.vue"
 )
+QUALITY_CENTER = ROOT / "web" / "frontend" / "src" / "views" / "QualityCenter.vue"
 CONFIG_SECTIONS_STACK = (
     ROOT / "web" / "frontend" / "src" / "components" / "config" / "ConfigSectionsStack.vue"
 )
@@ -105,6 +107,7 @@ SHANSHAN_COPY = ROOT / "web" / "frontend" / "src" / "constants" / "shanshanCopy.
 FRONTEND_API = ROOT / "web" / "frontend" / "src" / "api.ts"
 FRONTEND_API_CLIENT = ROOT / "web" / "frontend" / "src" / "api" / "client.ts"
 BUBBLE_WINDOW = ROOT / "web" / "frontend" / "electron" / "windows" / "bubble-window.ts"
+BATCH_RUN_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "useNovelBatchRun.ts"
 
 
 def test_writer_uses_revisioned_autosave_and_confirmed_ai_suggestions() -> None:
@@ -165,9 +168,11 @@ def test_asset_list_sidebar_keeps_custom_asset_actions() -> None:
 
 def test_dashboard_uses_snapshot_without_direct_generation() -> None:
     source = DASHBOARD.read_text(encoding="utf-8")
+    workflow_actions = WORKFLOW_ACTIONS.read_text(encoding="utf-8")
     assert "useProjectSnapshotStore" in source
     assert "snapshot.next_actions" in source
-    assert "confirm: '1'" in source
+    assert "resolveSnapshotActionLocation" in source
+    assert "confirm: '1'" in workflow_actions
     assert "continueNovel" not in source
     assert "submitChapter" not in source
 
@@ -201,6 +206,13 @@ def test_dashboard_exposes_snapshot_health_and_safe_next_actions() -> None:
     assert "<el-progress" in dashboard
     assert "planning?.counts" in dashboard
     assert "blockingIssues" in dashboard
+
+
+def test_batch_run_does_not_swallow_required_context_errors() -> None:
+    source = BATCH_RUN_COMPOSABLE.read_text(encoding="utf-8")
+    assert "getNovelReadiness().catch(() => ({ data: {} }))" not in source
+    assert "getOutline().catch(() => ({ data: {} }))" not in source
+    assert "getConfig().catch(() => ({ data: {} }))" not in source
 
 
 def test_pet_abort_button_uses_short_label() -> None:
@@ -450,7 +462,21 @@ def test_production_center_exposes_review_queue_and_confirmation() -> None:
     assert "ProductionReviewWorkspace" in center
     assert "审校与修复" in reviews
     assert "重跑门禁" in reviews
+    assert "恢复三步" in reviews
+    assert "去质量中心" in reviews
+    assert "openQuality" in center
     assert "只有点击下方确认按钮后才会提交" in dialog
+
+
+def test_quality_center_surfaces_l0_block_banner() -> None:
+    source = QUALITY_CENTER.read_text(encoding="utf-8")
+    helper = (
+        ROOT / "web" / "frontend" / "src" / "entities" / "quality.ts"
+    ).read_text(encoding="utf-8")
+    assert "l0BlockBanner" in source
+    assert "l0-block-banner" in source
+    assert "route.query.chapter" in source
+    assert "L0 硬门未通过" in helper
 
 
 def test_chapter_maintenance_redirects_to_unified_production_route() -> None:
@@ -614,9 +640,11 @@ def test_readme_documents_current_entrypoints() -> None:
 def test_batch_run_dialog_is_global_and_dashboard_only_routes_intents() -> None:
     app_source = APP.read_text(encoding="utf-8")
     dashboard = DASHBOARD.read_text(encoding="utf-8")
+    workflow_actions = WORKFLOW_ACTIONS.read_text(encoding="utf-8")
     assert "NovelBatchRunDialog" in app_source
     assert "NovelBatchRunDialog" not in dashboard
-    assert "confirm: '1'" in dashboard
+    assert "resolveSnapshotActionLocation" in dashboard
+    assert "confirm: '1'" in workflow_actions
     assert "continueNovel" not in dashboard
 
 

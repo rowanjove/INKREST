@@ -94,7 +94,7 @@ class CoverAndDescriptionApiTests(unittest.TestCase):
         model_lib.save_model("flux-test", {
             "name": "Flux Image Model",
             "provider": "openai",
-            "base_url": "https://api.test.com/v1",
+            "base_url": "https://api.test/v1",
             "api_key": "test-key",
             "model": "flux-schnell",
             "type": "image"
@@ -109,7 +109,7 @@ class CoverAndDescriptionApiTests(unittest.TestCase):
             mock_resp_post = MagicMock()
             mock_resp_post.status_code = 200
             mock_resp_post.json.return_value = {
-                "data": [{"url": "https://image.test.com/img.png"}]
+                "data": [{"url": "https://image.test/img.png"}]
             }
             mock_client_instance.post.return_value = mock_resp_post
             
@@ -135,7 +135,7 @@ class CoverAndDescriptionApiTests(unittest.TestCase):
         model_lib.save_model("flux-test", {
             "name": "Flux Image Model",
             "provider": "openai",
-            "base_url": "https://api.test.com/v1",
+            "base_url": "https://api.test/v1",
             "api_key": "test-key",
             "model": "flux-schnell",
             "type": "image",
@@ -162,7 +162,7 @@ class CoverAndDescriptionApiTests(unittest.TestCase):
         model_lib.save_model("flux-test", {
             "name": "Flux Image Model",
             "provider": "openai",
-            "base_url": "https://api.test.com/v1",
+            "base_url": "https://api.test/v1",
             "api_key": "test-key",
             "model": "flux-schnell",
             "type": "image",

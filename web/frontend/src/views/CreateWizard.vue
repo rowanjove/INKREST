@@ -10,6 +10,7 @@ import { useCreateWizard } from '../composables/useCreateWizard'
 import {
   CREATE_STEPS,
   canEnterDetails,
+  factoryModeFromApproach,
   sourceMode,
   type CreationApproach,
   type CreationSource,
@@ -191,7 +192,12 @@ function back() {
         </dl>
         <p class="confirm-note">建档后进入策划中心继续补全实体和结构，不会自动触发章节生成。</p>
       </div>
-      <el-button type="primary" size="large" :loading="creating" @click="commitCreate">
+      <el-button
+        type="primary"
+        size="large"
+        :loading="creating"
+        @click="commitCreate(factoryModeFromApproach(approach))"
+      >
         确认建档并进入策划
       </el-button>
     </section>

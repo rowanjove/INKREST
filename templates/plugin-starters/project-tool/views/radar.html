@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { margin: 0; padding: 24px; font-family: sans-serif; color: #e8e8ea; }
+    h2 { margin: 0 0 8px; font-size: 18px; }
+    p { color: #a8a8b0; line-height: 1.5; }
+    pre { background: rgba(0,0,0,.28); padding: 12px; border-radius: 8px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h2>伏笔雷达</h2>
+  <p id="status">正在读取当前作品…</p>
+  <pre id="output"></pre>
+  <script>
+    window.addEventListener('message', async function (event) {
+      var data = event.data;
+      if (!data || data.type !== 'inkrest:init') return;
+      document.getElementById('status').textContent = data.projectId
+        ? ('当前作品：' + data.projectId)
+        : '未选择作品';
+      if (!window.inkrest || !window.inkrest.callRpc) return;
+      try {
+        var info = await window.inkrest.callRpc('project.getInfo');
+        document.getElementById('output').textContent = JSON.stringify(info, null, 2);
+      } catch (err) {
+        document.getElementById('output').textContent = String(err && err.message ? err.message : err);
+      }
+    });
+  </script>
+</body>
+</html>

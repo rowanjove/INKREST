@@ -36,6 +36,52 @@ describe('tasks processTasksList', () => {
     )
   })
 
+  it('does not let a paused novel task hide a running chapter repair', async () => {
+    const store = useTasksStore()
+    listTasksMock.mockResolvedValueOnce({
+      data: [
+        {
+          task_id: 'task-running-repair',
+          chapter_id: '003',
+          status: 'running',
+          goal: 'rewrite chapter',
+          progress: { step: 'writer', status: 'running', chapter_id: '003' },
+        },
+        {
+          task_id: 'task-paused-novel',
+          chapter_id: '001',
+          status: 'paused',
+          goal: 'Novel: continue',
+        },
+      ],
+    } as any)
+
+    await store.refreshTaskList()
+
+    expect(store.isRunning).toBe(true)
+    expect(store.currentTaskId).toBe('task-running-repair')
+    expect(store.currentChapterId).toBe('003')
+  })
+
+  it('keeps the paused production task id when nothing is running', async () => {
+    const store = useTasksStore()
+    listTasksMock.mockResolvedValueOnce({
+      data: [
+        {
+          task_id: 'task-paused-novel',
+          chapter_id: '001',
+          status: 'paused',
+          goal: 'Novel: continue',
+        },
+      ],
+    } as any)
+
+    await store.refreshTaskList()
+
+    expect(store.isRunning).toBe(false)
+    expect(store.currentTaskId).toBe('task-paused-novel')
+  })
+
   it('marks pending standard chapter tasks as recoverable running work', async () => {
     const store = useTasksStore()
     listTasksMock.mockResolvedValueOnce({

@@ -1,3 +1,4 @@
+import hashlib
 import re
 import dataclasses
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,8 +18,68 @@ from novel_agent.quality.render_contract import (
     persist_render_candidate,
     validate_render_candidate,
 )
+from novel_agent.quality.punct_cleaner import clean_punctuation_and_typography
 
 logger = get_logger("generation_phase")
+
+_SCENE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_SCENE_FAILURE_RATIO = 0.5
+
+
+def sanitize_scene_id(raw: Any, *, fallback: str) -> str:
+    """Keep scene ids path-safe so model output cannot escape the chapter dir."""
+    text = str(raw or "").strip()
+    if _SCENE_ID_RE.fullmatch(text):
+        return text
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", text).strip("._-")[:64]
+    if cleaned and _SCENE_ID_RE.fullmatch(cleaned):
+        return cleaned
+    fallback_clean = re.sub(r"[^A-Za-z0-9_-]+", "_", str(fallback or "scene")).strip("._-")[:24]
+    digest = hashlib.sha1((text or fallback_clean or "scene").encode("utf-8", errors="replace")).hexdigest()[:8]
+    candidate = f"{fallback_clean or 'scene'}_{digest}"
+    return candidate[:64]
+
+
+def planned_scene_ids(plan: Mapping[str, Any] | None) -> List[str]:
+    ids: List[str] = []
+    for index, scene in enumerate((plan or {}).get("scenes") or [], start=1):
+        if not isinstance(scene, dict):
+            continue
+        ids.append(sanitize_scene_id(scene.get("scene_id"), fallback=f"scene{index}"))
+    return ids
+
+
+def prepare_scene_workspace(ctx: ChapterContext) -> None:
+    """Keep leftover scenes only when this run is a checkpoint resume."""
+    resume = (ctx.chapter_dir / "checkpoint.json").is_file()
+    planned = set(planned_scene_ids(ctx.plan))
+    ctx.scenes_dir.mkdir(parents=True, exist_ok=True)
+    for path in list(ctx.scenes_dir.glob("scene_*.txt")):
+        scene_id = path.stem[6:] if path.stem.startswith("scene_") else path.stem
+        if resume and scene_id in planned:
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            logger.warning("Failed to remove leftover scene file %s", path)
+
+
+def _safe_under(base: Path, name: str) -> Path:
+    resolved_base = Path(base).resolve()
+    path = (resolved_base / name).resolve()
+    if path != resolved_base and resolved_base not in path.parents:
+        raise ValueError(f"Refusing to write outside {resolved_base}: {name}")
+    return path
+
+
+def _raise_if_too_many_scene_failures(failed_scenes: List[Any], scene_count: int) -> None:
+    if not failed_scenes:
+        return
+    if scene_count <= 0 or len(failed_scenes) * 2 >= max(scene_count, 1):
+        ids = [str((scene or {}).get("scene_id") or "?") for scene in failed_scenes]
+        raise RuntimeError(
+            f"{len(failed_scenes)}/{scene_count} scenes failed ({', '.join(ids)}); aborting generation."
+        )
 
 
 def _read_text_safe(path: Path) -> str:
@@ -98,13 +159,9 @@ class GenerationPhase(PipelinePhase):
 
         logger.info("Step 2-5: Generating chapter %s scenes and editing", ctx.chapter_id)
         
-        # 1. 运行多线程场景生成
         self._run_scene_generation(ctx)
-        
-        # 2. 合并场景
-        final_text = self._run_merge(ctx)
-        
-        return dataclasses.replace(ctx, final_text=final_text)
+        raw_text = self._run_merge(ctx)
+        return self._complete_after_merge(ctx, raw_text)
 
     async def aexecute(self, ctx: ChapterContext) -> ChapterContext:
         """Execute the generation phase steps asynchronously: scene gen -> merge -> stitch -> style."""
@@ -112,19 +169,31 @@ class GenerationPhase(PipelinePhase):
             raise ValueError("Context plan is not initialized before generation phase.")
 
         logger.info("Step 2-5: Generating chapter %s scenes and editing (Async)", ctx.chapter_id)
-        
-        # 1. 运行异步场景生成
-        import asyncio
         await self._arun_scene_generation(ctx)
-        
-        # 2. 合并场景
-        final_text = self._run_merge(ctx)
-        
+        raw_text = self._run_merge(ctx)
+        stitched, ctx = await self._arun_stitch(ctx, raw_text)
+        style_enabled = self._generation_style_enabled()
+        final_text, ctx = await self._arun_style_edit(ctx, stitched, raw_text)
+        scene_count = len((ctx.plan or {}).get("scenes") or [])
+        final_text, ctx = await self._arun_boundary_recheck(
+            ctx, final_text, style_ran=style_enabled, scene_count=scene_count
+        )
+        return dataclasses.replace(ctx, final_text=final_text)
+
+    def _complete_after_merge(self, ctx: ChapterContext, raw_text: str) -> ChapterContext:
+        stitched, ctx = self._run_stitch(ctx, raw_text)
+        style_enabled = self._generation_style_enabled()
+        final_text, ctx = self._run_style_edit(ctx, stitched, raw_text)
+        scene_count = len((ctx.plan or {}).get("scenes") or [])
+        final_text, ctx = self._run_boundary_recheck(
+            ctx, final_text, style_ran=style_enabled, scene_count=scene_count
+        )
         return dataclasses.replace(ctx, final_text=final_text)
 
     async def _arun_scene_generation(self, ctx: ChapterContext) -> None:
         """Run parallel scene generation using asyncio.gather."""
         import asyncio
+        prepare_scene_workspace(ctx)
         scenes = ctx.plan.get("scenes", [])
         scene_count = len(scenes)
         logger.info("Step 2: Generating %d scenes (Async)", scene_count)
@@ -133,7 +202,12 @@ class GenerationPhase(PipelinePhase):
         failed_scenes = []
         
         async def _safe_generate(scene):
-            scene_id = scene.get("scene_id")
+            scene_id = sanitize_scene_id(scene.get("scene_id"), fallback="unknown")
+            scene_file = ctx.scenes_dir / f"scene_{scene_id}.txt"
+            if scene_file.exists() and scene_file.stat().st_size > 100:
+                logger.info("Scene %s already generated (%d bytes), reusing.", scene_id, scene_file.stat().st_size)
+                emit_progress("writer", "done", {"scene_id": scene_id, "reused": True}, ctx.chapter_id)
+                return
             try:
                 await self._agenerate_scene(
                     ctx.chapter_goal,
@@ -152,9 +226,38 @@ class GenerationPhase(PipelinePhase):
         await asyncio.gather(*tasks)
 
         if failed_scenes:
-            logger.warning("%d scenes failed generation", len(failed_scenes))
-            if len(failed_scenes) == scene_count:
-                raise RuntimeError(f"All {scene_count} scenes failed to generate. Cannot proceed.")
+            logger.warning(
+                "%d/%d scenes failed in parallel batch. Starting serial fallback retry...",
+                len(failed_scenes), scene_count,
+            )
+            still_failed = []
+            for scene in failed_scenes:
+                scene_id = sanitize_scene_id(scene.get("scene_id"), fallback="unknown")
+                scene_file = ctx.scenes_dir / f"scene_{scene_id}.txt"
+                if scene_file.exists() and scene_file.stat().st_size > 100:
+                    logger.info("Scene %s exists on disk (%d bytes), skipping retry.", scene_id, scene_file.stat().st_size)
+                    continue
+                try:
+                    logger.info("Serial retry for scene %s...", scene_id)
+                    emit_progress("writer", "running", {"scene_id": scene_id, "fallback_serial": True}, ctx.chapter_id)
+                    await self._agenerate_scene(
+                        ctx.chapter_goal,
+                        ctx.chapter_dir,
+                        ctx.scenes_dir,
+                        scene,
+                        plan=ctx.plan,
+                    )
+                    logger.info("Serial retry for scene %s SUCCEEDED", scene_id)
+                    emit_progress("writer", "done", {"scene_id": scene_id, "fallback_serial": True}, ctx.chapter_id)
+                except Exception as retry_exc:
+                    logger.error("Serial retry for scene %s failed: %s", scene_id, retry_exc)
+                    still_failed.append(scene)
+                    emit_progress("writer", "error", {"scene_id": scene_id, "error": str(retry_exc)}, ctx.chapter_id)
+            failed_scenes = still_failed
+
+        if failed_scenes:
+            logger.warning("%d scenes failed generation after serial fallback retry", len(failed_scenes))
+            _raise_if_too_many_scene_failures(failed_scenes, scene_count)
 
     async def _agenerate_scene(
         self,
@@ -166,11 +269,17 @@ class GenerationPhase(PipelinePhase):
         plan: Optional[Mapping[str, Any]] = None,
     ) -> None:
         """Generate a single scene asynchronously, adjust length, and write to file."""
-        scene_id = scene.get("scene_id", "unknown")
+        import asyncio
+
+        scene_id = sanitize_scene_id(scene.get("scene_id"), fallback="unknown")
         logger.debug("Generating scene %s (Async)", scene_id)
-        
-        context = self.orchestrator.context_builder.build(chapter_goal, scene, plan=plan)
-        (chapter_dir / f"scene_{scene_id}_context.md").write_text(context, encoding="utf-8")
+
+        def _build_context() -> str:
+            text = self.orchestrator.context_builder.build(chapter_goal, scene, plan=plan)
+            _safe_under(chapter_dir, f"scene_{scene_id}_context.md").write_text(text, encoding="utf-8")
+            return text
+
+        context = await asyncio.to_thread(_build_context)
         
         max_retries = getattr(self.orchestrator.config, "continuity_max_retries", 3)
         draft = await self.orchestrator.writer.awrite_scene(context)
@@ -209,8 +318,7 @@ class GenerationPhase(PipelinePhase):
         else:
             adjusted = self.orchestrator.length_fix.adjust(draft, target_range)
         
-        scene_path = scenes_dir / f"scene_{scene_id}.txt"
-        scene_path.write_text(adjusted, encoding="utf-8")
+        _safe_under(scenes_dir, f"scene_{scene_id}.txt").write_text(adjusted, encoding="utf-8")
 
     async def _arun_stitch(self, ctx: ChapterContext, raw_text: str) -> Tuple[str, ChapterContext]:
         """Step 4: Stitch edit merged scenes asynchronously."""
@@ -396,48 +504,90 @@ class GenerationPhase(PipelinePhase):
 
     def _run_scene_generation(self, ctx: ChapterContext) -> None:
         """Run parallel scene generation using ThreadPoolExecutor."""
+        prepare_scene_workspace(ctx)
         scenes = ctx.plan.get("scenes", [])
         scene_count = len(scenes)
         logger.info("Step 2: Generating %d scenes", scene_count)
         emit_progress("writer", "running", {"scene_count": scene_count}, ctx.chapter_id)
         
-        max_workers = max(1, min(scene_count, self.config.max_workers))
+        # Filter scenes that already exist with valid text
+        pending_scenes = []
+        for scene in scenes:
+            scene_id = sanitize_scene_id(scene.get("scene_id"), fallback="unknown")
+            scene_file = ctx.scenes_dir / f"scene_{scene_id}.txt"
+            if scene_file.exists() and scene_file.stat().st_size > 100:
+                logger.info("Scene %s already generated (%d bytes), reusing.", scene_id, scene_file.stat().st_size)
+                emit_progress("writer", "done", {"scene_id": scene_id, "reused": True}, ctx.chapter_id)
+            else:
+                pending_scenes.append(scene)
+
+        max_workers = max(1, min(len(pending_scenes) or 1, self.config.max_workers))
         failed_scenes = []
         
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(
-                    self._generate_scene,
-                    ctx.chapter_goal,
-                    ctx.chapter_dir,
-                    ctx.scenes_dir,
-                    scene,
-                    plan=ctx.plan,
-                ): scene for scene in scenes
-            }
-            try:
-                for future in as_completed(futures, timeout=600):
-                    scene = futures[future]
-                    try:
-                        future.result()
-                        emit_progress("writer", "done", {"scene_id": scene.get("scene_id")}, ctx.chapter_id)
-                    except Exception as exc:
-                        logger.error("Scene %s generation failed: %s", scene.get("scene_id"), exc)
-                        failed_scenes.append(scene)
-                        emit_progress("writer", "error", {"scene_id": scene.get("scene_id"), "error": str(exc)}, ctx.chapter_id)
-            except TimeoutError:
-                logger.error("Scene generation timed out for chapter %s", ctx.chapter_id)
-                for f in futures:
-                    f.cancel()
-                done_ids = {id(f) for f in futures if f.done()}
-                for f, scene in futures.items():
-                    if id(f) not in done_ids:
-                        failed_scenes.append(scene)
+        if pending_scenes:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        self._generate_scene,
+                        ctx.chapter_goal,
+                        ctx.chapter_dir,
+                        ctx.scenes_dir,
+                        scene,
+                        plan=ctx.plan,
+                    ): scene for scene in pending_scenes
+                }
+                try:
+                    for future in as_completed(futures, timeout=600):
+                        scene = futures[future]
+                        try:
+                            future.result()
+                            emit_progress("writer", "done", {"scene_id": scene.get("scene_id")}, ctx.chapter_id)
+                        except Exception as exc:
+                            logger.error("Scene %s generation failed: %s", scene.get("scene_id"), exc)
+                            failed_scenes.append(scene)
+                            emit_progress("writer", "error", {"scene_id": scene.get("scene_id"), "error": str(exc)}, ctx.chapter_id)
+                except TimeoutError:
+                    logger.error("Scene generation timed out for chapter %s", ctx.chapter_id)
+                    for f in futures:
+                        f.cancel()
+                    done_ids = {id(f) for f in futures if f.done()}
+                    for f, scene in futures.items():
+                        if id(f) not in done_ids:
+                            failed_scenes.append(scene)
 
         if failed_scenes:
-            logger.warning("%d scenes failed generation", len(failed_scenes))
-            if len(failed_scenes) == scene_count:
-                raise RuntimeError(f"All {scene_count} scenes failed to generate. Cannot proceed.")
+            logger.warning(
+                "%d/%d scenes failed in thread pool. Starting serial fallback retry...",
+                len(failed_scenes), scene_count,
+            )
+            still_failed = []
+            for scene in failed_scenes:
+                scene_id = sanitize_scene_id(scene.get("scene_id"), fallback="unknown")
+                scene_file = ctx.scenes_dir / f"scene_{scene_id}.txt"
+                if scene_file.exists() and scene_file.stat().st_size > 100:
+                    logger.info("Scene %s exists on disk (%d bytes), skipping retry.", scene_id, scene_file.stat().st_size)
+                    continue
+                try:
+                    logger.info("Serial retry for scene %s...", scene_id)
+                    emit_progress("writer", "running", {"scene_id": scene_id, "fallback_serial": True}, ctx.chapter_id)
+                    self._generate_scene(
+                        ctx.chapter_goal,
+                        ctx.chapter_dir,
+                        ctx.scenes_dir,
+                        scene,
+                        plan=ctx.plan,
+                    )
+                    logger.info("Serial retry for scene %s SUCCEEDED", scene_id)
+                    emit_progress("writer", "done", {"scene_id": scene_id, "fallback_serial": True}, ctx.chapter_id)
+                except Exception as retry_exc:
+                    logger.error("Serial retry for scene %s failed: %s", scene_id, retry_exc)
+                    still_failed.append(scene)
+                    emit_progress("writer", "error", {"scene_id": scene_id, "error": str(retry_exc)}, ctx.chapter_id)
+            failed_scenes = still_failed
+
+        if failed_scenes:
+            logger.warning("%d scenes failed generation after serial fallback retry", len(failed_scenes))
+            _raise_if_too_many_scene_failures(failed_scenes, scene_count)
 
     def _generate_scene(
         self,
@@ -449,11 +599,11 @@ class GenerationPhase(PipelinePhase):
         plan: Optional[Mapping[str, Any]] = None,
     ) -> None:
         """Generate a single scene, adjust length, and write to file."""
-        scene_id = scene.get("scene_id", "unknown")
+        scene_id = sanitize_scene_id(scene.get("scene_id"), fallback="unknown")
         logger.debug("Generating scene %s", scene_id)
         
         context = self.orchestrator.context_builder.build(chapter_goal, scene, plan=plan)
-        (chapter_dir / f"scene_{scene_id}_context.md").write_text(context, encoding="utf-8")
+        _safe_under(chapter_dir, f"scene_{scene_id}_context.md").write_text(context, encoding="utf-8")
         
         max_retries = getattr(self.orchestrator.config, "continuity_max_retries", 3)
         draft = self.orchestrator.writer.write_scene(context)
@@ -484,18 +634,17 @@ class GenerationPhase(PipelinePhase):
 
         target_range = scene.get("target_chars", [400, 800])
         adjusted = self.orchestrator.length_fix.adjust(draft, target_range)
-        
-        scene_path = scenes_dir / f"scene_{scene_id}.txt"
-        scene_path.write_text(adjusted, encoding="utf-8")
+        _safe_under(scenes_dir, f"scene_{scene_id}.txt").write_text(adjusted, encoding="utf-8")
 
     def _run_merge(self, ctx: ChapterContext) -> str:
         """Step 3: Merge scenes into raw chapter text."""
         logger.info("Step 3: Merging scenes")
         emit_progress("merge", "running", chapter_id=ctx.chapter_id)
         try:
-            raw_chapter = merge_scene_texts(ctx.scenes_dir)
+            raw_chapter = merge_scene_texts(ctx.scenes_dir, planned_scene_ids(ctx.plan))
             if not raw_chapter or not raw_chapter.strip():
                 raise RuntimeError("Merged chapter is empty. No valid scene content found.")
+            raw_chapter = clean_punctuation_and_typography(raw_chapter)
             (ctx.chapter_dir / "chapter_raw.txt").write_text(raw_chapter, encoding="utf-8")
             emit_progress("merge", "done", {"chars": len(raw_chapter)}, ctx.chapter_id)
             return raw_chapter

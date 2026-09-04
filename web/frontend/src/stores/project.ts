@@ -104,6 +104,7 @@ export const useProjectStore = defineStore('project', () => {
       preset_theme?: string
       preset_mechanisms?: string[]
       preset_cool_points?: string[]
+      factory_mode?: string
     },
   ): Promise<Project> {
     loading.value = true
@@ -123,9 +124,20 @@ export const useProjectStore = defineStore('project', () => {
 
   async function switchProject(id: string) {
     loading.value = true
+    const previous = currentProject.value
     try {
       await apiSwitch(id)
-      await fetchCurrent()
+      await fetchCurrent(true)
+    } catch (error) {
+      currentProject.value = previous
+      if (previous?.id && previous.id !== id) {
+        try {
+          await apiSwitch(previous.id)
+        } catch {
+          /* keep the local rollback even if the server revert fails */
+        }
+      }
+      throw error
     } finally {
       loading.value = false
     }

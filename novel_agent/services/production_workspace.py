@@ -32,6 +32,7 @@ TASK_TYPE_LABELS = {
     TaskType.CHAPTER_PLAN: "章节规划",
     TaskType.NOVEL_RUN: "全书生产",
     TaskType.ARC_RUN: "分卷生产",
+    TaskType.ARC_QUEUE_SYNC: "同步卷队列",
     TaskType.NOVEL_CONTINUE: "继续写书",
     TaskType.NOVEL_AUTOPILOT: "自动连写",
     TaskType.EMBEDDING_SETUP: "记忆索引",
@@ -73,6 +74,32 @@ _AUDIT_STEPS = {
     "quality_guard",
     "approval",
 }
+
+
+def _serialize_utc_timestamp(value: Any) -> str | None:
+    """Serialize task timestamps with an explicit UTC offset.
+
+    SQLite's ``current_timestamp`` is UTC but returns a naive string.  Leaving
+    that value unqualified makes browser clients interpret it as local time,
+    shifting the production timeline by the machine's UTC offset.  Treat
+    naive values from the database as UTC and emit an unambiguous ISO-8601
+    value at the API boundary.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value).strip()
+        if not text:
+            return text
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00").replace(" ", "T", 1))
+        except ValueError:
+            return text
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).isoformat()
 
 
 def _manuscript_conflict_warnings(result: dict[str, Any]) -> list[str]:
@@ -156,11 +183,11 @@ def _task_view(task: TaskRecord) -> dict[str, Any]:
         "failure_message": failure_message or None,
         "warnings": _manuscript_conflict_warnings(result),
         "recovery_action": recovery_action,
-        "heartbeat_at": task.heartbeat_at,
-        "lease_expires_at": task.lease_expires_at,
-        "created_at": task.created_at,
-        "started_at": task.started_at,
-        "finished_at": task.finished_at,
+        "heartbeat_at": _serialize_utc_timestamp(task.heartbeat_at),
+        "lease_expires_at": _serialize_utc_timestamp(task.lease_expires_at),
+        "created_at": _serialize_utc_timestamp(task.created_at),
+        "started_at": _serialize_utc_timestamp(task.started_at),
+        "finished_at": _serialize_utc_timestamp(task.finished_at),
     }
 
 
@@ -169,6 +196,7 @@ def _event_view(event: dict[str, Any]) -> dict[str, Any]:
     source = str(event.get("from_status") or "")
     return {
         **event,
+        "created_at": _serialize_utc_timestamp(event.get("created_at")),
         "from_status_label": TASK_STATUS_LABELS.get(
             TaskStatus(source), source
         )

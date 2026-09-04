@@ -7,6 +7,7 @@ from novel_agent.state.clear_state import NARRATIVE_STATE_TABLES, OPERATIONAL_TA
 from novel_agent.state.sqlite_schema import (
     SchemaMixin,
     safe_connection,
+    safe_write_connection,
     db_write_lock,
     SQLiteWriteQueue,
 )
@@ -43,6 +44,11 @@ class SQLiteStateStore(
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         initial_state, initial_version = inspect_schema_state(self.db_path)
+        if initial_state is SchemaState.LEGACY:
+            self.schema_state = initial_state
+            self.schema_version = initial_version
+            self.task_repository = TaskRepository(self.db_path, self.schema_state)
+            return
         self._init_schema()
         if initial_state is SchemaState.FRESH:
             write_schema_version(self.db_path)
@@ -62,7 +68,7 @@ class SQLiteStateStore(
         if include_operational:
             tables.extend(OPERATIONAL_TABLES)
         cleared: Dict[str, int] = {}
-        with safe_connection(self.db_path) as conn:
+        with safe_write_connection(self.db_path) as conn:
             existing = {
                 row[0]
                 for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")

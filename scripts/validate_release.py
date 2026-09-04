@@ -28,7 +28,10 @@ def check_version_alignment() -> list[str]:
             f"package.json version {package.get('version')!r} != VERSION {version!r}; run python scripts/sync_version.py",
         )
     app_text = (ROOT / "web" / "app.py").read_text(encoding="utf-8")
-    match = re.search(r'FastAPI\(title="Novel Agent API", version="([^"]+)"', app_text)
+    match = re.search(
+        r'FastAPI\(\s*title="Novel Agent API",\s*version="([^"]+)"',
+        app_text,
+    )
     if not match or match.group(1) != version:
         issues.append(
             f"web/app.py FastAPI version {match.group(1) if match else None!r} != VERSION {version!r}",

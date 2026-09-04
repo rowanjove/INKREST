@@ -58,11 +58,17 @@ def _project_details(
         or meta.get("name")
         or project_id
     )
+    from web.genre_labels import normalize_genre_label
+
+    genre = normalize_genre_label(
+        root.parent.parent,
+        meta.get("genre") or outline.get("genre_positioning") or "",
+    )
     return {
         "id": project_id,
         "name": title,
         "description": str(info.get("description") or meta.get("description") or ""),
-        "genre": str(meta.get("genre") or outline.get("genre_positioning") or ""),
+        "genre": genre,
         "platform": str(meta.get("platform") or ""),
         "scale": str(
             outline_scale.get("scale")
@@ -243,13 +249,60 @@ def _next_actions(
                 "enabled": True,
             }
         )
-    if blocking_issues and not {"config_invalid", "legacy_schema"}.intersection(codes):
+    # 只有当真正存在章节审校阻断/待修复章节时，才引导至审校修复页
+    has_pipeline_alerts = any(
+        issue.get("source") == "pipeline" or bool(issue.get("chapter_id"))
+        for issue in blocking_issues
+    )
+    if has_pipeline_alerts:
         actions.append(
             {
                 "id": "resolve_blocking_issues",
-                "label": "处理阻断项",
+                "label": "处理审校阻断",
                 "kind": "navigate",
                 "target": "/production?tab=reviews",
+                "enabled": True,
+            }
+        )
+    if "engine" in codes:
+        actions.append(
+            {
+                "id": "configure_model",
+                "label": "配置日常模型",
+                "kind": "navigate",
+                "target": "/config",
+                "enabled": True,
+            }
+        )
+    if "vector" in codes:
+        actions.append(
+            {
+                "id": "configure_vector",
+                "label": "配置向量服务",
+                "kind": "navigate",
+                "target": "/config",
+                "enabled": True,
+            }
+        )
+    if codes.intersection({"outline", "title", "quota", "outline_corrupt", "arc_queue"}) and not any(
+        a["id"] in ("create_outline", "complete_outline") for a in actions
+    ):
+        actions.append(
+            {
+                "id": "complete_outline",
+                "label": "完善故事大纲",
+                "kind": "navigate",
+                "target": "/outline",
+                "enabled": True,
+            }
+        )
+    if "assets" in codes:
+        actions.append(
+            {
+                "id": "complete_assets",
+                "label": "补齐写作设定",
+                "kind": "navigate",
+                "target": "/state",
                 "enabled": True,
             }
         )

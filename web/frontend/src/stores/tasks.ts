@@ -33,6 +33,7 @@ export interface ProgressEntry {
 
 export interface TaskSummary {
   task_id: string
+  task_type?: string
   chapter_id?: string
   status: 'pending' | 'claimed' | 'running' | 'paused' | 'succeeded' | 'failed' | 'cancelled'
   goal?: string
@@ -64,6 +65,7 @@ export interface TaskSummary {
   user_action?: string
   resumable_from?: string
   status_reason?: string
+  control_action?: 'pause_requested' | 'resume_requested' | 'cancel_requested' | ''
   last_heartbeat?: string
 }
 
@@ -406,6 +408,7 @@ export const useTasksStore = defineStore('tasks', () => {
   function processTasksList(data: TaskSummary[]) {
       taskList.value = data.slice()
       let runningFound = false
+      let pausedTaskId = ''
       for (const task of data) {
         if (task.status === 'running' || task.status === 'claimed') {
           runningFound = true
@@ -430,6 +433,16 @@ export const useTasksStore = defineStore('tasks', () => {
             currentChapterId.value = task.chapter_id
           }
           isRunning.value = true
+        } else if (task.status === 'paused' && !runningFound) {
+          pausedTaskId = task.task_id
+          currentTaskId.value = task.task_id
+          if (task.chapter_id) currentChapterId.value = task.chapter_id
+          progress.value.forEach((entry) => {
+            if (entry.chapter_id && entry.chapter_id === task.chapter_id && entry.status === 'running') {
+              entry.status = 'warning'
+            }
+          })
+          isRunning.value = false
         } else if (task.status === 'succeeded') {
           const conflictHint = manuscriptConflictHint(task.result)
           if (conflictHint && !notifiedManuscriptConflicts.has(task.task_id)) {
@@ -455,7 +468,20 @@ export const useTasksStore = defineStore('tasks', () => {
               markComplete(task.chapter_id)
             }
           }
-        } else if (task.status === 'failed' || task.status === 'cancelled') {
+        } else if (task.status === 'cancelled') {
+          if (task.task_id === currentTaskId.value) {
+            progress.value = progress.value.filter((entry) => entry.status !== 'running')
+            isRunning.value = false
+            currentTaskId.value = ''
+            addLog({
+              timestamp: Date.now(),
+              step: 'abort',
+              message: '任务已取消，已生成内容予以保留',
+              level: 'warn',
+              chapter_id: task.chapter_id,
+            })
+          }
+        } else if (task.status === 'failed') {
           if (task.task_id === currentTaskId.value) {
             if (task.chapter_id) {
               progress.value.forEach(p => {
@@ -479,7 +505,7 @@ export const useTasksStore = defineStore('tasks', () => {
         if (isRunning.value) {
           isRunning.value = false
         }
-        currentTaskId.value = ''
+        if (!pausedTaskId) currentTaskId.value = ''
       }
   }
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
@@ -64,6 +65,9 @@ class ChapterPostProcessor:
         overdue = self._query_overdue_debts(chapter_id)
         if overdue:
             foreshadow = f"{overdue}\n{foreshadow}" if foreshadow else overdue
+        radar = self._query_chekhov_radar(chapter_id)
+        if radar:
+            foreshadow = f"{radar}\n{foreshadow}" if foreshadow else radar
         return PlannerHints(
             duplicate_warnings=duplicate,
             foreshadow_recommendations=foreshadow,
@@ -255,6 +259,44 @@ class ChapterPostProcessor:
         except Exception as e:
             logger.warning("Failed to query open foreshadow recommendations: %s", e)
         return foreshadow_recommendations
+
+    def _query_chekhov_radar(self, chapter_id: str) -> str:
+        try:
+            from novel_agent.services.chekhov_radar import (
+                generate_radar_report,
+                scan_threads_dormancy,
+            )
+
+            digits = re.findall(r"\d+", str(chapter_id or ""))
+            current = int(digits[0]) if digits else 1
+            threads = []
+            for item in self._o.store.list_foreshadows() or []:
+                if not isinstance(item, dict):
+                    continue
+                threads.append(
+                    {
+                        "id": item.get("id"),
+                        "title": item.get("title") or item.get("name"),
+                        "status": item.get("status") or "open",
+                        "last_chapter": item.get("last_referenced_chapter")
+                        or item.get("introduced_chapter")
+                        or item.get("created_chapter"),
+                    }
+                )
+            if not threads:
+                return ""
+            report = generate_radar_report(scan_threads_dormancy(threads, current))
+            lines = []
+            for rec in report.get("recommendations") or []:
+                lines.append(f"- {rec}")
+            for item in report.get("dangling_threads") or []:
+                title = item.get("title") or item.get("thread_id")
+                lines.append(f"- 悬空伏笔：{title}")
+            if not lines:
+                return ""
+            return "【契诃夫雷达】以下线索休眠过久，本章规划应推进或回收：\n" + "\n".join(lines)
+        except Exception:
+            return ""
 
     def _query_overdue_debts(self, chapter_id: str) -> str:
         recommend_lines = []
@@ -452,6 +494,12 @@ class ChapterPostProcessor:
             / "vector_index.json"
         )
         try:
+            delete_fn = getattr(self._o.vector_store, "delete_chapter_vectors", None)
+            if callable(delete_fn):
+                try:
+                    delete_fn(chapter_id)
+                except Exception as exc:
+                    logger.warning("Vector chapter replace failed for %s: %s", chapter_id, exc)
             db_res = self._o.vector_store.upsert(chunks)
             self._o._write_json(report_path, {"status": "indexed", "chunk_count": len(chunks)})
             return db_res

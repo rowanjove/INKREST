@@ -62,6 +62,7 @@ const emitComposition = () => {
   emit('update:modelValue', {
     channel: channel.value,
     theme: theme.value,
+    theme_label: allThemes.value.find((item) => item.id === theme.value)?.name || theme.value,
     mechanisms: mechanisms.value,
     cool_points: coolPoints.value,
   })

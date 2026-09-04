@@ -181,9 +181,60 @@ class SecurityRegressionTests(unittest.TestCase):
                 _prepare_remote_access("0.0.0.0", False)
 
     def test_remote_binding_generates_access_token(self):
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"NOVEL_AGENT_ROOT": str(self.base_dir)}, clear=True):
             _prepare_remote_access("0.0.0.0", True)
             self.assertTrue(os.environ["NOVEL_AGENT_ACCESS_TOKEN"])
+
+    def test_docs_and_openapi_require_access_token(self):
+        client = TestClient(web_app)
+        token = "docs-token-value-here!!!!"
+        with patch.dict(os.environ, {"NOVEL_AGENT_ACCESS_TOKEN": token}):
+            denied_docs = client.get("/docs")
+            denied_redoc = client.get("/redoc/")
+            denied_openapi = client.get("/openapi.json")
+            allowed_docs = client.get("/docs", headers={"X-Novel-Agent-Token": token})
+            allowed_openapi = client.get("/openapi.json", headers={"X-Novel-Agent-Token": token})
+        self.assertEqual(denied_docs.status_code, 401)
+        self.assertEqual(denied_redoc.status_code, 401)
+        self.assertEqual(denied_openapi.status_code, 401)
+        self.assertIn(allowed_docs.status_code, {200, 404})
+        self.assertIn(allowed_openapi.status_code, {200, 404})
+
+    def test_security_headers_split_api_and_spa_csp(self):
+        client = TestClient(web_app)
+        api = client.get("/api/health")
+        spa = client.get("/")
+        self.assertEqual(api.headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(api.headers.get("Referrer-Policy"), "no-referrer")
+        self.assertIn("default-src 'none'", api.headers.get("Content-Security-Policy", ""))
+        spa_csp = spa.headers.get("Content-Security-Policy", "")
+        self.assertIn("default-src 'self'", spa_csp)
+        self.assertNotIn("default-src 'none'", spa_csp)
+
+    def test_remote_token_is_persisted_not_printed(self):
+        buf = io.StringIO()
+        with patch.dict(os.environ, {"NOVEL_AGENT_ROOT": str(self.base_dir)}, clear=True):
+            with patch("sys.stdout", buf):
+                _prepare_remote_access("0.0.0.0", True)
+            token = os.environ["NOVEL_AGENT_ACCESS_TOKEN"]
+        self.assertTrue(token)
+        self.assertNotIn(token, buf.getvalue())
+        stored = (self.base_dir / "data" / ".local_access_token").read_text(encoding="utf-8").strip()
+        self.assertEqual(stored, token)
+        self.assertIn("will not be printed", buf.getvalue())
+
+    def test_remote_docs_disabled_without_debug(self):
+        from web.app import _api_docs_enabled
+
+        with patch.dict(os.environ, {"NOVEL_AGENT_ALLOW_REMOTE": "1"}, clear=False):
+            os.environ.pop("NOVEL_AGENT_DEBUG", None)
+            self.assertFalse(_api_docs_enabled())
+        with patch.dict(
+            os.environ,
+            {"NOVEL_AGENT_ALLOW_REMOTE": "1", "NOVEL_AGENT_DEBUG": "1"},
+            clear=False,
+        ):
+            self.assertTrue(_api_docs_enabled())
 
     def test_loopback_local_setup_returns_token(self):
         from web.security import (
@@ -212,6 +263,14 @@ class SecurityRegressionTests(unittest.TestCase):
         self.assertEqual(rejected.status_code, 403)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json().get("token"))
+        rebound = client.get(
+            "/api/auth/local-setup",
+            headers={
+                LOCAL_SETUP_HEADER: LOCAL_SETUP_HEADER_VALUE,
+                "host": "evil.example:8000",
+            },
+        )
+        self.assertEqual(rebound.status_code, 403)
 
     def test_clear_database_requires_token_when_configured(self):
         store = SQLiteStateStore(self.base_dir)
@@ -261,6 +320,14 @@ class SecurityRegressionTests(unittest.TestCase):
                 validate_outbound_model_base_url("http://localhost:1234/v1"),
                 "http://localhost:1234/v1",
             )
+
+    def test_dev_model_host_does_not_treat_test_com_as_reserved(self):
+        from web.security import is_dev_model_host
+
+        self.assertTrue(is_dev_model_host("api.test"))
+        self.assertTrue(is_dev_model_host("image.localhost"))
+        self.assertFalse(is_dev_model_host("api.test.com"))
+        self.assertFalse(is_dev_model_host("test.com"))
 
     def test_model_endpoint_rejects_private_lan_endpoint(self):
         from web.security import validate_outbound_model_base_url

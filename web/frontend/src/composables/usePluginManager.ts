@@ -17,8 +17,10 @@ import {
   pluginTypes,
   type PluginInfo,
 } from '../utils/pluginManagerConfig'
+import { usePluginNavigationStore } from '../stores/pluginNavigation'
 
 export function usePluginManager() {
+  const pluginNav = usePluginNavigationStore()
   const loading = ref(false)
   const pluginsList = ref<PluginInfo[]>([])
   const untrustedPlugins = ref<string[]>([])
@@ -40,6 +42,7 @@ export function usePluginManager() {
   const trustDialogVisible = ref(false)
   const trustTarget = ref<PluginInfo | null>(null)
   const trustAcknowledged = ref(false)
+  const localCodeAcknowledged = ref(false)
   const trustLoading = ref(false)
 
   const fetchPlugins = async () => {
@@ -66,18 +69,22 @@ export function usePluginManager() {
     }
     trustTarget.value = plugin
     trustAcknowledged.value = false
+    localCodeAcknowledged.value = false
     trustDialogVisible.value = true
   }
 
   const confirmTrust = async () => {
     const plugin = trustTarget.value
     if (!plugin || !trustAcknowledged.value) return
+    const needsLocalCode = (plugin.effective_capabilities || []).includes('local_code')
+    if (needsLocalCode && !localCodeAcknowledged.value) return
     trustLoading.value = true
     try {
       await trustPlugin(
         plugin.name,
         plugin.digest,
         plugin.effective_capabilities,
+        needsLocalCode,
       )
       trustDialogVisible.value = false
       ElMessage.success(`${plugin.display_name} 已建立信任；需要时可单独启用。`)
@@ -97,6 +104,7 @@ export function usePluginManager() {
       const res = await reloadPlugins()
       ElMessage.success(`重新扫描成功，共加载 ${res.data?.plugins_loaded || 0} 个插件`)
       await fetchPlugins()
+      await pluginNav.fetchNavigation()
     } catch (error: any) {
       ElMessage.error('扫描插件失败: ' + (error.response?.data?.detail || error.message))
     } finally {
@@ -115,6 +123,7 @@ export function usePluginManager() {
       plugin.enabled = res.data.enabled
       ElMessage.success(`${plugin.display_name} 已${plugin.enabled ? '启用' : '禁用'}`)
       await fetchPlugins()
+      await pluginNav.fetchNavigation()
     } catch (error: any) {
       const data = error.response?.data
       if (data?.code === 'plugin_trust_required') {
@@ -166,6 +175,7 @@ export function usePluginManager() {
       installDialogVisible.value = false
       installFile.value = null
       await fetchPlugins()
+      await pluginNav.fetchNavigation()
     } catch (error: any) {
       ElMessage.error('安装失败: ' + (error.response?.data?.detail || error.message))
     } finally {
@@ -183,6 +193,7 @@ export function usePluginManager() {
       await deletePlugin(plugin.name)
       ElMessage.success(`${plugin.display_name} 已删除`)
       await fetchPlugins()
+      await pluginNav.fetchNavigation()
     } catch (error: any) {
       if (!isMessageBoxDismissal(error)) {
         ElMessage.error('删除失败: ' + (error.response?.data?.detail || error.message))
@@ -285,6 +296,7 @@ export function usePluginManager() {
     trustDialogVisible,
     trustTarget,
     trustAcknowledged,
+    localCodeAcknowledged,
     trustLoading,
     filteredPlugins,
     totalCount,

@@ -26,6 +26,7 @@ class TaskType(str, Enum):
     CHAPTER_PLAN = "chapter_plan"
     NOVEL_RUN = "novel_run"
     ARC_RUN = "arc_run"
+    ARC_QUEUE_SYNC = "arc_queue_sync"
     NOVEL_CONTINUE = "novel_continue"
     NOVEL_AUTOPILOT = "novel_autopilot"
     EMBEDDING_SETUP = "embedding_setup"
@@ -37,14 +38,43 @@ class TaskTransitionError(ValueError):
     """Raised when a task attempts an invalid state change."""
 
 
+SUCCESSFUL_EMPTY_STOP_REASONS = frozenset(
+    {
+        "book_complete",
+        "novel_complete",
+        "arc_complete",
+        "target_reached",
+        "queue_empty",
+        "max_chapters",
+        "chapter_cap",
+        "idle",
+        "completed",
+        "finished",
+    }
+)
+
+
+def is_successful_empty_stop(reason: str) -> bool:
+    """True when zero chapters still means the batch ended on purpose."""
+    token = str(reason or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not token:
+        return False
+    if "incomplete" in token or "unfinished" in token or "not_complete" in token:
+        return False
+    return token in SUCCESSFUL_EMPTY_STOP_REASONS
+
+
 _TERMINAL_STATUSES = frozenset({TaskStatus.SUCCEEDED, TaskStatus.CANCELLED})
 _ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
-    TaskStatus.PENDING: frozenset({TaskStatus.CLAIMED, TaskStatus.CANCELLED}),
+    TaskStatus.PENDING: frozenset(
+        {TaskStatus.CLAIMED, TaskStatus.PAUSED, TaskStatus.CANCELLED}
+    ),
     TaskStatus.CLAIMED: frozenset(
         {
             TaskStatus.PENDING,
             TaskStatus.RUNNING,
             TaskStatus.FAILED,
+            TaskStatus.PAUSED,
             TaskStatus.CANCELLED,
         }
     ),
@@ -121,9 +151,44 @@ class TaskRecord(BaseModel):
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    parent_task_id: str | None = None
+    active_child_task_id: str | None = None
+    checkpoint_kind: str | None = None
 
     @model_validator(mode="after")
     def validate_attempt_budget(self) -> "TaskRecord":
         if self.attempt > self.max_attempts:
             raise ValueError("attempt cannot exceed max_attempts")
         return self
+
+
+class ControlAction(str, Enum):
+    NONE = ""
+    PAUSE_REQUESTED = "pause_requested"
+    RESUME_REQUESTED = "resume_requested"
+    CANCEL_REQUESTED = "cancel_requested"
+
+
+class BatchOutcome(BaseModel):
+    """Structured outcome for batch chapter runs and novel continue runs."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: TaskStatus
+    completed_chapters: list[str] = Field(default_factory=list)
+    failed_chapter: str | None = None
+    reason: str = ""
+    resumable_from: str = ""
+    child_task_ids: list[str] = Field(default_factory=list)
+
+    @property
+    def is_success(self) -> bool:
+        return self.status is TaskStatus.SUCCEEDED
+
+    @property
+    def is_paused(self) -> bool:
+        return self.status is TaskStatus.PAUSED
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self.status is TaskStatus.CANCELLED

@@ -3,6 +3,7 @@ import { usePetStore } from '../stores/pet'
 import { abortTask } from '../api'
 import { SHANSHAN_SUGGESTED_QUESTIONS } from '../constants/shanshanCopy'
 import { renderPetMarkdown } from '../utils/petMarkdown'
+import { sanitizePetAction } from '../utils/assistantActions'
 import { resolveFactoryIntent } from './useFactoryActions'
 
 export type PetBubbleTab = 'status' | 'chat'
@@ -103,18 +104,18 @@ export function usePetBubbleView() {
   }
 
   async function handleActionClick(action: PetAction) {
-    if (action.type === 'navigate') {
-      navigate((action.payload?.route as string) || '/')
+    const safe = sanitizePetAction(action)
+    if (!safe) return
+    if (safe.type === 'navigate') {
+      navigate(String(safe.payload?.route || '/'))
       return
     }
-    if (action.type === 'factory_intent') {
-      const intent = String(action.payload?.intent || '')
-      if (intent) {
-        resolveFactoryIntent(intent, { navigate })
-      }
+    if (safe.type === 'factory_intent') {
+      const intent = String(safe.payload?.intent || '')
+      if (intent) resolveFactoryIntent(intent, { navigate })
       return
     }
-    await pet.executeFix(action.type, action.payload || {})
+    await pet.executeFix(safe.type, safe.payload || {})
     scrollToBottom()
   }
 
@@ -123,9 +124,8 @@ export function usePetBubbleView() {
   }
 
   async function handleFactoryRepair(chapterId: string) {
-    await pet.executeFix('auto_repair_chapter', { chapter_id: chapterId })
-    scrollToBottom()
-    navigate('/workspace?focus=pipeline')
+    const chapter = encodeURIComponent(chapterId)
+    navigate(`/production?tab=reviews&chapter=${chapter}`)
   }
 
   async function handleAbortRunningTask() {

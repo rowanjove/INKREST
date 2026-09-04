@@ -8,6 +8,7 @@ import {
 } from 'electron';
 import { PetSettings, readPetSettings, writePetSettings } from '../pet-settings';
 import {
+  parseAnimateBoundsPayload,
   parseMoveDelta,
   parsePetSettingsPatch,
   parseRoute,
@@ -16,6 +17,21 @@ import {
 import { createBubbleWindow, positionBubbleNearPet } from '../windows/bubble-window';
 import { createPetWindow } from '../windows/pet-window';
 import { showWhenReady } from '../windows/window-ready';
+
+let activePetAnimationTimer: NodeJS.Timeout | null = null;
+let activePetAnimationResolve: (() => void) | null = null;
+
+function cancelPetAnimation() {
+  if (activePetAnimationTimer) {
+    clearInterval(activePetAnimationTimer);
+    activePetAnimationTimer = null;
+  }
+  if (activePetAnimationResolve) {
+    const resolve = activePetAnimationResolve;
+    activePetAnimationResolve = null;
+    resolve();
+  }
+}
 
 export interface PetIpcContext {
   isDev: boolean;
@@ -95,6 +111,7 @@ export function registerPetIpc(ctx: PetIpcContext) {
 
   ipcMain.handle('pet:setWindowBounds', (event, rawBounds: unknown) => {
     ctx.assertTrustedSender(event);
+    cancelPetAnimation();
     const bounds = parseWindowBounds(rawBounds);
     const petWindow = ctx.getPetWindow();
     if (petWindow && !petWindow.isDestroyed()) {
@@ -106,6 +123,61 @@ export function registerPetIpc(ctx: PetIpcContext) {
         height: bounds.height !== undefined ? Math.round(bounds.height) : currentBounds.height,
       });
     }
+  });
+
+  ipcMain.handle('pet:animateBounds', async (event, rawPayload: unknown) => {
+    ctx.assertTrustedSender(event);
+    cancelPetAnimation();
+    const { bounds: target, durationMs = 220 } = parseAnimateBoundsPayload(rawPayload);
+    const petWindow = ctx.getPetWindow();
+    if (!petWindow || petWindow.isDestroyed()) return;
+
+    const start = petWindow.getBounds();
+    const targetX = Math.round(target.x);
+    const targetY = Math.round(target.y);
+    const targetW = target.width !== undefined ? Math.round(target.width) : start.width;
+    const targetH = target.height !== undefined ? Math.round(target.height) : start.height;
+
+    const dx = targetX - start.x;
+    const dy = targetY - start.y;
+    const dw = targetW - start.width;
+    const dh = targetH - start.height;
+
+    if (dx === 0 && dy === 0 && dw === 0 && dh === 0) return;
+
+    const totalFrames = Math.max(6, Math.min(60, Math.round(durationMs / 16)));
+    let frame = 0;
+
+    return new Promise<void>((resolve) => {
+      activePetAnimationResolve = resolve;
+      activePetAnimationTimer = setInterval(() => {
+        frame++;
+        const t = frame / totalFrames;
+        // Cubic ease-out: 1 - (1 - t)^3
+        const ease = 1 - Math.pow(1 - t, 3);
+
+        if (frame >= totalFrames) {
+          if (!petWindow.isDestroyed()) {
+            petWindow.setBounds({
+              x: targetX,
+              y: targetY,
+              width: targetW,
+              height: targetH,
+            });
+          }
+          cancelPetAnimation();
+        } else {
+          if (!petWindow.isDestroyed()) {
+            petWindow.setBounds({
+              x: Math.round(start.x + dx * ease),
+              y: Math.round(start.y + dy * ease),
+              width: Math.round(start.width + dw * ease),
+              height: Math.round(start.height + dh * ease),
+            });
+          }
+        }
+      }, 16);
+    });
   });
 
   ipcMain.handle('pet:getSettings', (event) => {
@@ -150,6 +222,7 @@ export function registerPetIpc(ctx: PetIpcContext) {
 
   ipcMain.handle('pet:moveBy', (event, rawDelta: unknown) => {
     ctx.assertTrustedSender(event);
+    cancelPetAnimation();
     const delta = parseMoveDelta(rawDelta);
     const petWindow = ensurePetWindow(ctx);
     const bounds = petWindow.getBounds();

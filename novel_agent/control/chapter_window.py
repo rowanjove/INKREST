@@ -38,7 +38,9 @@ def normalize_chapter_window(items: List[Dict[str, Any]]) -> List[Dict[str, Any]
         normalized.append({
             "chapter_id": item.get("chapter_id", f"{index + 1:03d}"),
             "title": item.get("title") or item.get("chapter_title") or "",
+            "chapter_title": item.get("chapter_title") or item.get("title") or "",
             "goal": goal,
+            "chapter_goal": goal,
             "chapter_type": chapter_type,
             "scene_type": scene_type,
             "detail_level": detail_level,

@@ -19,6 +19,16 @@ from web.factory_modes import (
 
 logger = logging.getLogger("web.factory_summaries")
 
+UNSET_FACTORY_MODE = "unset"
+UNSET_MODE_PROFILE: Dict[str, Any] = {
+    "mode": UNSET_FACTORY_MODE,
+    "label": "未设置（只报告）",
+    "automation_level": "balanced",
+    "priorities": ["沿用 pipeline.yaml 质量门", "不自动套用新手阻断"],
+    "operator_hint": "本书未写入工厂模式，质量门保持只报告，不会按新手全自动阻断。",
+    "explicit": False,
+}
+
 def _read_json(path: Path) -> Dict[str, Any]:
     if not path.is_file():
         return {}
@@ -60,16 +70,18 @@ def _write_project_meta(root: Path, meta: Dict[str, Any]) -> None:
 
 def _infer_mode(meta: Dict[str, Any]) -> str:
     mode = str(meta.get("factory_mode") or meta.get("mode") or "").strip()
-    return mode if is_valid_factory_mode(mode) else DEFAULT_FACTORY_MODE
+    return mode if is_valid_factory_mode(mode) else UNSET_FACTORY_MODE
 
 
 def _mode_profile(mode: str) -> Dict[str, Any]:
+    if mode == UNSET_FACTORY_MODE or not is_valid_factory_mode(mode):
+        return dict(UNSET_MODE_PROFILE)
     profiles = factory_mode_profiles()
     fallback = profiles.get(DEFAULT_FACTORY_MODE, {"mode": DEFAULT_FACTORY_MODE})
     profile = profiles.get(mode, fallback)
     if "label" not in profile:
         profile = {**profile, "label": factory_mode_label(mode)}
-    return profile
+    return {**profile, "explicit": True}
 
 
 def _factory_commands(mode: str, state: str, repair: Dict[str, Any], exports: Dict[str, bool]) -> List[Dict[str, str]]:
@@ -208,6 +220,7 @@ def _operator_brief(
         "longform_stable": "长篇稳定模式下，建议定期检查人物状态、伏笔回收和设定同步。",
         "studio": "工作室模式下，建议关注多书队列、阻断聚合和批量导出节奏。",
         "author_copilot": "作者协作模式下，可以随时人工介入改稿，再让系统继续跑后续章节。",
+        "unset": "本书未写入工厂模式，质量门保持只报告，不会按新手全自动阻断。",
     }
     progress = f"{completed} / {target}" if target else str(completed)
     return {

@@ -1,5 +1,15 @@
 export type CreationApproach = 'auto' | 'professional'
 export type CreationSource = 'quick' | 'ai' | 'parse' | 'template'
+export type FactoryModeId =
+  | 'newbie_auto'
+  | 'author_copilot'
+  | 'platform_review'
+  | 'longform_stable'
+  | 'studio'
+
+export function factoryModeFromApproach(approach: CreationApproach): FactoryModeId {
+  return approach === 'auto' ? 'newbie_auto' : 'author_copilot'
+}
 
 export const CREATE_STEPS = ['工作方式', '素材来源', '写作规格', '确认建档'] as const
 

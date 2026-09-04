@@ -5,11 +5,27 @@ from pathlib import Path
 
 from novel_agent.domain.tasks import TaskStatus, TaskType
 from novel_agent.services.production_workspace import (
+    _event_view,
     _manuscript_conflict_warnings,
+    _serialize_utc_timestamp,
     build_production_workspace,
 )
 from novel_agent.services.quality_review import build_quality_review_queue
 from novel_agent.state.sqlite_store import SQLiteStateStore
+
+
+def test_production_timestamps_are_explicit_utc() -> None:
+    # SQLite current_timestamp is UTC but has no offset; the API must make
+    # that fact explicit so browsers do not display it as local wall time.
+    assert _serialize_utc_timestamp("2026-09-04 07:47:53") == (
+        "2026-09-04T07:47:53+00:00"
+    )
+    assert _serialize_utc_timestamp("2026-09-04T15:47:53+08:00") == (
+        "2026-09-04T07:47:53+00:00"
+    )
+    assert _event_view(
+        {"to_status": "running", "created_at": "2026-09-04 07:47:53"}
+    )["created_at"] == "2026-09-04T07:47:53+00:00"
 
 
 def test_manuscript_conflict_warnings_from_task_result():
@@ -109,6 +125,7 @@ def test_quality_review_queue_normalizes_reports_and_alerts(tmp_path: Path) -> N
     assert item["stage_label"] == "质量阻断"
     assert item["overall_score"] == 48
     assert item["recommended_action"] == "edit_then_gate"
+    assert item["blocked_by"] == ["style"]
     assert item["issues"][0]["code"] == "style"
     assert item["issues"][0]["label"] == "文风与表达"
     assert item["issues"][0]["details"] == ["句式重复"]
@@ -189,8 +206,10 @@ def test_production_workspace_uses_snapshot_and_sanitized_task_history(
     assert task["task_type_label"] == "单章生产"
     assert task["chapter_id"] == "003"
     assert task["recovery_action"] == "resume_audit"
+    assert task["created_at"].endswith("+00:00")
     assert "claim_token" not in task
     assert workspace["events"][0]["to_status"] == "failed"
+    assert workspace["events"][0]["created_at"].endswith("+00:00")
     assert workspace["task_logs"][0]["message"] == "审校发现阻断"
     assert workspace["reviews"]["items"][0]["chapter_id"] == "003"
     assert workspace["section_errors"] == {}

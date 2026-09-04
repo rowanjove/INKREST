@@ -9,7 +9,7 @@ describe('shared UI primitives', () => {
   it('provide semantic status and error announcements', () => {
     expect(source('EmptyState')).toContain('role="status"')
     expect(source('ErrorState')).toContain('role="alert"')
-    expect(source('ErrorState')).toContain("defineEmits<{ retry: [] }>()")
+    expect(source('ErrorState')).toContain("defineEmits<{ retry: []; action: [] }>()")
   })
 
   it('provide a consistent page heading and action slot', () => {

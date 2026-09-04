@@ -65,3 +65,25 @@ def test_bundle_manifest_allows_packaged_demo_workspace(tmp_path: Path) -> None:
     (demo / "outline.json").write_text("{}", encoding="utf-8")
 
     assert check_tree(bundle) == []
+
+
+def test_bundle_manifest_allows_demo_pipeline_and_sqlite_fixtures(tmp_path: Path) -> None:
+    demo = (
+        tmp_path
+        / "bundle"
+        / "resources"
+        / "templates"
+        / "assets"
+        / "demo_projects"
+        / "demo"
+    )
+    (demo / "config").mkdir(parents=True)
+    (demo / "data").mkdir(parents=True)
+    (demo / "config" / "pipeline.yaml").write_text("runtime: {}\n", encoding="utf-8")
+    (demo / "data" / "novel.sqlite").write_bytes(b"sqlite")
+    (demo / "config" / "models.json").write_text("{}", encoding="utf-8")
+
+    issues = check_tree(tmp_path / "bundle")
+    assert not any(item.endswith("pipeline.yaml") for item in issues)
+    assert not any(item.endswith("novel.sqlite") for item in issues)
+    assert any(item.endswith("models.json") for item in issues)

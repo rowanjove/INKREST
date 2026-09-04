@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from fastapi import HTTPException
 
 from web.helpers import _copy_default_assets, _copy_default_prompts, _write_yaml
+from web.genre_labels import normalize_genre_label
 
 logger = logging.getLogger("web.project_manager")
 
@@ -44,7 +45,16 @@ class ProjectManager:
             return {"projects": {}, "active_id": None}
         if not isinstance(data.get("projects"), dict):
             data["projects"] = {}
-        if data.get("active_id") and data["projects"].get(data["active_id"]) is None:
+        active_id = data.get("active_id")
+        active_dir = self.base_dir / "projects" / str(active_id) if active_id else None
+        if active_id and (
+            data["projects"].get(active_id) is None
+            or active_dir is None
+            or not active_dir.is_dir()
+        ):
+            # Keep the registry entry for recovery/import, but never let a
+            # deleted directory become an active project that startup can
+            # silently recreate.
             data["active_id"] = None
             self._write_registry_unlocked(data)
         return data
@@ -222,12 +232,13 @@ class ProjectManager:
                 "pinned_at": info.get("pinned_at") or "",
                 "chapter_count": chapter_count,
                 "total_words": total_words,
-                "genre": meta.get("genre", ""),
+                "genre": normalize_genre_label(self.base_dir, meta.get("genre", "")),
                 "author_label": str(meta.get("author_label") or "").strip(),
                 "channel": meta.get("channel", ""),
                 "target_chapters": meta.get("target_chapters", 0),
                 "has_cover": any((project_dir / f"cover{suffix}").exists() for suffix in (".jpg", ".png", ".webp")),
                 "pending_alert_count": pending_alert_count,
+                "available": project_dir.is_dir(),
             })
 
         def sort_key(item: Dict[str, Any]) -> tuple:
@@ -324,6 +335,9 @@ class ProjectManager:
         def mutate(data: Dict[str, Any]) -> Dict[str, Any]:
             if pid not in data.get("projects", {}):
                 raise HTTPException(404, f"Project {pid} not found")
+            project_dir = self.base_dir / "projects" / pid
+            if not project_dir.is_dir():
+                raise HTTPException(404, f"Project {pid} directory not found")
             data["active_id"] = pid
             return data
 

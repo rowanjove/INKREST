@@ -38,9 +38,18 @@ def inspect_schema_state(db_path: Path) -> tuple[SchemaState, int | None]:
             return SchemaState.FRESH, None
         if "app_metadata" not in tables:
             # A new project may have an auxiliary vector/arc table before the
-            # unified store is opened. The unversioned legacy task table is the
-            # reliable evidence that user data predates V2.
-            if "tasks" in tables:
+            # unified store is opened. Narrative or task tables without a
+            # schema stamp are unversioned user data and must not be upgraded.
+            legacy_evidence = tables & {
+                "tasks",
+                "events",
+                "objects",
+                "characters",
+                "chapters",
+                "documents",
+                "foreshadows",
+            }
+            if legacy_evidence:
                 return SchemaState.LEGACY, None
             return SchemaState.FRESH, None
         row = conn.execute(

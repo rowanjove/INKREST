@@ -54,3 +54,14 @@ class ApiProductionWorkspaceTests(ApiTestBase):
         self.assertNotIn("claim_token", payload["tasks"][0])
         self.assertIn("reviews", payload)
         self.assertIn("task_logs", payload)
+
+    def test_reviews_endpoint_returns_paginated_queue(self):
+        response = TestClient(web_app).get("/api/production/reviews?limit=10")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("items", payload)
+        self.assertIn("summary", payload)
+        self.assertIn("total", payload)
+        self.assertIn("has_more", payload)
+        self.assertEqual(payload["has_more"], False)
+

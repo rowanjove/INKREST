@@ -56,6 +56,7 @@ def build_unified_gate_report(
             "mode": quality_report.get("mode"),
             "overall_pass": quality_report.get("overall_pass"),
             "overall_score": quality_report.get("overall_score"),
+            "chapter_score": quality_report.get("chapter_score") or {},
             "guard_status": guard.get("overall_status"),
             "blocked_by": guard.get("blocked_by") or [],
         },
@@ -133,7 +134,6 @@ async def _attempt_auto_length_fix(
         emit_progress("length_fix", "skipped", chapter_id=chapter_id)
         return ctx
     ctx = dataclasses.replace(ctx, final_text=revised)
-    (chapter_dir / "chapter_final.txt").write_text(revised, encoding="utf-8")
     orchestrator._write_json(
         meta_path,
         {"applied": True, "chars_before": len(text), "chars_after": len(revised)},
@@ -182,7 +182,6 @@ async def run_unified_review_gate(
         )
         if revised and revised.strip() != (ctx.final_text or "").strip():
             ctx = dataclasses.replace(ctx, final_text=revised)
-            (chapter_dir / "chapter_final.txt").write_text(revised, encoding="utf-8")
             from novel_agent.quality.style_precheck import write_style_precheck_cache
 
             write_style_precheck_cache(reports_dir, revised, orchestrator.root_dir)

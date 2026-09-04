@@ -41,7 +41,6 @@ const {
 const { openDialog: openBatchDialog } = useNovelBatchRun()
 const actionIntent = ref<ProductionActionIntent | null>(null)
 const actionLoading = ref(false)
-let handledRouteIntent = ''
 
 const batchPaused = computed(
   () => Boolean(workspace.value?.snapshot.chapter_progress.batch_paused),
@@ -56,6 +55,10 @@ const pauseReason = computed(() => {
 
 function openChapter(chapterId: string) {
   void router.push({ path: '/writer', query: { chapter: chapterId } })
+}
+
+function openQuality(chapterId: string) {
+  void router.push({ path: '/quality', query: { chapter: chapterId } })
 }
 
 function requestTaskAction(kind: ProductionActionKind, task: ProductionTask) {
@@ -111,14 +114,23 @@ async function confirmAction() {
   }
 }
 
+const handledRouteIntent = ref('')
 watch(
   [workspace, () => route.query.intent],
   ([value, intent]) => {
-    if (!value || typeof intent !== 'string' || handledRouteIntent === intent) return
-    handledRouteIntent = intent
-    if (['novel_continue', 'continue_writing', 'run'].includes(intent)) {
-      void openBatchDialog()
+    if (!value) return
+    if (typeof intent !== 'string') {
+      handledRouteIntent.value = ''
+      return
     }
+    if (!['novel_continue', 'continue_writing', 'continue-novel', 'run'].includes(intent)) return
+    if (handledRouteIntent.value === intent) return
+    handledRouteIntent.value = intent
+    void openBatchDialog()
+    const nextQuery = { ...route.query }
+    delete nextQuery.intent
+    delete nextQuery.confirm
+    void router.replace({ path: route.path, query: nextQuery })
   },
   { immediate: true },
 )
@@ -210,6 +222,7 @@ watch(
           @select="selectedChapterId = $event"
           @action="requestReviewAction"
           @open-chapter="openChapter"
+          @open-quality="openQuality"
         />
         <ProductionCostPanel
           v-else-if="activeTab === 'costs'"
@@ -242,25 +255,25 @@ watch(
 }
 .production-header { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 18px; }
 .production-header > div:first-child { display: grid; gap: 3px; }
-.production-header small { color: var(--color-primary); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
-.production-header h1 { margin: 0; color: var(--color-text-strong); font-size: 22px; line-height: 1.1; }
-.production-header p { margin: 0; color: var(--color-text-muted); font-size: 11px; }
+.production-header small { color: var(--color-primary); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+.production-header h1 { margin: 0; color: var(--color-text-strong); font-size: 24px; line-height: 1.15; }
+.production-header p { margin: 0; color: var(--color-text-muted); font-size: 13px; }
 .header-actions { display: flex; gap: 8px; }
 .pause-banner {
-  display: flex; flex-shrink: 0; align-items: center; gap: 9px; padding: 10px 12px;
+  display: flex; flex-shrink: 0; align-items: center; gap: 9px; padding: 10px 14px;
   border: 1px solid var(--color-alert-warn-border); border-radius: 9px; background: var(--color-alert-warn-bg);
 }
 .pause-banner > div { display: grid; flex: 1; gap: 2px; }
-.pause-banner strong { color: var(--color-text-strong); font-size: 12px; }
-.pause-banner span { color: var(--color-text-muted); font-size: 10px; }
-.production-tabs { display: flex; flex-shrink: 0; align-items: center; gap: 3px; min-height: 38px; padding: 3px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-bg-surface); }
+.pause-banner strong { color: var(--color-text-strong); font-size: 13.5px; }
+.pause-banner span { color: var(--color-text-muted); font-size: 12px; }
+.production-tabs { display: flex; flex-shrink: 0; align-items: center; gap: 4px; min-height: 42px; padding: 4px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-bg-surface); }
 .production-tabs button {
-  display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 13px;
-  border: 0; border-radius: 7px; background: transparent; color: var(--color-text-muted); font-size: 11px; font-weight: 700; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 15px;
+  border: 0; border-radius: 7px; background: transparent; color: var(--color-text-muted); font-size: 13.5px; font-weight: 700; cursor: pointer;
 }
 .production-tabs button:hover { color: var(--color-text-strong); background: var(--color-bg-hover); }
 .production-tabs button.active { color: var(--color-primary); background: var(--color-primary-soft); }
-.production-tabs button span { min-width: 17px; padding: 2px 5px; border-radius: 999px; background: var(--color-bg-surface-muted); color: var(--color-text-muted); font-size: 9px; text-align: center; }
+.production-tabs button span { min-width: 18px; padding: 2px 6px; border-radius: 999px; background: var(--color-bg-surface-muted); color: var(--color-text-muted); font-size: 11.5px; font-weight: 600; text-align: center; }
 .production-tabs button span.danger { background: var(--color-alert-danger-bg); color: var(--color-danger); }
 .production-canvas { flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-bg-surface); box-shadow: var(--shadow-sm); }
 @media (max-width: 900px) {

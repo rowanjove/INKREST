@@ -175,10 +175,12 @@ class ApiTasksTests(ApiTestBase):
 
     def test_switch_project_allows_background_tasks_via_registry(self):
         original_active = web_server._active_project_id
+        original_base = web_server.BASE_DIR
         original_manager = web_server._task_manager
         original_project_manager = web_server.project_manager
         original_registry = web_context._task_registry
         try:
+            web_server.BASE_DIR = self.tmpdir
             web_server.project_manager = web_server.ProjectManager(self.tmpdir)
             first = web_server.project_manager.create_project("first")
             second = web_server.project_manager.create_project("second")
@@ -198,6 +200,7 @@ class ApiTasksTests(ApiTestBase):
             self.assertFalse(registry.has_active_tasks(self.tmpdir / "projects" / second["id"]))
         finally:
             web_server._active_project_id = original_active
+            web_server.BASE_DIR = original_base
             web_server._task_manager = original_manager
             web_server.project_manager = original_project_manager
             web_context._task_registry = original_registry

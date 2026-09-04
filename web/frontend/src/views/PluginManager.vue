@@ -27,6 +27,7 @@ const {
   trustDialogVisible,
   trustTarget,
   trustAcknowledged,
+  localCodeAcknowledged,
   trustLoading,
   filteredPlugins,
   totalCount,
@@ -51,7 +52,10 @@ const {
   <div class="plugin-manager-view">
     <header class="page-head">
       <div class="page-title-area">
-        <h1>扩展中心</h1>
+        <div class="title-with-metrics">
+          <h1>扩展中心</h1>
+          <PluginMetricsCards :total-count="totalCount" :active-count="activeCount" />
+        </div>
         <p>集中检查插件来源、内容摘要、运行权限与启用状态。</p>
       </div>
       <div class="head-actions">
@@ -100,8 +104,6 @@ const {
       </template>
     </el-alert>
 
-    <PluginMetricsCards :total-count="totalCount" :active-count="activeCount" />
-
     <PluginFilterBar
       v-model:search-query="searchQuery"
       v-model:selected-type="selectedType"
@@ -126,6 +128,7 @@ const {
       v-model:install-dialog-visible="installDialogVisible"
       v-model:trust-dialog-visible="trustDialogVisible"
       v-model:trust-acknowledged="trustAcknowledged"
+      v-model:local-code-acknowledged="localCodeAcknowledged"
       v-model:config-form="configForm"
       v-model:config-json-text="configJsonText"
       v-model:install-drag-over="installDragOver"
@@ -149,5 +152,16 @@ const {
 .plugin-manager-view {
   display: grid;
   gap: 20px;
+}
+
+.title-with-metrics {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.title-with-metrics h1 {
+  margin: 0;
 }
 </style>

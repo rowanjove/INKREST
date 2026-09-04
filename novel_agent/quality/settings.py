@@ -45,10 +45,19 @@ def quality_gate_blocks(report: Dict[str, Any], mode: str) -> bool:
     summary = report.get("guard_summary") or {}
     if summary.get("overall_status") == "FAIL":
         return True
-    if not report.get("overall_pass", True):
-        for check in (report.get("checks") or {}).values():
-            if check.get("level") == "fail":
-                return True
+    from novel_agent.quality.guard_registry import L0_HARD_CHECKS
+
+    for name, check in (report.get("checks") or {}).items():
+        if str(name) not in L0_HARD_CHECKS or not isinstance(check, dict):
+            continue
+        if check.get("pass") is False or str(check.get("level") or "").lower() in {
+            "fail",
+            "error",
+        }:
+            return True
+    score = report.get("chapter_score") or {}
+    if isinstance(score, dict) and score.get("keep") is False:
+        return True
     return False
 
 

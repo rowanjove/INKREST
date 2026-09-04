@@ -1,3 +1,5 @@
+import { QUALITY_CHECK_LABELS } from './production/production'
+
 export interface CalibrationReport {
   status: 'calibrated' | 'uncalibrated' | string
   sample_count: number
@@ -115,5 +117,38 @@ export interface QualityReview {
     score?: number
     reason_codes?: string[]
     report_only?: boolean
+  }
+}
+
+export interface L0BlockBanner {
+  title: string
+  items: string[]
+  score: number | null
+  keep: boolean
+}
+
+function asStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => String(item || '').trim()).filter(Boolean)
+}
+
+export function l0BlockBanner(review: QualityReview | null | undefined): L0BlockBanner | null {
+  if (!review) return null
+  const guard = (review.quality?.guard_summary || {}) as Record<string, unknown>
+  const chapterScore = (review.quality?.chapter_score || {}) as Record<string, unknown>
+  const blocked = asStringList(guard.blocked_by)
+  const fromScore = asStringList(chapterScore.blocked_by)
+  const l0Failed = asStringList((review.levels?.l0 || {}).failed)
+  const items = (blocked.length ? blocked : fromScore.length ? fromScore : l0Failed).map(
+    (code) => QUALITY_CHECK_LABELS[code] || code.replaceAll('_', ' '),
+  )
+  if (!items.length) return null
+  const rawScore = chapterScore.score
+  const score = typeof rawScore === 'number' ? rawScore : rawScore != null ? Number(rawScore) : null
+  return {
+    title: 'L0 硬门未通过，自动化生产会阻断本章',
+    items,
+    score: Number.isFinite(score) ? Number(score) : null,
+    keep: chapterScore.keep === true,
   }
 }

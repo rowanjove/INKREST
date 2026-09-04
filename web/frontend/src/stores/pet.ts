@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import {
   getAssistantContext,
   sendAssistantChat,
+  sendAssistantChatStream,
   getAssistantDiagnose,
   fixAssistantIssue
 } from '../api'
@@ -29,6 +30,7 @@ export interface PetSettings {
   notifyOnTaskComplete: boolean
   notifyOnTaskError: boolean
   petId: string
+  dockedEdge?: 'left' | 'right' | 'top' | null
 }
 
 export interface AssistantTaskSummary {
@@ -89,6 +91,8 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   actions?: Array<{ type: string; label: string; payload?: any }>
+  suggestions?: string[]
+  streaming?: boolean
   timestamp: number
 }
 
@@ -113,6 +117,7 @@ const defaultSettings: PetSettings = {
   notifyOnTaskComplete: true,
   notifyOnTaskError: true,
   petId: 'shanshan',
+  dockedEdge: null,
 }
 
 export const usePetStore = defineStore('pet', () => {
@@ -458,6 +463,40 @@ export const usePetStore = defineStore('pet', () => {
     }
   }
 
+  const SHANSHAN_POKE_MAP: Record<string, string[]> = {
+    idle: [
+      '嗯？稿子改顺手了来找我聊聊？',
+      '我在盯稿呢，随时告诉我下一步写什么。',
+      '作者加油，今天的大纲灵感理顺了吗？',
+      '文思泉涌的话，正文页走起～',
+    ],
+    working: [
+      '正在全力生成中，字斟句酌呢！',
+      '别急别急，这章流水线正写着～',
+      '流水线正在运转，稍候片刻就能看稿了。',
+    ],
+    error: [
+      '哎呀，这一章门禁好像卡住了，快点开我看看排障建议吧！',
+      '任务有点小异常，去生产中心审校队列瞅瞅？',
+      '遇到报错莫慌，山山帮你理一理原因。',
+    ],
+    success: [
+      '大功告成！最新章节已经顺利完稿入库啦。',
+      '这一章质量门禁全绿通过，手感不错哦！',
+    ],
+    offline: [
+      '后端好像掉线啦，去确认下本地服务还在不在运行吧。',
+    ],
+  }
+
+  function getPokeReactionLine(): string {
+    const current = state.value
+    const category = current.startsWith('hide-') ? 'idle' : current in SHANSHAN_POKE_MAP ? current : 'idle'
+    const lines = SHANSHAN_POKE_MAP[category] || SHANSHAN_POKE_MAP.idle
+    const idx = Math.floor(Math.random() * lines.length)
+    return lines[idx]
+  }
+
   async function sendChatMessage(message: string) {
     if (!message.trim() || chatLoading.value) return
     chatLoading.value = true
@@ -469,31 +508,65 @@ export const usePetStore = defineStore('pet', () => {
       timestamp: Date.now()
     })
 
+    const apiHistory = chatHistory.value.map(h => ({
+      role: h.role,
+      content: h.content
+    }))
+
+    const assistantMsgIdx = chatHistory.value.length
+    chatHistory.value.push({
+      role: 'assistant',
+      content: '',
+      actions: [],
+      suggestions: [],
+      streaming: true,
+      timestamp: Date.now()
+    })
+
     try {
-      // Build API history
-      const apiHistory = chatHistory.value.map(h => ({
-        role: h.role,
-        content: h.content
-      }))
-
-      const { data } = await sendAssistantChat({
-        message,
-        history: apiHistory
-      })
-
-      chatHistory.value.push({
-        role: 'assistant',
-        content: data.reply,
-        actions: data.actions || [],
-        timestamp: Date.now()
-      })
+      await sendAssistantChatStream(
+        { message, history: apiHistory },
+        (chunk: string) => {
+          if (chatHistory.value[assistantMsgIdx]) {
+            chatHistory.value[assistantMsgIdx].content += chunk
+          }
+        },
+        (result) => {
+          if (chatHistory.value[assistantMsgIdx]) {
+            chatHistory.value[assistantMsgIdx].content = result.reply || chatHistory.value[assistantMsgIdx].content
+            chatHistory.value[assistantMsgIdx].actions = result.actions || []
+            chatHistory.value[assistantMsgIdx].suggestions = result.suggestions || []
+            chatHistory.value[assistantMsgIdx].streaming = false
+          }
+        },
+        async (streamErr) => {
+          try {
+            const { data } = await sendAssistantChat({ message, history: apiHistory })
+            if (chatHistory.value[assistantMsgIdx]) {
+              chatHistory.value[assistantMsgIdx].content = data.reply
+              chatHistory.value[assistantMsgIdx].actions = data.actions || []
+              chatHistory.value[assistantMsgIdx].suggestions = data.suggestions || []
+              chatHistory.value[assistantMsgIdx].streaming = false
+            }
+          } catch (fallbackErr: any) {
+            if (chatHistory.value[assistantMsgIdx]) {
+              chatHistory.value[assistantMsgIdx].content = SHANSHAN_CHAT_ERROR(
+                fallbackErr?.message || streamErr?.message || '未知网络错误'
+              )
+              chatHistory.value[assistantMsgIdx].streaming = false
+            }
+          }
+        }
+      )
     } catch (error: any) {
-      chatHistory.value.push({
-        role: 'assistant',
-        content: SHANSHAN_CHAT_ERROR(error?.message || '未知网络错误'),
-        timestamp: Date.now()
-      })
+      if (chatHistory.value[assistantMsgIdx]) {
+        chatHistory.value[assistantMsgIdx].content = SHANSHAN_CHAT_ERROR(error?.message || '未知网络错误')
+        chatHistory.value[assistantMsgIdx].streaming = false
+      }
     } finally {
+      if (chatHistory.value[assistantMsgIdx]) {
+        chatHistory.value[assistantMsgIdx].streaming = false
+      }
       chatLoading.value = false
     }
   }
@@ -622,5 +695,6 @@ export const usePetStore = defineStore('pet', () => {
     ignoreFailedTask,
     isHiddenAtEdge,
     setHiddenAtEdge,
+    getPokeReactionLine,
   }
 })

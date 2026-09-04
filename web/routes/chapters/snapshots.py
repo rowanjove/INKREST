@@ -29,15 +29,18 @@ from web.models import (
 from novel_agent.scripts.count_chars import count_chinese_chars, wordcount_report
 from novel_agent.services.manuscript_workspace import apply_plain_text_to_manuscript
 from novel_agent.state.manuscript_repository import DocumentConflictError
-from web.deps import ProjectSession, RequireProjectDep, coerce_project_session
+from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, task_manager_for
 
 router = APIRouter()
 
 
-def create_chapter_snapshot(root_dir: Path, chapter_id: str, title: str, final_text: str, is_manual: bool = False) -> Dict[str, Any]:
+def create_chapter_snapshot(root_dir: Path, chapter_id: str, title: str, final_text: str = "", is_manual: bool = False) -> Dict[str, Any]:
+    import hashlib
     import json
     import time
     from datetime import datetime
+
+    from novel_agent.state.sqlite_store import SQLiteStateStore
     
     chapter_dir = root_dir / "workspace" / "chapters" / f"chapter_{chapter_id}"
     snapshots_dir = chapter_dir / ".snapshots"
@@ -47,16 +50,27 @@ def create_chapter_snapshot(root_dir: Path, chapter_id: str, title: str, final_t
     dt_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     from novel_agent.scripts.count_chars import count_chinese_chars
-    word_count = count_chinese_chars(final_text)
+    store = SQLiteStateStore(root_dir)
+    document = store.get_manuscript_document(chapter_id)
+    latest = store.list_manuscript_revisions(chapter_id, limit=1)
+    plain = str((document or {}).get("plain_text") or final_text or "")
+    word_count = count_chinese_chars(plain)
     
     snapshot_data = {
         "timestamp": timestamp,
         "datetime": dt_str,
         "title": title,
-        "final_text": final_text,
         "word_count": word_count,
-        "is_manual": is_manual
+        "is_manual": is_manual,
+        "revision": int(document["revision"]) if document else None,
+        "revision_id": str(latest[0]["revision_id"]) if latest else None,
+        "sha256": hashlib.sha256(plain.encode("utf-8")).hexdigest() if plain else None,
     }
+    # Legacy projects may not have a document_revisions row. Keep a bounded
+    # fallback only for those snapshots so rollback never blanks the
+    # manuscript when an old pointer cannot be resolved.
+    if not latest:
+        snapshot_data["final_text"] = plain
     
     snapshot_file = snapshots_dir / f"snapshot_{timestamp}.json"
     snapshot_file.write_text(json.dumps(snapshot_data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -152,10 +166,21 @@ def rollback_chapter_snapshot(
 
     title = str(snapshot_data.get("title") or f"第 {safe_id} 章")
     try:
+        revision_id = str(snapshot_data.get("revision_id") or "").strip()
+        plain_text = str(snapshot_data.get("final_text") or "")
+        if revision_id:
+            store = task_manager_for(session).store
+            revision = store.get_chapter_version(revision_id)
+            if revision:
+                plain_text = str(revision.get("content") or revision.get("plain_text") or "")
+            elif not plain_text:
+                raise HTTPException(404, "Snapshot revision not found")
+        elif not plain_text:
+            raise HTTPException(404, "Snapshot content not found")
         document = apply_plain_text_to_manuscript(
             session.root_dir,
             chapter_id=safe_id,
-            plain_text=str(snapshot_data.get("final_text") or ""),
+            plain_text=plain_text,
             title=title,
             source="restore",
         )

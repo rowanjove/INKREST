@@ -99,6 +99,7 @@ class StateRepositoryMixin:
             "source_span": load(row["source_span"], {}),
             "confidence": float(row["confidence"] or 0.0),
             "superseded_by": row["superseded_by"],
+            "superseded": bool(row["superseded_by"]),
             "invalidated_at_revision": row["invalidated_at_revision"] or "",
         }
 
@@ -219,6 +220,19 @@ class StateRepositoryMixin:
                             event.get("invalidated_at_revision", ""),
                             self._json(event),
                         ),
+                    )
+                keep_ids = [str(event["id"]) for event in projected]
+                if keep_ids:
+                    placeholders = ",".join("?" * len(keep_ids))
+                    conn.execute(
+                        f"""
+                        update narrative_events
+                        set superseded_by = ?, invalidated_at_revision = ?, updated_at = current_timestamp
+                        where chapter_id = ? and superseded_by is null
+                          and source_revision_id <> ?
+                          and event_id not in ({placeholders})
+                        """,
+                        (f"dropped@{revision}", revision, str(chapter_id), revision, *keep_ids),
                     )
         self.mark_story_search_dirty()
         return projection_ids

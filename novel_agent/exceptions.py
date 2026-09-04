@@ -9,6 +9,27 @@ class LLMResponseError(AgentError):
     """LLM returned malformed or unparseable output."""
 
 
+class LLMThinkingTruncatedError(LLMResponseError):
+    """LLM reasoning tokens exhausted max_tokens, truncating output before completing text."""
+
+    def __init__(
+        self,
+        message: str = "LLM reasoning tokens exhausted max_tokens",
+        *,
+        role: str = "",
+        model: str = "",
+        finish_reason: str = "",
+        usage: dict | None = None,
+        recovery_action: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.role = role
+        self.model = model
+        self.finish_reason = finish_reason
+        self.usage = usage or {}
+        self.recovery_action = recovery_action
+
+
 class RetryExhaustedError(AgentError):
     """All retry attempts have been exhausted."""
 
@@ -52,3 +73,6 @@ class FatalPipelineError(PipelineError):
 class TaskAbortedError(AgentError):
     """Task aborted by user."""
 
+
+class TaskPausedError(AgentError):
+    """Task reached a cooperative pause checkpoint."""

@@ -121,6 +121,10 @@ class _ServerShim(types.ModuleType):
     """Thin module wrapper that intercepts __setattr__ for state variables."""
 
     def __setattr__(self, name: str, value):
+        # Keep the shim's own dictionary current as well as the legacy backing
+        # dictionary. Otherwise attributes initialized above (BASE_DIR,
+        # _active_project_id, ...) read stale values after a context switch.
+        self.__dict__[name] = value
         _original_dict[name] = value
         # Sync to web.context if it's a known state var or exists in context
         if name in _ALWAYS_SYNC or hasattr(_ctx, name):

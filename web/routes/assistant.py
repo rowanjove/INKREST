@@ -163,17 +163,32 @@ def _get_assistant_llm(root_dir: Optional[Path] = None) -> Any:
 
 
 def _parse_chat_response(text: str) -> Dict[str, Any]:
-    """Parse output text of the assistant LLM to extract actions."""
+    """Parse output text of the assistant LLM to extract actions and suggestions."""
     import re
     text = text.strip()
     actions: List[Dict[str, Any]] = []
+    suggestions: List[str] = []
+
+    sug_marker = "===SUGGESTIONS==="
+    if sug_marker in text:
+        parts = text.split(sug_marker, 1)
+        text = parts[0].strip()
+        sug_str = parts[1].strip()
+        try:
+            sug_match = re.search(r'\[.*?\]', sug_str, re.DOTALL)
+            if sug_match:
+                parsed_sugs = json.loads(sug_match.group(0))
+                if isinstance(parsed_sugs, list):
+                    suggestions = [str(s) for s in parsed_sugs if isinstance(s, (str, int))]
+        except Exception as e:
+            ws_server.logger.warning("Failed to parse assistant suggestions: %s", e)
+
     marker = "===ACTIONS==="
-    
     if marker in text:
-        parts = text.split(marker)
+        parts = text.split(marker, 1)
         reply = parts[0].strip()
         actions_str = parts[1].strip()
-        
+
         try:
             json_match = re.search(r'\[\s*\{.*\}\s*\]', actions_str, re.DOTALL)
             if json_match:
@@ -184,8 +199,14 @@ def _parse_chat_response(text: str) -> Dict[str, Any]:
             ws_server.logger.warning("Failed to parse assistant chat actions: %s", e)
     else:
         reply = text
-        
-    return {"reply": reply, "actions": actions}
+
+    from web.assistant_actions import sanitize_assistant_actions
+
+    return {
+        "reply": reply,
+        "actions": sanitize_assistant_actions(actions),
+        "suggestions": suggestions,
+    }
 
 
 # ---- API Endpoints ----
@@ -269,7 +290,8 @@ async def build_assistant_context(session: ProjectSession) -> Dict[str, Any]:
     try:
         from web.runtime_log_buffer import read_system_log_tail, tail_runtime_logs
 
-        agent_runtime_logs = tail_runtime_logs(60)
+        proj_id = session.project_id if session.has_project else ""
+        agent_runtime_logs = tail_runtime_logs(60, project_id=proj_id)
         base_logs = ws_server.BASE_DIR / "logs" / "novel_agent.log"
         system_log_paths = {
             "workspace": str(base_logs),
@@ -403,182 +425,27 @@ async def get_assistant_diagnose(
     active_project = current_project_info(session)
     if active_project.get("id") is None:
         active_project = None
-    issues = []
-    suggestions = []
-    
+
     ignored_ids = ignored_task_ids.split(",") if ignored_task_ids else []
-    
-    if not active_project:
-        issues.append({
-            "code": "NO_ACTIVE_PROJECT",
-            "level": "error",
-            "message": "当前未选择或创建任何小说项目。",
-        })
-        suggestions.append({
-            "label": "创建/选择项目",
-            "type": "navigate",
-            "payload": {"route": "/"}
-        })
-    else:
-        root = session.root_dir
-        try:
-            from novel_agent.services.arc_queue import load_arc_progress
-
-            batch_progress = load_arc_progress(root)
-            if batch_progress.get("status") == "paused":
-                reason = batch_progress.get("pause_reason") or "circuit_breaker"
-                arc_id = batch_progress.get("last_arc_id") or "—"
-                ch_id = batch_progress.get("last_chapter_id") or "—"
-                streak = batch_progress.get("fail_streak") or 0
-                issues.append({
-                    "code": "NOVEL_BATCH_PAUSED",
-                    "level": "warning",
-                    "message": (
-                        f"全书批量已暂停（{reason}），卷 {arc_id} / 章 {ch_id}"
-                        + (f"，连续失败 {streak} 次" if streak else "")
-                    ),
-                })
-                suggestions.append({
-                    "label": "去生产中心审校修复",
-                    "type": "navigate",
-                    "payload": {"route": "/production?tab=reviews"},
-                })
-        except Exception:
-            pass
-
-        # Check LLM Configuration
-        try:
-            from novel_agent.pipeline import load_pipeline_settings
-            config_data = load_pipeline_settings(root)
-            llm_settings = config_data.get("llm", {})
-            
-            from web.model_library import ModelLibrary
-            lib = ModelLibrary(root)
-            models_library = lib._load().get("models", {})
-            
-            default_model_id = llm_settings.get("daily_model_id") or llm_settings.get("default_model_id")
-            
-            def _should_use_library_default(settings_dict):
-                if settings_dict.get("daily_model_id") or settings_dict.get("default_model_id") or settings_dict.get("default", {}).get("model_ref"):
-                    return False
-                prov = settings_dict.get("provider")
-                nested_prov = settings_dict.get("default", {}).get("provider")
-                return prov in (None, "", "static") and nested_prov in (None, "", "static")
-                
-            if not default_model_id and _should_use_library_default(llm_settings):
-                default_model_id = next(iter(models_library), None)
-                
-            actual_provider = None
-            if default_model_id and default_model_id in models_library:
-                actual_provider = models_library[default_model_id].get("provider")
-            else:
-                nested_ref = llm_settings.get("default", {}).get("model_ref")
-                if nested_ref and nested_ref in models_library:
-                    actual_provider = models_library[nested_ref].get("provider")
-                else:
-                    actual_provider = llm_settings.get("default", {}).get("provider") or llm_settings.get("provider")
-            
-            provider = actual_provider or "static"
-            
-            if config_data.get("llm", {}).get("provider") == "":
-                provider = ""
-            
-            if not provider:
-                issues.append({
-                    "code": "MISSING_LLM_CONFIG",
-                    "level": "error",
-                    "message": "项目默认模型（LLM）配置缺失，小说生成无法启动。",
-                })
-                suggestions.append({
-                    "label": "配置项目模型",
-                    "type": "navigate",
-                    "payload": {"route": "/config"}
-                })
-            elif provider == "static":
-                issues.append({
-                    "code": "STATIC_LLM_WARNING",
-                    "level": "warning",
-                    "message": "当前项目日常档模型处于测试占位状态（Static），无法生成真实小说。您可以在模型路由中设定真实模型。",
-                })
-                suggestions.append({
-                    "label": "配置项目日常档模型",
-                    "type": "navigate",
-                    "payload": {"route": "/config"}
-                })
-        except Exception as e:
-            issues.append({
-                "code": "CONFIG_LOAD_FAILED",
-                "level": "error",
-                "message": f"加载项目配置文件失败：{str(e)}",
-            })
-            
-        # Check Tasks Status
+    tasks = []
+    if session.has_project:
         try:
             tasks = await task_manager_for(session).list_tasks_async()
-            seen_chapters = set()
-            unresolved_failed = []
-            for t in tasks:
-                ch_id = t.get("chapter_id")
-                if ch_id:
-                    if ch_id not in seen_chapters:
-                        seen_chapters.add(ch_id)
-                        if t.get("status") == "failed":
-                            unresolved_failed.append(t)
-                else:
-                    if t.get("status") == "failed":
-                        unresolved_failed.append(t)
-            failed_tasks = [t for t in unresolved_failed if t.get("task_id") not in ignored_ids]
-            if failed_tasks:
-                latest = failed_tasks[0]
-                ch_id = latest.get("chapter_id")
-                if ch_id:
-                    goal = latest.get("goal") or _get_chapter_goal_fallback(
-                        ch_id,
-                        session.root_dir,
-                    )
-                    gate_line = ""
-                    try:
-                        from novel_agent.services.assistant_snapshot import summarize_unified_gate
-
-                        gs = summarize_unified_gate(root, str(ch_id))
-                        if gs:
-                            gate_line = f"；{gs}"
-                    except Exception:
-                        pass
-                    issues.append({
-                        "code": "RECENT_TASK_FAILED",
-                        "level": "warning",
-                        "message": f"最近章节任务 {ch_id} 执行失败：{latest.get('error')}{gate_line}",
-                    })
-                    suggestions.append({
-                        "label": f"查看第 {ch_id} 章详情",
-                        "type": "navigate",
-                        "payload": {"route": f"/chapters/{ch_id}"},
-                    })
-                    suggestions.append({
-                        "label": f"重试第 {ch_id} 章",
-                        "type": "retry_task",
-                        "payload": {"chapter_id": ch_id, "goal": goal}
-                    })
-                    suggestions.append({
-                        "label": "查看详细日志",
-                        "type": "navigate",
-                        "payload": {"route": "/logs"},
-                    })
         except Exception:
-            pass
-            
-    status = "ok"
-    if any(i["level"] == "error" for i in issues):
-        status = "error"
-    elif any(i["level"] == "warning" for i in issues):
-        status = "warning"
-        
-    return {
-        "status": status,
-        "issues": issues,
-        "suggestions": suggestions,
-    }
+            tasks = []
+
+    from novel_agent.services.assistant_diagnostics import run_system_diagnostics
+    return run_system_diagnostics(
+        session.root_dir if session.has_project else None,
+        active_project,
+        tasks,
+        ignored_ids,
+        chapter_goal_resolver=lambda chapter_id: _get_chapter_goal_fallback(
+            chapter_id,
+            session.root_dir,
+        ),
+    )
+
 
 
 @router.post("/api/assistant/fix")
@@ -587,7 +454,11 @@ async def execute_assistant_fix(req: FixRequest, session: ProjectSession = Requi
     session = coerce_project_session(session)
     fix_type = req.fix_type
     payload = req.payload
-    
+    from web.assistant_actions import ALLOWED_FIX_TYPES
+
+    if fix_type not in ALLOWED_FIX_TYPES:
+        raise HTTPException(400, f"Unsupported fix type: {fix_type}")
+
     if fix_type == "test_model":
         try:
             from novel_agent.agents.base import OpenAILLM
@@ -678,6 +549,20 @@ async def execute_assistant_fix(req: FixRequest, session: ProjectSession = Requi
             return {"success": False, "error": str(exc.detail)}
         except Exception as exc:
             return {"success": False, "error": str(exc)}
+
+    elif fix_type == "inspect_gate_detail":
+        chapter_id = payload.get("chapter_id")
+        if not chapter_id:
+            raise HTTPException(400, "Missing chapter_id in payload")
+        from novel_agent.services.assistant_knowledge import get_gate_diagnostic_detail
+        details = get_gate_diagnostic_detail(session.root_dir, str(chapter_id))
+        if not details:
+            return {"success": False, "error": f"未找到第 {chapter_id} 章的门禁报告。"}
+        return {
+            "success": True,
+            "details": details,
+            "message": f"第 {chapter_id} 章门禁评分 {details.get('score', '—')}，{'已通过' if details.get('overall_pass') else '未通过（拦截项: ' + ', '.join(details.get('blocked_by', [])) + '）'}",
+        }
 
     else:
         raise HTTPException(400, f"Unsupported fix type: {fix_type}")

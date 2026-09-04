@@ -50,6 +50,11 @@ HOOK_ENDING_PATTERNS = [
     re.compile(r"(脚步声|敲门声|短信|来电|枪声|警报|提示音).{0,12}[。！？]?$"),
 ]
 
+TRIADIC_PATTERNS = [
+    (re.compile(r"([\u4e00-\u9fa5]{2,6})、([\u4e00-\u9fa5]{2,6})(?:和|与|以及)([\u4e00-\u9fa5]{2,6})"), "三元并列修辞"),
+    (re.compile(r"(?:既|不仅).{2,8}(?:又|而且).{2,8}(?:更|还).{2,8}"), "三重递进模板"),
+]
+
 
 def _make_finding(
     rule_id: str,
@@ -395,6 +400,31 @@ def check_anti_ai_flavor(text: str, config: Optional[Dict[str, Any]] = None) -> 
     if dialogue_overcomplete_hits:
         details.append(f"对话过完整 x{dialogue_overcomplete_hits}")
 
+    triadic_hits = 0
+    cfg_triadic = rules_cfg.get("anti_ai_triadic_pattern", {"enabled": True, "weight": 1.0})
+    if cfg_triadic.get("enabled", True):
+        weight_triadic = float(cfg_triadic.get("weight", 1.0))
+        for pattern, desc in TRIADIC_PATTERNS:
+            count = 0
+            for m in pattern.finditer(text):
+                hits.append(m.group(0))
+                findings.append(
+                    _make_finding(
+                        "anti_ai_triadic_pattern",
+                        "triadic_pattern",
+                        desc,
+                        text=m.group(0),
+                        start=m.start(),
+                        end=m.end(),
+                    )
+                )
+                count += 1
+            if count:
+                triadic_hits += count
+                details.append(f"{desc} x{count}")
+    else:
+        weight_triadic = 0.0
+
     ending = _last_sentence(text)
     bad_ending = ""
     ending_weight = 1.0
@@ -436,12 +466,13 @@ def check_anti_ai_flavor(text: str, config: Optional[Dict[str, Any]] = None) -> 
     weighted_hits = (
         emotion_hits * weight_emotion +
         abstract_hits * weight_abstract +
-        dialogue_overcomplete_hits * weight_dialogue
+        dialogue_overcomplete_hits * weight_dialogue +
+        triadic_hits * weight_triadic
     )
     if ending_type == "bad":
         weighted_hits += 2 * ending_weight
 
-    total_hits = emotion_hits + abstract_hits + dialogue_overcomplete_hits
+    total_hits = emotion_hits + abstract_hits + dialogue_overcomplete_hits + triadic_hits
     if ending_type == "bad":
         total_hits += 2
 
@@ -467,6 +498,7 @@ def check_anti_ai_flavor(text: str, config: Optional[Dict[str, Any]] = None) -> 
         "emotion_telling_hits": emotion_hits,
         "abstract_modifier_hits": abstract_hits,
         "dialogue_overcomplete_hits": dialogue_overcomplete_hits,
+        "triadic_hits": triadic_hits,
         "ending_type": ending_type,
         "ending": ending,
         "hits": hits,
@@ -524,4 +556,77 @@ def check_paragraph_layout(text: str, config: Optional[Dict[str, Any]] = None, m
         "long_paragraphs": len(long_paras),
         "long_ratio": round(long_ratio, 3),
         "details": [f"段落 {p['index']}: {p['length']} 字" for p in long_paras[:5]],
+    }
+
+
+def check_text_burstiness(text: str, min_sentences: int = 5) -> Dict[str, Any]:
+    """Calculate sentence length variation (Burstiness) to diagnose AI-like monotonous prose.
+    
+    A low coefficient of variation (CV = std / mean < 0.28) indicates uniform,
+    unbreathing AI output lacking the natural rhythm of fiction.
+    """
+    if not text or not text.strip():
+        return {
+            "pass": True,
+            "level": "none",
+            "score": 100,
+            "mean_length": 0.0,
+            "std_length": 0.0,
+            "coefficient_of_variation": 1.0,
+            "single_sentence_para_ratio": 0.0,
+            "details": [],
+        }
+
+    sentences = [s.strip() for s in re.split(r"[。！？!?]+|\n+", text) if s.strip()]
+    if len(sentences) < min_sentences:
+        return {
+            "pass": True,
+            "level": "none",
+            "score": 100,
+            "sentence_count": len(sentences),
+            "details": [f"句子数量较少 ({len(sentences)} < {min_sentences})，跳过呼吸感统计"],
+        }
+
+    lengths = [len(s) for s in sentences]
+    mean_len = sum(lengths) / len(lengths)
+    variance = sum((l - mean_len) ** 2 for l in lengths) / len(lengths)
+    std_len = variance ** 0.5
+    cv = std_len / max(1.0, mean_len)
+
+    paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
+    single_sentence_paras = 0
+    for p in paragraphs:
+        p_sents = [s for s in re.split(r"[。！？!?]+", p) if s.strip()]
+        if len(p_sents) == 1:
+            single_sentence_paras += 1
+    single_ratio = single_sentence_paras / max(1, len(paragraphs))
+
+    details = [
+        f"句子均长: {mean_len:.1f} 字, 标准差: {std_len:.1f}, 变异系数 (CV): {cv:.2f}",
+        f"单句成段比例: {single_ratio:.1%}",
+    ]
+
+    if cv < 0.28:
+        level = "warning"
+        score = 65
+        details.append("【低呼吸感警告】句长高度均等，缺乏真人长短句错落与单句重音！")
+    elif cv < 0.35:
+        level = "none"
+        score = 80
+        details.append("句式起伏中等偏平缓，可适当增加短句与爆发句。")
+    else:
+        level = "none"
+        score = 100
+        details.append("句长错落有致，呼吸节奏良好。")
+
+    return {
+        "pass": level == "none",
+        "level": level,
+        "score": score,
+        "sentence_count": len(sentences),
+        "mean_length": round(mean_len, 2),
+        "std_length": round(std_len, 2),
+        "coefficient_of_variation": round(cv, 3),
+        "single_sentence_para_ratio": round(single_ratio, 3),
+        "details": details,
     }

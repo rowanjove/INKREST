@@ -220,15 +220,26 @@ def _mask_config_secrets(data: Dict[str, Any]) -> Dict[str, Any]:
     return visit(masked)
 
 
+_ENDPOINT_KEYS = frozenset({"base_url", "api_base", "endpoint", "url"})
+
+
+def _endpoint_changed(existing: Dict[str, Any], incoming: Dict[str, Any]) -> bool:
+    for key in _ENDPOINT_KEYS:
+        if key in incoming and existing.get(key) != incoming.get(key):
+            return True
+    return False
+
+
 def _merge_preserving_masked_secrets(existing: Any, incoming: Any) -> Any:
     if not isinstance(existing, dict) or not isinstance(incoming, dict):
         return incoming
 
+    drop_masked_secrets = _endpoint_changed(existing, incoming)
     merged: Dict[str, Any] = {}
     for key, value in incoming.items():
         old_value = existing.get(key)
         if key in SECRET_KEYS and value in ("", SECRET_MASK, "******"):
-            merged[key] = old_value if old_value is not None else ""
+            merged[key] = "" if drop_masked_secrets else (old_value if old_value is not None else "")
         elif isinstance(value, dict) and isinstance(old_value, dict):
             merged[key] = _merge_preserving_masked_secrets(old_value, value)
         elif isinstance(value, list) and isinstance(old_value, list):

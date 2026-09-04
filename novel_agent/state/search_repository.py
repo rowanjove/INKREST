@@ -101,9 +101,15 @@ class SearchRepositoryMixin:
                         0,
                     )
                 )
+            narrative_chapters = {
+                str(item["chapter_id"])
+                for item in conn.execute("select distinct chapter_id from narrative_events")
+            }
             for row in conn.execute(
                 "select id, chapter_id, summary, characters, objects, threads from events order by chapter_id, id"
             ):
+                if str(row["chapter_id"]) in narrative_chapters:
+                    continue
                 rows.append(
                     (
                         f"event:{row['id']}",

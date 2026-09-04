@@ -43,16 +43,17 @@ def get_root_dir() -> Path:
 
 def require_project_root() -> Path:
     """Active or legacy project root; raises 400 when no book is open."""
-    root = get_root_dir()
-    if not _active_project_id:
-        return root
-    if not root.is_dir():
-        raise HTTPException(404, "当前项目不存在，请从书库重新打开。")
-    if (root / "workspace").is_dir():
-        return root
-    if (root / "config" / "pipeline.yaml").is_file():
-        return root
-    raise HTTPException(400, "请先在书库选择并打开一本书。")
+    if _active_project_id:
+        root = BASE_DIR / "projects" / _active_project_id
+        if not root.is_dir():
+            raise HTTPException(404, "当前项目不存在，请从书库重新打开。")
+        if (root / "workspace").is_dir() or (root / "config" / "pipeline.yaml").is_file():
+            return root
+        raise HTTPException(400, "请先在书库选择并打开一本书。")
+    # App workspace with a book library must not fall back to the repo root.
+    if (BASE_DIR / "projects").is_dir() or (BASE_DIR / "projects.json").is_file():
+        raise HTTPException(400, "请先在书库选择并打开一本书。")
+    return BASE_DIR
 
 
 def _get_task_manager() -> TaskManager:
@@ -105,6 +106,9 @@ def activate_project(project_id: str) -> None:
     with _project_lock:
         _active_project_id = project_id
         root = get_root_dir()
+        if not root.is_dir():
+            _active_project_id = None
+            raise HTTPException(404, "当前项目目录不存在，请从书库重新打开或导入。")
         _task_manager = None
         _task_registry.get(root)
         _ensure_dirs(root)
@@ -126,16 +130,76 @@ def release_project(project_id: str) -> None:
 
 
 _plugin_manager: Optional[Any] = None
+_global_plugin_manager: Optional[Any] = None
+
+
+def get_global_plugin_manager() -> Any:
+    """App-level plugin manager (BASE_DIR/plugins). Survives project switches."""
+    global _global_plugin_manager
+    if _global_plugin_manager is None or _global_plugin_manager.root_dir != BASE_DIR:
+        from novel_agent.plugins import PluginManager
+
+        if _global_plugin_manager is not None:
+            _global_plugin_manager.shutdown()
+        _global_plugin_manager = PluginManager(BASE_DIR, allow_web_extensions=True)
+        _global_plugin_manager.initialize()
+    return _global_plugin_manager
 
 
 def get_plugin_manager() -> Any:
-    """Get the PluginManager for the active project, lazy-initialized."""
+    """Project plugin manager when a book is open; otherwise the global manager."""
     global _plugin_manager
+    if not _active_project_id:
+        return get_global_plugin_manager()
     root_dir = get_root_dir()
     if _plugin_manager is None or _plugin_manager.root_dir != root_dir:
         from novel_agent.plugins import PluginManager
+
         if _plugin_manager is not None:
             _plugin_manager.shutdown()
-        _plugin_manager = PluginManager(root_dir, allow_web_extensions=root_dir == BASE_DIR)
+        _plugin_manager = PluginManager(root_dir, allow_web_extensions=False)
         _plugin_manager.initialize()
     return _plugin_manager
+
+
+def resolve_plugin_manager(plugin_id: str) -> Any:
+    """Prefer the project manager, then the surviving global manager."""
+    project_pm = get_plugin_manager()
+    if plugin_id in getattr(project_pm, "plugins", {}):
+        return project_pm
+    global_pm = get_global_plugin_manager()
+    if plugin_id in getattr(global_pm, "plugins", {}):
+        return global_pm
+    return project_pm
+
+
+def merged_plugin_catalog() -> list:
+    global_cat = get_global_plugin_manager().list_plugin_catalog()
+    if not _active_project_id:
+        return global_cat
+    by_name = {item.get("name"): item for item in global_cat}
+    for item in get_plugin_manager().list_plugin_catalog():
+        by_name[item.get("name")] = item
+    return [item for item in by_name.values() if item]
+
+
+def merged_plugin_navigation() -> dict:
+    global_nav = get_global_plugin_manager().get_navigation_contributions()
+    if not _active_project_id:
+        return global_nav
+    project_nav = get_plugin_manager().get_navigation_contributions()
+    merged = {
+        "library_sidebar": list(global_nav.get("library_sidebar") or []),
+        "project_sidebar": list(global_nav.get("project_sidebar") or []),
+    }
+    seen_lib = {item.get("id") for item in merged["library_sidebar"]}
+    seen_proj = {item.get("id") for item in merged["project_sidebar"]}
+    for item in project_nav.get("library_sidebar") or []:
+        if item.get("id") not in seen_lib:
+            merged["library_sidebar"].append(item)
+            seen_lib.add(item.get("id"))
+    for item in project_nav.get("project_sidebar") or []:
+        if item.get("id") not in seen_proj:
+            merged["project_sidebar"].append(item)
+            seen_proj.add(item.get("id"))
+    return merged

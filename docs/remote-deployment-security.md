@@ -16,6 +16,8 @@ python main.py serve --host 0.0.0.0 --port 8000 --allow-remote
 
 - 必须同时指定 `--allow-remote` 与非 loopback 的 `--host`，否则进程会拒绝启动。
 - 首次远程启动会自动生成 `NOVEL_AGENT_ACCESS_TOKEN` 并打印到控制台；请妥善保存。
+- 远程模型调用默认限制为每分钟 120 次；长篇工作负载可按需设置
+  `NOVEL_AGENT_MAX_MODEL_CALLS_PER_MINUTE`，但不要为绕过供应商限流而无限调高。
 
 也可手动设置环境变量后再启动：
 

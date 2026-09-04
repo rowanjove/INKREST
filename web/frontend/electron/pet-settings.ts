@@ -11,6 +11,7 @@ export interface PetSettings {
   notifyOnTaskComplete: boolean;
   notifyOnTaskError: boolean;
   petId: string;
+  dockedEdge?: 'left' | 'right' | 'top' | null;
 }
 
 const DEFAULT_SETTINGS: PetSettings = {
@@ -22,6 +23,7 @@ const DEFAULT_SETTINGS: PetSettings = {
   notifyOnTaskComplete: true,
   notifyOnTaskError: true,
   petId: 'shanshan',
+  dockedEdge: null,
 };
 
 function settingsPath() {
@@ -36,6 +38,7 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 export function clampPetPosition(
   position: { x: number; y: number } | null,
   size: number,
+  dockedEdge?: 'left' | 'right' | 'top' | null,
 ) {
   const displays = screen.getAllDisplays();
   const raw = position;
@@ -44,15 +47,33 @@ export function clampPetPosition(
     const matchedDisplay = displays.find((d) => {
       const wa = d.workArea;
       return (
-        raw.x >= wa.x &&
-        raw.x <= wa.x + wa.width &&
-        raw.y >= wa.y &&
-        raw.y <= wa.y + wa.height
+        raw.x + size >= wa.x + 32 &&
+        raw.x <= wa.x + wa.width - 32 &&
+        raw.y + size >= wa.y + 32 &&
+        raw.y <= wa.y + wa.height - 32
       );
     });
 
     if (matchedDisplay) {
       const wa = matchedDisplay.workArea;
+      if (dockedEdge === 'left') {
+        return {
+          x: wa.x - size + 48,
+          y: Math.min(wa.y + wa.height - size, Math.max(wa.y, Math.round(raw.y))),
+        };
+      }
+      if (dockedEdge === 'right') {
+        return {
+          x: wa.x + wa.width - 48,
+          y: Math.min(wa.y + wa.height - size, Math.max(wa.y, Math.round(raw.y))),
+        };
+      }
+      if (dockedEdge === 'top') {
+        return {
+          x: Math.min(wa.x + wa.width - size, Math.max(wa.x, Math.round(raw.x))),
+          y: wa.y - size + 48,
+        };
+      }
       return {
         x: Math.min(wa.x + wa.width - size, Math.max(wa.x, Math.round(raw.x))),
         y: Math.min(wa.y + wa.height - size, Math.max(wa.y, Math.round(raw.y))),
@@ -72,12 +93,16 @@ export function clampPetPosition(
 
 export function normalizePetSettings(input: Partial<PetSettings> = {}): PetSettings {
   const size = clampNumber(input.size, 128, 260, DEFAULT_SETTINGS.size);
+  const dockedEdge = (input.dockedEdge === 'left' || input.dockedEdge === 'right' || input.dockedEdge === 'top')
+    ? input.dockedEdge
+    : null;
   return {
     ...DEFAULT_SETTINGS,
     ...input,
     size,
+    dockedEdge,
     position: input.position
-      ? clampPetPosition(input.position, size)
+      ? clampPetPosition(input.position, size, dockedEdge)
       : DEFAULT_SETTINGS.position,
     petId: input.petId || DEFAULT_SETTINGS.petId,
   };

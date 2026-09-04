@@ -180,39 +180,39 @@ watch(
 .panel > header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
 .panel > header > .el-icon { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 8px; background: var(--color-primary-soft); color: var(--color-primary); }
 .panel h2 { margin: 0; color: var(--color-text-strong); font-size: 14px; }
-.panel header p { margin: 3px 0 0; color: var(--color-text-muted); font-size: 10px; }
+.panel header p { margin: 3px 0 0; color: var(--color-text-muted); font-size: 12.5px; }
 .platform-card > .el-select { width: 100%; }
-.rule-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin: 12px 0; }
-.rule-metrics div { display: grid; gap: 2px; padding: 9px; border-radius: 8px; background: var(--color-bg-surface-muted); }
-.rule-metrics span { color: var(--color-text-muted); font-size: 9px; }
-.rule-metrics strong { color: var(--color-text-strong); font-size: 12px; }
-.style-summary { margin: 0; padding: 10px; border-left: 3px solid var(--color-primary); background: var(--color-primary-soft); color: var(--color-text); font-size: 10px; line-height: 1.7; }
+.rule-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+.rule-metrics div { display: grid; gap: 3px; padding: 10px; border-radius: 8px; background: var(--color-bg-surface-muted); }
+.rule-metrics span { color: var(--color-text-muted); font-size: 12px; }
+.rule-metrics strong { color: var(--color-text-strong); font-size: 13.5px; }
+.style-summary { margin: 0; padding: 12px; border-left: 3px solid var(--color-primary); background: var(--color-primary-soft); color: var(--color-text); font-size: 12.5px; line-height: 1.7; }
 .avoid-list { display: grid; gap: 6px; margin-top: 12px; }
-.avoid-list > strong { color: var(--color-text-strong); font-size: 10px; }
-.avoid-list span { display: flex; align-items: center; gap: 6px; color: var(--color-text-muted); font-size: 10px; }
+.avoid-list > strong { color: var(--color-text-strong); font-size: 13px; }
+.avoid-list span { display: flex; align-items: center; gap: 6px; color: var(--color-text-muted); font-size: 12px; }
 .avoid-list .el-icon { color: var(--color-warning); }
 .feedback-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
-.feedback-form label { display: grid; gap: 5px; color: var(--color-text-muted); font-size: 10px; }
+.feedback-form label { display: grid; gap: 5px; color: var(--color-text-muted); font-size: 12px; }
 .feedback-form .el-input-number { width: 100%; }
-.golden-list { display: grid; gap: 7px; }
-.golden-list > div { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px; border: 1px solid var(--color-border); border-radius: 8px; }
-.golden-list > div > span { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 8px; background: var(--color-bg-surface-muted); color: var(--color-text-muted); font-size: 9px; font-weight: 800; }
+.golden-list { display: grid; gap: 8px; }
+.golden-list > div { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--color-border); border-radius: 8px; }
+.golden-list > div > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 8px; background: var(--color-bg-surface-muted); color: var(--color-text-muted); font-size: 12px; font-weight: 750; }
 .golden-list > div.ready > span { background: var(--color-success-soft); color: var(--color-success); }
 .golden-list div div { display: grid; min-width: 0; gap: 2px; }
-.golden-list strong { overflow: hidden; color: var(--color-text-strong); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.golden-list small { color: var(--color-text-muted); font-size: 9px; }
-.golden-list em { color: var(--color-warning); font-size: 9px; font-style: normal; }
+.golden-list strong { overflow: hidden; color: var(--color-text-strong); font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.golden-list small { color: var(--color-text-muted); font-size: 12px; }
+.golden-list em { color: var(--color-warning); font-size: 11.5px; font-style: normal; font-weight: 600; }
 .golden-list .ready em { color: var(--color-success); }
-.golden-rules { margin-top: 12px; padding: 11px; border-radius: 8px; background: var(--color-bg-surface-muted); }
-.golden-rules strong { color: var(--color-text-strong); font-size: 10px; }
-.golden-rules p { margin: 6px 0 0; color: var(--color-text-muted); font-size: 10px; line-height: 1.7; }
-.check-list { display: grid; gap: 9px; }
-.check-list > div { display: flex; align-items: flex-start; gap: 9px; }
-.check-list > div > span { flex: 0 0 38px; padding: 3px 5px; border-radius: 999px; background: var(--color-warning-soft); color: var(--color-warning); font-size: 8px; font-weight: 800; text-align: center; }
+.golden-rules { margin-top: 12px; padding: 12px; border-radius: 8px; background: var(--color-bg-surface-muted); }
+.golden-rules strong { color: var(--color-text-strong); font-size: 13px; }
+.golden-rules p { margin: 6px 0 0; color: var(--color-text-muted); font-size: 12.5px; line-height: 1.7; }
+.check-list { display: grid; gap: 10px; }
+.check-list > div { display: flex; align-items: flex-start; gap: 10px; }
+.check-list > div > span { flex: 0 0 46px; padding: 4px 6px; border-radius: 999px; background: var(--color-warning-soft); color: var(--color-warning); font-size: 11.5px; font-weight: 700; text-align: center; }
 .check-list > div > span.ready { background: var(--color-success-soft); color: var(--color-success); }
 .check-list div div { display: grid; gap: 2px; }
-.check-list strong { color: var(--color-text-strong); font-size: 10px; }
-.check-list p { margin: 0; color: var(--color-text-muted); font-size: 9px; line-height: 1.5; }
+.check-list strong { color: var(--color-text-strong); font-size: 13px; }
+.check-list p { margin: 0; color: var(--color-text-muted); font-size: 12px; line-height: 1.5; }
 @media (max-width: 900px) {
   .platform-grid { grid-template-columns: 1fr; }
 }

@@ -168,8 +168,8 @@ const emit = defineEmits<{
 }
 .catalog-panel > header { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid var(--color-border); }
 .catalog-panel > header > div { display: flex; align-items: center; justify-content: space-between; }
-.catalog-panel strong { color: var(--color-text-strong); font-size: 12px; }
-.catalog-panel header span { color: var(--color-text-muted); font-size: 10px; }
+.catalog-panel strong { color: var(--color-text-strong); font-size: 13.5px; }
+.catalog-panel header span { color: var(--color-text-muted); font-size: 12px; }
 .catalog-list { min-height: 0; overflow: auto; padding: 8px; }
 .catalog-list button {
   display: grid;
@@ -188,10 +188,10 @@ const emit = defineEmits<{
   border-color: color-mix(in srgb, var(--color-primary) 32%, transparent);
   background: var(--color-primary-soft);
 }
-.catalog-list button > span { color: var(--color-primary); font-size: 9px; font-weight: 800; letter-spacing: .04em; }
-.catalog-list button strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.catalog-list button small { color: var(--color-text-subtle); font-size: 9px; }
-.catalog-empty { padding: 30px 12px; color: var(--color-text-muted); font-size: 11px; text-align: center; }
+.catalog-list button > span { color: var(--color-primary); font-size: 11.5px; font-weight: 700; letter-spacing: .04em; }
+.catalog-list button strong { overflow: hidden; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-strong); }
+.catalog-list button small { color: var(--color-text-subtle); font-size: 12px; }
+.catalog-empty { padding: 30px 12px; color: var(--color-text-muted); font-size: 12.5px; text-align: center; }
 .catalog-load-more { width: 100%; margin-top: 6px; }
 .reader-panel { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
 .reader-controls {
@@ -204,9 +204,9 @@ const emit = defineEmits<{
   background: var(--color-bg-surface);
 }
 .reader-controls-copy { display: grid; min-width: 130px; margin-right: auto; gap: 1px; }
-.reader-controls strong { color: var(--color-text-strong); font-size: 11px; }
-.reader-controls span { color: var(--color-text-muted); font-size: 9px; }
-.reader-controls label { display: flex; align-items: center; gap: 7px; color: var(--color-text-muted); font-size: 9px; white-space: nowrap; }
+.reader-controls strong { color: var(--color-text-strong); font-size: 13px; }
+.reader-controls span { color: var(--color-text-muted); font-size: 11.5px; }
+.reader-controls label { display: flex; align-items: center; gap: 7px; color: var(--color-text-muted); font-size: 12px; white-space: nowrap; }
 .reader-controls label .el-slider { width: 72px; }
 .reader-controls label .el-select { width: 84px; }
 .publication-reader-scroll {
@@ -229,9 +229,9 @@ const emit = defineEmits<{
   font-family: var(--font-serif), 'Songti SC', serif;
 }
 .book-sheet > header { margin-bottom: 38px; padding-bottom: 26px; border-bottom: 1px solid var(--color-border-subtle); text-align: center; }
-.book-sheet > header small { color: var(--color-primary); font-family: var(--font-sans); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+.book-sheet > header small { color: var(--color-primary); font-family: var(--font-sans); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
 .book-sheet h1 { margin: 10px 0 8px; color: var(--color-text-strong); font-size: 26px; line-height: 1.3; }
-.book-sheet > header p { margin: 0 0 14px; color: var(--color-text-muted); font-family: var(--font-sans); font-size: 10px; }
+.book-sheet > header p { margin: 0 0 14px; color: var(--color-text-muted); font-family: var(--font-sans); font-size: 12.5px; }
 .book-sheet > header p span { margin: 0 5px; }
 .book-body p { margin: 0 0 1.35em; color: inherit; text-align: justify; }
 .book-body p.indent { text-indent: 2em; }
@@ -246,11 +246,12 @@ const emit = defineEmits<{
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 0;
   border-radius: 7px;
   background: transparent;
   color: var(--color-text-muted);
+  font-size: 13px;
   cursor: pointer;
 }
 .book-sheet footer button:hover:not(:disabled) { background: var(--color-primary-soft); color: var(--color-primary); }

@@ -4,7 +4,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from novel_agent.agents.base import LLMClient, StaticLLM, create_llm, create_llm_registry
+from novel_agent.agents.base import (
+    LLMClient,
+    StaticLLM,
+    create_llm,
+    create_llm_registry,
+    _resolve_model_ref,
+)
 from novel_agent.config.io import (
     load_pipeline_document,
     resolve_environment_values,
@@ -23,7 +29,6 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "vector_search_window": 80,
         "hnsw_rebuild_every": 50,
         "merge_review_stages": True,
-        "yaml_mirror_enabled": False,
     },
     "chapter": {
         "default_target_chars": [1200, 2200],
@@ -41,25 +46,28 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
 }
 
 DEFAULT_LLM_ROLE_TIERS: Dict[str, str] = {
+    # Tier 2: Creative / Daily Writing & Polishing
     "novel_chat": "daily",
     "writer": "daily",
     "stitch_editor": "daily",
     "style_editor": "daily",
-    "length_fix": "daily",
-    "chapter_summary": "daily",
-    "asset_compressor": "daily",
-    "compressor": "daily",
-    "expander": "daily",
-    "persona_reader": "daily",
-    "asset_generator": "daily",
     "assistant": "daily",
+    "expander": "daily",
+    "asset_generator": "daily",
+    # Tier 1: Macro Reasoning & Quality Gate
     "chief_editor": "reasoning",
-    "managing_editor": "reasoning",
+    "managing_editor": "daily",
     "chapter_planner": "reasoning",
     "planner": "reasoning",
     "auditor": "reasoning",
     "continuity_checker": "reasoning",
-    "state_extractor": "reasoning",
+    # Tier 3: Fast Auxiliary & Compression
+    "length_fix": "fast",
+    "chapter_summary": "fast",
+    "asset_compressor": "fast",
+    "compressor": "fast",
+    "state_extractor": "fast",
+    "persona_reader": "fast",
 }
 
 _LLM_ROUTING_KEYS = {
@@ -67,6 +75,7 @@ _LLM_ROUTING_KEYS = {
     "daily_model_id",
     "default_model_id",
     "reasoning_model_id",
+    "fast_model_id",
     "role_tiers",
 }
 
@@ -205,9 +214,15 @@ def _resolve_tiered_overrides(
     role_tiers = {**DEFAULT_LLM_ROLE_TIERS, **llm_settings.get("role_tiers", {})}
     daily_model_id = _daily_model_id(llm_settings)
     reasoning_model_id = llm_settings.get("reasoning_model_id") or daily_model_id
+    fast_model_id = llm_settings.get("fast_model_id") or daily_model_id
     routed: Dict[str, Dict[str, Any]] = {}
     for role, tier in role_tiers.items():
-        model_id = reasoning_model_id if tier == "reasoning" else daily_model_id
+        if tier == "reasoning":
+            model_id = reasoning_model_id
+        elif tier in ("fast", "auxiliary"):
+            model_id = fast_model_id
+        else:
+            model_id = daily_model_id
         inherited = {"model_ref": model_id} if model_id else {}
         role_override = overrides.get(role, {})
         if inherited or role_override:
@@ -218,20 +233,29 @@ def _resolve_tiered_overrides(
 
 
 def _load_models_library(root_dir: Path) -> Dict[str, Dict[str, Any]]:
-    """Load model library from config/models.json."""
-    grandparent = Path(root_dir).parent.parent
+    """Load model library from config/models.json, supporting project overlay."""
+    root_path = Path(root_dir)
+    grandparent = root_path.parent.parent
     if (grandparent / "projects.json").exists():
         global_config = grandparent / "config"
     else:
-        global_config = Path(root_dir) / "config"
+        global_config = root_path / "config"
     path = global_config / "models.json"
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
-    return resolve_environment_values(data.get("models", {}))
+    models: Dict[str, Dict[str, Any]] = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            models.update(resolve_environment_values(data.get("models", {})))
+        except (json.JSONDecodeError, OSError):
+            pass
+    project_path = root_path / "config" / "models.json"
+    if project_path.is_file() and project_path.resolve() != path.resolve():
+        try:
+            p_data = json.loads(project_path.read_text(encoding="utf-8"))
+            models.update(resolve_environment_values(p_data.get("models", {})))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return models
 
 
 def _first_model_id(models_library: Dict[str, Dict[str, Any]]) -> str:
@@ -285,7 +309,14 @@ class PipelineConfig:
     def get_call_log(self) -> List[Dict[str, Any]]:
         """Aggregate call logs from all LLM clients in the registry."""
         logs: List[Dict[str, Any]] = []
-        for client in self.llm_registry.values():
+        seen: set[int] = set()
+        clients = list(self.llm_registry.values())
+        if self.llm not in clients:
+            clients.append(self.llm)
+        for client in clients:
+            if client is None or id(client) in seen:
+                continue
+            seen.add(id(client))
             if hasattr(client, "call_log"):
                 logs.extend(client.call_log)
         return logs

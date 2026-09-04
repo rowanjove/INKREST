@@ -7,6 +7,7 @@ interface ElectronPetSettings {
   notifyOnTaskComplete: boolean;
   notifyOnTaskError: boolean;
   petId: string;
+  dockedEdge?: 'left' | 'right' | 'top' | null;
 }
 
 interface ElectronRectangle {
@@ -36,6 +37,10 @@ interface ElectronAPI {
   getPetWorkArea: () => Promise<ElectronRectangle>;
   getPetWindowBounds: () => Promise<ElectronRectangle | null>;
   setPetWindowBounds: (bounds: { x: number; y: number; width?: number; height?: number }) => Promise<void>;
+  animatePetWindowBounds: (
+    bounds: { x: number; y: number; width?: number; height?: number },
+    durationMs?: number,
+  ) => Promise<void>;
   onNavigate: (callback: (route: string) => void) => () => void;
   onProgress: (callback: (data: unknown) => void) => () => void;
   onLog: (callback: (data: unknown) => void) => () => void;

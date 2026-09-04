@@ -56,6 +56,7 @@ from novel_agent.control.genre_genes import ensure_genre_genes
 from novel_agent.pipeline import load_project_pipeline_file, write_pipeline_file
 from novel_agent.control.outline_structure import normalize_macro_outline
 from novel_agent.services.project_snapshot import build_project_snapshot
+from web.genre_labels import normalize_genre_label
 from novel_agent.services.v2_reset import (
     ActiveProjectTasksError,
     UnsafeProjectPathError,
@@ -277,8 +278,9 @@ def create_project(req: ProjectCreateRequest) -> Dict[str, Any]:
 
     # Save extended metadata
     meta = {}
-    if req.genre:
-        meta["genre"] = req.genre
+    genre_label = normalize_genre_label(ws_server.BASE_DIR, req.genre or req.preset_theme)
+    if genre_label:
+        meta["genre"] = genre_label
     if req.channel:
         meta["channel"] = req.channel
     if req.target_chapters > 0:
@@ -296,6 +298,12 @@ def create_project(req: ProjectCreateRequest) -> Dict[str, Any]:
         meta["target_chars_per_chapter"] = req.target_chars_per_chapter
     # 保存平台特征代号，默认为起点
     meta["platform"] = req.platform or "qidian"
+    if req.factory_mode:
+        from web.factory_modes import is_valid_factory_mode
+
+        if not is_valid_factory_mode(req.factory_mode):
+            raise HTTPException(400, "Unknown factory_mode")
+        meta["factory_mode"] = req.factory_mode
     
     if meta:
         meta_path = project_dir / "config" / "project_meta.json"
@@ -305,6 +313,10 @@ def create_project(req: ProjectCreateRequest) -> Dict[str, Any]:
     # Save outline if provided
     if req.outline:
         outline = dict(req.outline)
+        if outline.get("genre_positioning"):
+            outline["genre_positioning"] = normalize_genre_label(
+                ws_server.BASE_DIR, outline.get("genre_positioning")
+            )
         if scale_profile:
             outline["scale_profile"] = scale_profile
         if req.target_chapters > 0:
@@ -409,6 +421,27 @@ def import_demo_project(demo_id: str = Query("demo-factory-novel")) -> Dict[str,
 
     with ws_server._project_lock:
         shutil.copytree(source, project_dir)
+        ws_helpers._copy_default_assets(project_dir / "assets")
+        ws_helpers._copy_default_prompts(project_dir / "prompts")
+        config_path = project_dir / "config" / "pipeline.yaml"
+        if not config_path.exists():
+            from web.project_manager import _write_yaml
+            _write_yaml(
+                config_path,
+                {
+                    "chapter": {
+                        "default_target_chars": [2000, 3000],
+                        "default_scene_target_chars": [400, 800],
+                    },
+                    "runtime": {"max_workers": 4, "retry_attempts": 1, "interactive": False},
+                },
+            )
+        if outline.get("macro_outline"):
+            try:
+                from novel_agent.services.outline_sync import record_outline_saved
+                record_outline_saved(project_dir, outline)
+            except Exception:
+                pass
         ws_server.project_manager.register_project(
             pid,
             {

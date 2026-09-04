@@ -6,7 +6,12 @@ from typing import Any, ClassVar, Dict, List, Optional, Protocol, Set, Tuple
 
 import httpx
 
-from novel_agent.exceptions import AgentError, LLMResponseError, RetryExhaustedError
+from novel_agent.exceptions import (
+    AgentError,
+    LLMResponseError,
+    LLMThinkingTruncatedError,
+    RetryExhaustedError,
+)
 from novel_agent.logging_config import get_logger
 
 logger = get_logger("agents.base")
@@ -30,7 +35,9 @@ def _assert_safe_model_base_url(base_url: str) -> None:
 __all__ = [
     "AgentError",
     "LLMResponseError",
+    "LLMThinkingTruncatedError",
     "RetryExhaustedError",
+    "ReasoningPolicy",
     "LLMClient",
     "StaticLLM",
     "OpenAILLM",
@@ -205,6 +212,66 @@ class StaticLLM:
         return self.generate(role, prompt)
 
 
+@dataclass(frozen=True)
+class ReasoningPolicy:
+    """Standard policy resolving thinking / reasoning_effort across providers and roles."""
+
+    thinking_enabled: bool
+    reasoning_effort: Optional[str] = None
+    strip_temperature: bool = False
+
+    @classmethod
+    def resolve(
+        cls,
+        role: str,
+        model: str,
+        *,
+        user_thinking: Optional[bool] = None,
+        user_reasoning_effort: Optional[str] = None,
+        thinking_override: Optional[bool] = None,
+    ) -> "ReasoningPolicy":
+        model_str = str(model).lower()
+        is_deepseek = any(tag in model_str for tag in ("deepseek-v4", "deepseek-r1", "deepseek-reasoner"))
+        # Planning / reasoning roles default to thinking enabled on reasoning models;
+        # creative writing / polishing roles (writer, expander, style_editor, stitch_editor) default to disabled.
+        REASONING_ROLES = {
+            "chief_editor",
+            "chapter_planner",
+            "planner",
+            "auditor",
+            "continuity_checker",
+        }
+        if thinking_override is not None:
+            effective_thinking = thinking_override
+        elif user_thinking is not None:
+            effective_thinking = user_thinking
+        elif is_deepseek:
+            effective_thinking = role in REASONING_ROLES
+        else:
+            effective_thinking = False
+
+        effort = user_reasoning_effort or ("high" if effective_thinking and is_deepseek else None)
+        strip_temp = bool(is_deepseek and effective_thinking)
+        return cls(
+            thinking_enabled=effective_thinking,
+            reasoning_effort=effort,
+            strip_temperature=strip_temp,
+        )
+
+    def apply_to_payload(self, payload: Dict[str, Any], model: str) -> None:
+        model_str = str(model).lower()
+        is_deepseek = any(tag in model_str for tag in ("deepseek-v4", "deepseek-r1", "deepseek-reasoner"))
+        if is_deepseek:
+            payload["thinking"] = {"type": "enabled" if self.thinking_enabled else "disabled"}
+            if self.thinking_enabled:
+                if self.reasoning_effort:
+                    payload["reasoning_effort"] = self.reasoning_effort
+                if self.strip_temperature:
+                    payload.pop("temperature", None)
+        elif self.reasoning_effort:
+            payload["reasoning_effort"] = self.reasoning_effort
+
+
 @dataclass
 class OpenAILLM:
     """OpenAI-compatible chat completion client.
@@ -223,6 +290,8 @@ class OpenAILLM:
     max_retries: int = 3
     retry_delay: float = 1.0
     proxy: str = ""
+    thinking: Optional[bool] = None
+    reasoning_effort: Optional[str] = None
 
     def __post_init__(self):
         self._client: Optional[httpx.Client] = None
@@ -237,36 +306,116 @@ class OpenAILLM:
 
     def _get_client(self) -> httpx.Client:
         if self._client is None or self._client.is_closed:
-            self._client = httpx.Client(**self._client_kwargs())
+            kwargs = self._client_kwargs()
+            try:
+                from web.outbound import model_httpx_transport
+
+                transport = model_httpx_transport(self.base_url, async_mode=False)
+            except Exception:
+                transport = None
+            if transport is not None:
+                kwargs["transport"] = transport
+            self._client = httpx.Client(**kwargs)
         return self._client
 
     def _get_async_client(self) -> httpx.AsyncClient:
         if self._aclient is None or self._aclient.is_closed:
-            self._aclient = httpx.AsyncClient(**self._client_kwargs())
+            kwargs = self._client_kwargs()
+            try:
+                from web.outbound import model_httpx_transport
+
+                transport = model_httpx_transport(self.base_url, async_mode=True)
+            except Exception:
+                transport = None
+            if transport is not None:
+                kwargs["transport"] = transport
+            self._aclient = httpx.AsyncClient(**kwargs)
         return self._aclient
 
     # ---- shared helpers (eliminates ~100 lines of duplication) ----
 
-    def _build_payload(self, role: str, prompt: str) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
+    def _build_payload(
+        self,
+        role: str,
+        prompt: str,
+        max_tokens: Optional[int] = None,
+        system_hint: Optional[str] = None,
+        thinking_override: Optional[bool] = None,
+    ) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
         """Build (url, headers, payload) for the chat/completions endpoint."""
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         headers: Dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+
+        system_content = f"你是{role}。"
+        user_content = prompt
+        if system_hint:
+            system_content = f"{system_content}\n\n{system_hint}"
+            user_content = f"{prompt}\n\n{system_hint}"
+
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": f"你是{role}。"},
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
             ],
-            "max_tokens": self.max_tokens,
+            "max_tokens": max_tokens if max_tokens is not None else self.max_tokens,
             "temperature": self.temperature,
         }
         if self.seed is not None:
             payload["seed"] = int(self.seed)
+
+        policy = ReasoningPolicy.resolve(
+            role,
+            self.model,
+            user_thinking=self.thinking,
+            user_reasoning_effort=self.reasoning_effort,
+            thinking_override=thinking_override,
+        )
+        policy.apply_to_payload(payload, self.model)
         return url, headers, payload
 
     _NON_RETRYABLE_STATUS: ClassVar[Set[int]] = {400, 401, 403, 404, 422}
+
+    def _record_usage(
+        self,
+        data: Dict[str, Any],
+        role: str,
+        t0: float,
+        *,
+        outcome: str = "succeeded",
+        finish_reason: Optional[str] = None,
+    ) -> None:
+        usage = data.get("usage") or {}
+        if not isinstance(usage, dict) or not usage:
+            return
+        import uuid
+        response_id = str(data.get("id") or "").strip()
+        log = {
+            "call_id": response_id or f"call_{uuid.uuid4().hex}",
+            "provider_request_id": response_id,
+            "role": role,
+            "model": data.get("model", self.model),
+            "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+            "completion_tokens": int(usage.get("completion_tokens") or 0),
+            "total_tokens": int(usage.get("total_tokens") or 0),
+            "reasoning_tokens": int(
+                ((usage.get("completion_tokens_details") or {}).get("reasoning_tokens"))
+                or usage.get("reasoning_tokens")
+                or 0
+            ),
+            "latency_ms": int((time.time() - t0) * 1000),
+            "timestamp": time.time(),
+            "outcome": outcome,
+            "finish_reason": finish_reason or "",
+        }
+        from novel_agent.progress import record_llm_usage
+
+        log["persisted"] = record_llm_usage(log)
+        self.call_log.append(log)
+        if len(self.call_log) > 1000:
+            self.call_log = self.call_log[-1000:]
 
     def _process_response(self, resp: httpx.Response, role: str, t0: float) -> str:
         """Validate HTTP response, parse JSON, record metrics, return content.
@@ -281,40 +430,82 @@ class OpenAILLM:
         data = resp.json()
 
         if "choices" not in data or not data["choices"]:
+            self._record_usage(data, role, t0, outcome="invalid_response")
             raise LLMResponseError("Invalid response structure: missing 'choices'")
 
-        result = data["choices"][0].get("message", {}).get("content", "").strip()
+        choice = data["choices"][0]
+        msg = choice.get("message", {})
+        result = (msg.get("content") or "").strip()
+        finish_reason = choice.get("finish_reason")
+        reasoning = (msg.get("reasoning_content") or "").strip()
+
         if not result:
+            if finish_reason == "length" or (reasoning and len(reasoning) > 500):
+                self._record_usage(
+                    data,
+                    role,
+                    t0,
+                    outcome="thinking_truncated",
+                    finish_reason=finish_reason,
+                )
+                raise LLMThinkingTruncatedError(
+                    f"模型思考过程超限截断 (finish_reason={finish_reason}, 思考长度={len(reasoning)} 字符)，未能输出有效正文内容。",
+                    role=role,
+                    model=str(data.get("model", self.model)),
+                    finish_reason=str(finish_reason or ""),
+                    usage=data.get("usage") or {},
+                    recovery_action="escalate_tokens_and_concise_hint",
+                )
+            self._record_usage(
+                data,
+                role,
+                t0,
+                outcome="empty_content",
+                finish_reason=finish_reason,
+            )
             raise LLMResponseError("Empty response content")
 
         latency_ms = int((time.time() - t0) * 1000)
         usage = data.get("usage", {})
-        self.call_log.append({
-            "role": role,
-            "model": data.get("model", self.model),
-            "prompt_tokens": usage.get("prompt_tokens", 0),
-            "completion_tokens": usage.get("completion_tokens", 0),
-            "total_tokens": usage.get("total_tokens", 0),
-            "latency_ms": latency_ms,
-            "timestamp": time.time(),
-        })
+        self._record_usage(
+            data,
+            role,
+            t0,
+            outcome="succeeded",
+            finish_reason=finish_reason,
+        )
         logger.debug(
             "LLM call succeeded for role=%s, length=%d, tokens=%d, latency=%dms",
             role, len(result), usage.get("total_tokens", 0), latency_ms,
         )
         return result
 
+    def clear_call_log(self) -> None:
+        """Clear recorded call logs to free memory."""
+        self.call_log.clear()
+
     # ---- public API ----
 
     def generate(self, role: str, prompt: str) -> str:
         from novel_agent.progress import check_aborted
+        from novel_agent.control.model_rate_limit import enforce_model_call_rate_limit
         check_aborted()
+        enforce_model_call_rate_limit()
         _assert_safe_model_base_url(self.base_url)
-        url, headers, payload = self._build_payload(role, prompt)
+        current_max_tokens = self.max_tokens
+        system_hint: str | None = None
+        thinking_override: bool | None = None
         last_error: Exception | None = None
         for attempt in range(self.max_retries):
             check_aborted()
             t0 = time.time()
+            url, headers, payload = self._build_payload(
+                role,
+                prompt,
+                max_tokens=current_max_tokens,
+                system_hint=system_hint,
+                thinking_override=thinking_override,
+            )
             try:
                 resp = self._get_client().post(url, headers=headers, json=payload)
                 return self._process_response(resp, role, t0)
@@ -324,8 +515,20 @@ class OpenAILLM:
                     "LLM call attempt %d/%d failed for role=%s: %s",
                     attempt + 1, self.max_retries, role, exc,
                 )
-                if isinstance(exc, LLMResponseError):
+                if isinstance(exc, LLMResponseError) and "Non-retryable HTTP" in str(exc):
                     raise
+                if isinstance(exc, LLMThinkingTruncatedError) or "模型思考过程超限截断" in str(exc):
+                    old_tokens = current_max_tokens
+                    current_max_tokens = min(max(current_max_tokens * 2, 16384), 65536)
+                    system_hint = (
+                        "【紧急生成指引】：上一轮生成由于思考链（Reasoning）过长消耗过多 Token 导致正文截断。"
+                        "本轮请务必：极简思考（控制在 300 字以内），直接专注于输出高质量完整正文，严禁长篇展开内心推演。"
+                    )
+                    thinking_override = False
+                    logger.warning(
+                        "Thinking truncation detected: escalating max_tokens from %d to %d and adding concise-thinking directive (role=%s, attempt %d/%d)",
+                        old_tokens, current_max_tokens, role, attempt + 1, self.max_retries,
+                    )
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay * (2 ** attempt))
         logger.error("LLM call failed after %d attempts for role=%s", self.max_retries, role)
@@ -335,13 +538,24 @@ class OpenAILLM:
 
     async def agenerate(self, role: str, prompt: str) -> str:
         from novel_agent.progress import check_aborted
+        from novel_agent.control.model_rate_limit import enforce_model_call_rate_limit
         check_aborted()
+        enforce_model_call_rate_limit()
         _assert_safe_model_base_url(self.base_url)
-        url, headers, payload = self._build_payload(role, prompt)
+        current_max_tokens = self.max_tokens
+        system_hint: str | None = None
+        thinking_override: bool | None = None
         last_error: Exception | None = None
         for attempt in range(self.max_retries):
             check_aborted()
             t0 = time.time()
+            url, headers, payload = self._build_payload(
+                role,
+                prompt,
+                max_tokens=current_max_tokens,
+                system_hint=system_hint,
+                thinking_override=thinking_override,
+            )
             try:
                 resp = await self._get_async_client().post(url, headers=headers, json=payload)
                 return self._process_response(resp, role, t0)
@@ -351,14 +565,115 @@ class OpenAILLM:
                     "LLM call attempt %d/%d failed for role=%s: %s",
                     attempt + 1, self.max_retries, role, exc,
                 )
-                if isinstance(exc, LLMResponseError):
+                if isinstance(exc, LLMResponseError) and "Non-retryable HTTP" in str(exc):
                     raise
+                if isinstance(exc, LLMThinkingTruncatedError) or "模型思考过程超限截断" in str(exc):
+                    old_tokens = current_max_tokens
+                    current_max_tokens = min(max(current_max_tokens * 2, 16384), 65536)
+                    system_hint = (
+                        "【紧急生成指引】：上一轮生成由于思考链（Reasoning）过长消耗过多 Token 导致正文截断。"
+                        "本轮请务必：极简思考（控制在 300 字以内），直接专注于输出高质量完整正文，严禁长篇展开内心推演。"
+                    )
+                    thinking_override = False
+                    logger.warning(
+                        "Thinking truncation detected: escalating max_tokens from %d to %d and adding concise-thinking directive (role=%s, attempt %d/%d)",
+                        old_tokens, current_max_tokens, role, attempt + 1, self.max_retries,
+                    )
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay * (2 ** attempt))
         logger.error("LLM call failed after %d attempts for role=%s", self.max_retries, role)
         raise RetryExhaustedError(
             f"OpenAI API call failed after {self.max_retries} attempts: {last_error}"
         )
+
+    async def astream(self, role: str, prompt: str):
+        """Stream chunks from OpenAI-compatible SSE completion."""
+        from novel_agent.progress import check_aborted
+        from novel_agent.control.model_rate_limit import enforce_model_call_rate_limit
+        check_aborted()
+        enforce_model_call_rate_limit()
+        _assert_safe_model_base_url(self.base_url)
+        url, headers, payload = self._build_payload(role, prompt)
+        stream_payload = dict(payload)
+        stream_payload["stream"] = True
+        if str(self.model).lower().startswith("deepseek-v4"):
+            stream_payload["stream_options"] = {"include_usage": True}
+
+        client = self._get_async_client()
+        emitted_content = False
+        malformed = 0
+        reasoning_chars = 0
+        final_usage: Dict[str, Any] = {}
+        final_model = self.model
+        response_id = ""
+        finish_reason = ""
+        t0 = time.time()
+        try:
+            async with client.stream("POST", url, headers=headers, json=stream_payload) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        data_str = line[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk_obj = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            malformed += 1
+                            logger.warning("Skipping malformed SSE chunk: %s", data_str[:120])
+                            continue
+                        choices = chunk_obj.get("choices") or []
+                        response_id = str(chunk_obj.get("id") or response_id)
+                        final_model = str(chunk_obj.get("model") or final_model)
+                        if isinstance(chunk_obj.get("usage"), dict) and chunk_obj["usage"]:
+                            final_usage = chunk_obj["usage"]
+                        if choices:
+                            delta = choices[0].get("delta") or {}
+                            finish_reason = str(choices[0].get("finish_reason") or finish_reason)
+                            reasoning_chars += len(delta.get("reasoning_content") or "")
+                            content = delta.get("content") or ""
+                            if content:
+                                emitted_content = True
+                                yield content
+            usage_data = {
+                "id": response_id,
+                "model": final_model,
+                "usage": final_usage,
+            }
+            outcome = "succeeded" if emitted_content else (
+                "thinking_truncated" if reasoning_chars or finish_reason == "length" else "empty_content"
+            )
+            self._record_usage(
+                usage_data,
+                role,
+                t0,
+                outcome=outcome,
+                finish_reason=finish_reason,
+            )
+            if not emitted_content:
+                if reasoning_chars or finish_reason == "length":
+                    raise LLMThinkingTruncatedError(
+                        f"模型思考过程超限截断 (finish_reason={finish_reason or 'unknown'}, 思考长度={reasoning_chars} 字符)，未能输出有效正文内容。",
+                        role=role,
+                        model=str(final_model),
+                        finish_reason=str(finish_reason or ""),
+                        usage=final_usage,
+                        recovery_action="stream_fallback_agenerate",
+                    )
+                raise LLMResponseError(
+                    f"Streaming produced no content ({malformed} malformed SSE chunks)"
+                )
+        except LLMResponseError:
+            raise
+        except Exception as exc:
+            if emitted_content:
+                raise
+            logger.warning("Streaming failed (%s), falling back to agenerate", exc)
+            fallback_text = await self.agenerate(role, prompt)
+            yield fallback_text
 
     def test(self) -> Dict[str, Any]:
         """Send a minimal request to verify connectivity. Returns result dict."""
@@ -580,6 +895,8 @@ def create_llm(config: Dict[str, Any]) -> LLMClient:
             timeout=config.get("timeout", 120.0),
             max_retries=config.get("max_retries", 3),
             proxy=config.get("proxy", ""),
+            thinking=config.get("thinking"),
+            reasoning_effort=config.get("reasoning_effort"),
         )
     if provider in _PLUGIN_PROVIDERS:
         return _PLUGIN_PROVIDERS[provider].create_client(config)

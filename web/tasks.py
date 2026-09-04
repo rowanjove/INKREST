@@ -11,7 +11,14 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from novel_agent.logging_config import get_logger
-from novel_agent.domain.tasks import TaskRecord, TaskStatus, TaskType
+from novel_agent.domain.tasks import (
+    TaskRecord,
+    TaskStatus,
+    TaskTransitionError,
+    TaskType,
+    is_successful_empty_stop,
+)
+from novel_agent.exceptions import TaskPausedError
 from novel_agent.orchestrator import NovelOrchestrator
 from novel_agent.pipeline import PipelineConfig, assert_llm_ready
 from web.task_batch import run_chapter_batch
@@ -74,6 +81,8 @@ class TaskManager:
         
         # Set of aborted task IDs (speedy synchronous check for progress polling)
         self._aborted_tasks = set()
+        # Cooperative pauses are acknowledged only at safe progress checkpoints.
+        self._pause_requests: set[str] = set()
         
         self._startup_cleanup()
         self._wrap_store_ws_notify()
@@ -101,6 +110,7 @@ class TaskManager:
         self._running_tasks.clear()
         self._running_chapters.clear()
         self._claim_tokens.clear()
+        self._pause_requests.clear()
         self._queue_loop_task = None
 
     async def _run_with_progress_context(
@@ -111,6 +121,8 @@ class TaskManager:
         with progress_handlers(
             self._on_progress_emitted,
             lambda: self.is_aborted(task_id),
+            pause_check=lambda: self.is_pause_requested(task_id),
+            usage_callback=self._record_llm_usage,
             project_id=self.project_id,
             task_id=task_id,
         ):
@@ -145,9 +157,11 @@ class TaskManager:
         return lock
 
     def _startup_cleanup(self) -> None:
-        """Recover only tasks whose V2 worker lease has expired."""
+        """Reclaim only leases whose persisted expiry proves the worker is gone."""
         try:
-            self.task_repository.recover_expired_leases()
+            recovered = self.task_repository.recover_expired_leases()
+            if recovered:
+                logger.warning("Reclaimed %s expired task lease(s) after process start: %s", len(recovered), recovered)
         except Exception as exc:
             logger.warning("Failed to perform startup task cleanup: %s", exc)
 
@@ -167,6 +181,10 @@ class TaskManager:
                 if not self.root_dir.exists():
                     continue
 
+                await asyncio.get_running_loop().run_in_executor(
+                    None, self.task_repository.recover_expired_leases
+                )
+
                 # Query pending tasks
                 pending_tasks = await asyncio.get_running_loop().run_in_executor(
                     None,
@@ -181,6 +199,17 @@ class TaskManager:
                     dry_run = bool(task.get("dry_run", 0))
 
                     if task_id in self._running_tasks:
+                        continue
+
+                    if (
+                        task.get("task_type") == TaskType.ARC_QUEUE_SYNC.value
+                        and task.get("status") == TaskStatus.PENDING.value
+                    ):
+                        logger.info("Resuming pending arc queue sync task %s", task_id)
+                        self._running_tasks[task_id] = self._create_task(
+                            task_id,
+                            partial(self._run_arc_queue_sync, task_id),
+                        )
                         continue
 
                     if not _is_auto_resumable_single_chapter_task(task):
@@ -253,6 +282,7 @@ class TaskManager:
                 task.heartbeat_at.isoformat() if task.heartbeat_at else None
             ),
             "resumable_from": checkpoint.get("resumable_from"),
+            "control_action": checkpoint.get("control_action") or "",
             "status_reason": task.status_reason,
             "created_at": task.created_at.isoformat(),
             "attempt": task.attempt,
@@ -308,7 +338,7 @@ class TaskManager:
                 )
             self._notify_tasks_changed()
             return self._task_to_dict(current)
-        if current.status in {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED}:
+        if current.status in {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED, TaskStatus.FAILED}:
             return self._task_to_dict(current)
         if normalized is TaskStatus.CANCELLED:
             reason = status_reason or error or "user_cancelled"
@@ -316,7 +346,7 @@ class TaskManager:
                 current = self.task_repository.get_task(task_id)
                 if current is None:
                     raise KeyError(f"Task {task_id!r} not found")
-                if current.status in {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED}:
+                if current.status in {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED, TaskStatus.FAILED}:
                     break
                 try:
                     current = self.task_repository.cancel_task(
@@ -324,8 +354,9 @@ class TaskManager:
                         reason=reason,
                     )
                     break
-                except TaskConflictError:
-                    continue
+                except (TaskConflictError, TaskTransitionError):
+                    current = self.task_repository.get_task(task_id)
+                    break
             else:
                 raise RuntimeError(f"Task {task_id!r} changed repeatedly during cancellation")
         else:
@@ -365,13 +396,10 @@ class TaskManager:
         token = self._claim_tokens.get(task_id)
         if not token:
             return
-        current = self.task_repository.get_task(task_id)
-        checkpoint = dict(current.checkpoint or {}) if current else {}
-        checkpoint.update({"progress": progress, "step": progress.get("step")})
         self.task_repository.heartbeat(
             task_id,
             token,
-            checkpoint=checkpoint,
+            checkpoint={"progress": progress, "step": progress.get("step")},
         )
         self._notify_tasks_changed()
 
@@ -429,16 +457,85 @@ class TaskManager:
         resumable_from: Optional[str] = None,
     ) -> None:
         from web.task_failures import task_failure_error_string, task_failure_result
+        from novel_agent.exceptions import TaskAbortedError
 
         payload = task_failure_result(exc, resumable_from=resumable_from)
+        status = "cancelled" if (isinstance(exc, TaskAbortedError) or self.is_aborted(task_id)) else "failed"
         await asyncio.get_running_loop().run_in_executor(
             None,
             self._update_task_status,
             task_id,
-            "failed",
+            status,
             payload,
             task_failure_error_string(exc),
         )
+
+    async def _mark_task_paused(
+        self,
+        task_id: str,
+        *,
+        resumable_from: Optional[str] = None,
+    ) -> None:
+        """Acknowledge a cooperative pause without turning it into a failure."""
+        self._pause_requests.discard(task_id)
+        current = self.task_repository.get_task(task_id)
+        if current is None or current.status in {
+            TaskStatus.PAUSED,
+            TaskStatus.SUCCEEDED,
+            TaskStatus.CANCELLED,
+        }:
+            return
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            self._update_task_status,
+            task_id,
+            "paused",
+            {"paused": True, "resumable_from": resumable_from or "unknown"},
+            None,
+            None,
+            "user_paused",
+            resumable_from or "unknown",
+        )
+
+    def _record_llm_usage(self, event: Dict[str, Any]) -> bool:
+        """Persist one provider response while the owning task is still active."""
+        from novel_agent.pricing import resolve_model_prices_usd, usd_to_cny
+
+        prompt_tokens = int(event.get("prompt_tokens") or 0)
+        completion_tokens = int(event.get("completion_tokens") or 0)
+        if prompt_tokens <= 0 and completion_tokens <= 0:
+            return False
+        model = str(event.get("model") or "")
+        input_price, output_price = resolve_model_prices_usd(model)
+        task_id = str(event.get("task_id") or task_id_var.get() or "")
+        chapter_id = ""
+        if task_id:
+            task = self.task_repository.get_task(task_id)
+            if task:
+                checkpoint = dict(task.checkpoint or {})
+                chapter_id = str(
+                    (task.payload_json or {}).get("chapter_id")
+                    or checkpoint.get("chapter_id")
+                    or ""
+                )
+        inserted = self.store.log_llm_cost(
+            call_id=str(event.get("call_id") or f"call_{uuid.uuid4().hex}"),
+            model=model,
+            input_tokens=prompt_tokens,
+            output_tokens=completion_tokens,
+            input_cost=usd_to_cny((prompt_tokens / 1000) * input_price),
+            output_cost=usd_to_cny((completion_tokens / 1000) * output_price),
+            project_id=self.project_id,
+            task_id=task_id,
+            chapter_id=chapter_id,
+            role=str(event.get("role") or ""),
+            outcome=str(event.get("outcome") or "succeeded"),
+            finish_reason=str(event.get("finish_reason") or ""),
+            provider_request_id=str(event.get("provider_request_id") or ""),
+        )
+        if inserted:
+            self._notify_tasks_changed()
+        return bool(inserted)
 
     def _on_progress_emitted(self, msg: Dict[str, Any]) -> None:
         handle_progress_message(
@@ -665,6 +762,133 @@ class TaskManager:
     def is_aborted(self, task_id: str) -> bool:
         return task_id in self._aborted_tasks
 
+    def is_pause_requested(self, task_id: str) -> bool:
+        if task_id in self._aborted_tasks:
+            return False
+        if task_id in self._pause_requests:
+            return True
+        task = self.task_repository.get_task(task_id)
+        if not task:
+            return False
+        checkpoint = task.checkpoint or {}
+        if checkpoint.get('control_action') == 'cancel_requested':
+            return False
+        return checkpoint.get('control_action') == 'pause_requested'
+
+    async def pause_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        task_data = await self.get_task_async(task_id)
+        if not task_data:
+            return None
+        if task_data["status"] == TaskStatus.PAUSED.value:
+            return task_data
+        if task_data["status"] in {
+            TaskStatus.SUCCEEDED.value,
+            TaskStatus.FAILED.value,
+            TaskStatus.CANCELLED.value,
+        } or task_id in self._aborted_tasks:
+            return task_data
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.task_repository.request_control, task_id, "pause_requested"
+        )
+        self._pause_requests.add(task_id)
+        running = self._running_tasks.get(task_id)
+        if running is None or running.done():
+            record = await asyncio.get_running_loop().run_in_executor(
+                None,
+                partial(
+                    self.task_repository.pause_task,
+                    task_id,
+                    reason="user_paused",
+                    resumable_from=task_data.get("current_step") or "pending",
+                ),
+            )
+            self._pause_requests.discard(task_id)
+            self._notify_tasks_changed()
+            return self._task_to_dict(record)
+        self._notify_tasks_changed()
+        return await self.get_task_async(task_id)
+
+    def _runner_for_task(self, task: Dict[str, Any]) -> Callable[[], Awaitable[Any]]:
+        payload = dict(task.get("payload") or {})
+        task_id = str(task["id"])
+        task_type = TaskType(task["task_type"])
+        if task_type is TaskType.NOVEL_CONTINUE:
+            from web.tasks_autopilot import run_novel_continue_helper
+
+            return partial(
+                run_novel_continue_helper,
+                self,
+                task_id,
+                True,
+                int(payload.get("max_chapters") or 0),
+                bool(payload.get("dry_run")),
+                full_book=bool(payload.get("full_book", True)),
+            )
+        if task_type is TaskType.NOVEL_AUTOPILOT:
+            from web.tasks_autopilot import run_novel_autopilot_helper
+
+            return partial(
+                run_novel_autopilot_helper,
+                self,
+                task_id,
+                True,
+                int(payload.get("max_chapters") or 0),
+                bool(payload.get("dry_run")),
+                full_book=bool(payload.get("full_book", True)),
+                chapters_per_round=int(payload.get("chapters_per_round") or 0),
+                max_rounds=int(payload.get("max_rounds") or 0),
+            )
+        if task_type is TaskType.ARC_RUN:
+            return partial(
+                self._run_arc_batch,
+                task_id,
+                str(payload.get("arc_id") or ""),
+                list(payload.get("arc_ids") or []),
+                str(payload.get("start_arc_id") or ""),
+                True,
+                int(payload.get("max_chapters") or 0),
+                bool(payload.get("dry_run")),
+            )
+        if task_type is TaskType.NOVEL_RUN:
+            return partial(
+                self._run_novel,
+                task_id,
+                str(payload.get("theme") or ""),
+                str(payload.get("genre") or "玄幻"),
+                int(payload.get("target_chapters") or 20),
+                str(payload.get("special_requirements") or ""),
+                bool(payload.get("dry_run")),
+            )
+        if task_type is TaskType.ARC_QUEUE_SYNC:
+            return partial(self._run_arc_queue_sync, task_id)
+        if task_type is TaskType.CHAPTER:
+            return partial(
+                self._run_chapter,
+                task_id,
+                str(payload.get("chapter_id") or ""),
+                str(payload.get("goal") or ""),
+                bool(payload.get("dry_run")),
+            )
+        raise ValueError(f"Task type {task_type.value!r} cannot be resumed")
+
+    async def resume_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        task_data = await self.get_task_async(task_id)
+        if not task_data:
+            return None
+        if task_data["status"] != TaskStatus.PAUSED.value:
+            return task_data
+        if task_id in self._running_tasks and not self._running_tasks[task_id].done():
+            return task_data
+        runner = self._runner_for_task(task_data)
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.task_repository.request_control, task_id, "resume_requested"
+        )
+        self._pause_requests.discard(task_id)
+        self._aborted_tasks.discard(task_id)
+        self._running_tasks[task_id] = self._create_task(task_id, runner)
+        self._notify_tasks_changed()
+        return await self.get_task_async(task_id)
+
     async def abort_task(self, task_id: str) -> bool:
         # Check DB status
         task_data = await asyncio.get_running_loop().run_in_executor(
@@ -676,6 +900,33 @@ class TaskManager:
             return False
             
         self._aborted_tasks.add(task_id)
+        self._pause_requests.discard(task_id)
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.task_repository.request_control, task_id, "cancel_requested"
+        )
+
+        # Cascade cancel child tasks
+        child_failures: List[BaseException] = []
+        active_child = task_data.get("active_child_task_id") or (task_data.get("checkpoint") or {}).get("active_child_task_id")
+        if active_child and active_child != task_id:
+            try:
+                await self.abort_task(active_child)
+            except Exception as exc:
+                child_failures.append(exc)
+        try:
+            children = await asyncio.get_running_loop().run_in_executor(
+                None, self.task_repository.list_child_tasks, task_id
+            )
+            for ch in children:
+                if ch.id != task_id and ch.status in (TaskStatus.PENDING, TaskStatus.CLAIMED, TaskStatus.RUNNING, TaskStatus.PAUSED):
+                    try:
+                        await self.abort_task(ch.id)
+                    except Exception as exc:
+                        child_failures.append(exc)
+        except Exception as exc:
+            child_failures.append(exc)
+        if child_failures:
+            raise RuntimeError(f"子任务取消失败: {child_failures[0]}") from child_failures[0]
         
         async_task = self._running_tasks.pop(task_id, None)
         if async_task and not async_task.done():
@@ -703,6 +954,7 @@ class TaskManager:
         chapter_id: str,
         final_path: str,
         expected_revision: Optional[int] = None,
+        plain_text: Optional[str] = None,
     ) -> str:
         """Sync generated text into the manuscript store.
 
@@ -710,7 +962,7 @@ class TaskManager:
             ``"synced"`` on success, ``"conflict"`` when a concurrent manual edit wins.
         """
         p = Path(final_path)
-        if not p.exists():
+        if plain_text is None and not p.exists():
             raise FileNotFoundError(final_path)
         sync_status = "synced"
         try:
@@ -719,6 +971,7 @@ class TaskManager:
                 chapter_id=chapter_id,
                 final_path=p,
                 expected_revision=expected_revision,
+                plain_text=plain_text,
             )
         except DocumentConflictError:
             # SQLite is authoritative; projection already restored by the service.
@@ -727,40 +980,6 @@ class TaskManager:
                 chapter_id,
             )
             sync_status = "conflict"
-        try:
-            content = p.read_text(encoding="utf-8")
-            if p.exists():
-                plan_path = p.parent / "plan.json"
-                plan_str = "{}"
-                if plan_path.exists():
-                    try:
-                        plan_str = plan_path.read_text(encoding="utf-8")
-                    except Exception:
-                        pass
-                
-                versions = self.store.list_chapter_versions(chapter_id)
-                active_version = next((v for v in versions if v.get("is_active") == 1), None)
-                if active_version:
-                    self.store.save_chapter_version(
-                        chapter_id=chapter_id,
-                        version_name=active_version["version_name"],
-                        content=content,
-                        plan=active_version.get("plan") or plan_str,
-                        is_active=True,
-                        note=active_version.get("note", "") or "AI 写作自动同步",
-                        version_id=active_version["id"]
-                    )
-                else:
-                    self.store.save_chapter_version(
-                        chapter_id=chapter_id,
-                        version_name="版本 A",
-                        content=content,
-                        plan=plan_str,
-                        is_active=True,
-                        note="AI 写作自动同步"
-                    )
-        except Exception as exc:
-            logger.warning("Failed to sync AI chapter content to legacy version DB: %s", exc)
         return sync_status
 
     def _expected_revision_for_sync(
@@ -785,6 +1004,7 @@ class TaskManager:
                 chapter_id,
                 str(result.final_path),
                 self._expected_revision_for_sync(chapter_id, revisions),
+                getattr(result, "final_text", None),
             )
             if status == "conflict":
                 conflicts.append(chapter_id)
@@ -945,6 +1165,8 @@ class TaskManager:
                     {"chapter_count": len(chapters)},
                     None,
                 )
+        except TaskPausedError:
+            await self._mark_task_paused(batch_id, resumable_from="chapter_batch")
         except asyncio.CancelledError:
             await asyncio.get_running_loop().run_in_executor(
                 None,
@@ -1052,6 +1274,9 @@ class TaskManager:
                 config.get_call_log()
             )
             
+        except TaskPausedError:
+            logger.info("Task %s paused", task_id)
+            await self._mark_task_paused(task_id, resumable_from="chapter_pipeline")
         except asyncio.CancelledError:
             logger.info("Task %s cancelled", task_id)
             await asyncio.get_running_loop().run_in_executor(
@@ -1370,6 +1595,93 @@ class TaskManager:
         self._running_tasks[task_id] = task
         return task_id
 
+    def _active_arc_queue_sync_task_id(self) -> str:
+        records = self.task_repository.list_tasks(
+            project_id=self.project_id,
+            statuses={
+                TaskStatus.PENDING,
+                TaskStatus.CLAIMED,
+                TaskStatus.RUNNING,
+                TaskStatus.PAUSED,
+            },
+            limit=50,
+        )
+        for record in records:
+            if record.task_type == TaskType.ARC_QUEUE_SYNC:
+                return record.id
+        return ""
+
+    async def submit_arc_queue_sync(self) -> str:
+        """Start one observable, cancellable queue-sync task per project."""
+        async with self._submission_lock_for_loop():
+            existing = await asyncio.get_running_loop().run_in_executor(
+                None, self._active_arc_queue_sync_task_id
+            )
+            if existing:
+                return existing
+            task_id = f"queue-{str(uuid.uuid4())[:8]}"
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._create_task_record,
+                task_id,
+                TaskType.ARC_QUEUE_SYNC,
+                {"goal": "同步卷队列", "mode": "queue_sync", "dry_run": False},
+                1,
+            )
+            task = self._create_task(
+                task_id,
+                partial(self._run_arc_queue_sync, task_id),
+            )
+            self._running_tasks[task_id] = task
+            return task_id
+
+    async def _run_arc_queue_sync(self, task_id: str) -> None:
+        from novel_agent.progress import emit_log, emit_progress
+        from novel_agent.services.outline_sync import mark_arcs_synced_with_outline
+        from novel_agent.services.rolling_planner import prepare_queue_for_run
+
+        acquired = False
+        try:
+            await asyncio.wait_for(self._semaphore_for_loop().acquire(), timeout=600)
+            acquired = True
+            await asyncio.get_running_loop().run_in_executor(
+                None, self._update_task_status, task_id, "running"
+            )
+            emit_progress("ensure_queue", "running")
+            await self._ensure_llm_ready(False)
+            config = PipelineConfig.from_config(self.root_dir)
+            orchestrator = NovelOrchestrator(config)
+            stats = await prepare_queue_for_run(
+                orchestrator,
+                cancel_check=lambda: self.is_aborted(task_id),
+                status_callback=lambda message: emit_log("info", message, "ensure_queue"),
+            )
+            if self.is_aborted(task_id):
+                return
+            sync_meta = await asyncio.get_running_loop().run_in_executor(
+                None, mark_arcs_synced_with_outline, self.root_dir
+            )
+            emit_progress("ensure_queue", "done", stats)
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._update_task_status,
+                task_id,
+                "completed",
+                {**stats, "arc_sync": sync_meta},
+            )
+        except TaskPausedError:
+            await self._mark_task_paused(task_id, resumable_from="ensure_queue")
+        except asyncio.CancelledError:
+            # abort_task persists the cancelled state before cancelling this coroutine.
+            raise
+        except Exception as exc:
+            emit_log("error", f"同步卷队列失败：{exc}", "ensure_queue")
+            await self._mark_task_failed(task_id, exc, resumable_from="ensure_queue")
+        finally:
+            if acquired:
+                self._semaphore_for_loop().release()
+            self._running_tasks.pop(task_id, None)
+
     async def submit_novel_continue(
         self,
         resume: bool = True,
@@ -1439,26 +1751,64 @@ class TaskManager:
                 resume=resume,
                 max_chapters=cap,
             )
+            paused = bool(getattr(results, "paused", False))
+            stopped_reason = str(getattr(results, "stopped_reason", "") or "")
             conflicts = await asyncio.get_running_loop().run_in_executor(
                 None,
                 self._sync_generation_results,
                 results,
                 revisions,
             )
+            from novel_agent.domain.tasks import BatchOutcome
+            completed_ids = [getattr(r, "chapter_id", str(r)) for r in results]
+            if paused:
+                outcome = BatchOutcome(
+                    status=TaskStatus.PAUSED,
+                    completed_chapters=completed_ids,
+                    reason=stopped_reason or "arc_batch_paused",
+                    resumable_from="arc_batch",
+                )
+            elif self.is_aborted(task_id):
+                outcome = BatchOutcome(
+                    status=TaskStatus.CANCELLED,
+                    completed_chapters=completed_ids,
+                    reason="user_cancelled",
+                )
+            elif len(results) == 0 and not dry_run and not is_successful_empty_stop(stopped_reason):
+                outcome = BatchOutcome(
+                    status=TaskStatus.FAILED,
+                    completed_chapters=[],
+                    reason=stopped_reason or "未生成任何章节",
+                )
+            else:
+                outcome = BatchOutcome(
+                    status=TaskStatus.SUCCEEDED,
+                    completed_chapters=completed_ids,
+                    reason=stopped_reason or "completed",
+                )
             await asyncio.get_running_loop().run_in_executor(
                 None,
                 self._update_task_status,
                 task_id,
-                "completed",
+                outcome.status.value,
                 {
                     "chapters_completed": len(results),
                     "manuscript_conflicts": conflicts,
+                    "paused": outcome.is_paused,
+                    "stopped_reason": outcome.reason,
+                    "batch_outcome": outcome.model_dump(),
                     "chapters": [
-                        {"chapter_id": r.chapter_id, "warnings": getattr(r, "warnings", [])}
+                        {"chapter_id": getattr(r, "chapter_id", ""), "warnings": getattr(r, "warnings", [])}
                         for r in results
                     ],
                 },
+                None if outcome.is_success or outcome.is_paused else outcome.reason,
+                None,
+                outcome.reason or None,
+                outcome.resumable_from or None,
             )
+        except TaskPausedError:
+            await self._mark_task_paused(task_id, resumable_from="arc_batch")
         except Exception as exc:
             logger.exception("Arc batch task %s failed: %s", task_id, exc)
             await self._mark_task_failed(task_id, exc)
@@ -1561,6 +1911,9 @@ class TaskManager:
                 None,
                 config.get_call_log()
             )
+        except TaskPausedError:
+            logger.info("Novel task %s paused", task_id)
+            await self._mark_task_paused(task_id, resumable_from="novel_batch")
         except asyncio.CancelledError:
             logger.info("Novel task %s cancelled", task_id)
             await asyncio.get_running_loop().run_in_executor(

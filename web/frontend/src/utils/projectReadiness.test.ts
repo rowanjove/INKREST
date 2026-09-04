@@ -33,6 +33,55 @@ describe('resolveVectorContextFromApis', () => {
 })
 
 describe('buildReadinessItems', () => {
+  it('blocks the synthetic quick-create placeholder outline', () => {
+    const items = buildReadinessItems({
+      engineReady: true,
+      outline: {
+        ...baseOutline,
+        planning_status: 'draft',
+        protagonist: { name: '待定' },
+        macro_outline: [{
+          arc_id: 'A01',
+          name: '起始卷',
+          goal: '确立主线与读者抓手',
+          turning_point: '待定',
+          payoff: '待定',
+        }],
+      },
+      assets: baseAssets,
+      maxAvailableChapters: 200,
+      workScale: 'long',
+    })
+    expect(items.find((item) => item.id === 'outline')?.ok).toBe(false)
+    expect(readinessCanContinue({ items, serverOk: true })).toBe(false)
+  })
+
+  it('keeps outline green after generate even if the arc queue is stale', () => {
+    const items = buildReadinessItems({
+      engineReady: true,
+      outline: baseOutline,
+      assets: baseAssets,
+      maxAvailableChapters: 5,
+      workScale: 'medium',
+      arcQueueStale: true,
+    })
+    const outline = items.find((item) => item.id === 'outline')
+    expect(outline?.ok).toBe(true)
+    expect(outline?.warn).toBe(true)
+    expect(readinessCanContinue({ items, serverOk: true })).toBe(true)
+  })
+
+  it('blocks continuation when the server readiness gate is red', () => {
+    const items = buildReadinessItems({
+      engineReady: true,
+      outline: baseOutline,
+      assets: baseAssets,
+      maxAvailableChapters: 5,
+      workScale: 'medium',
+    })
+    expect(readinessCanContinue({ items, serverOk: false })).toBe(false)
+  })
+
   it('blocks embedding row when vector_blocks_continue', () => {
     const items = buildReadinessItems({
       engineReady: true,

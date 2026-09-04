@@ -164,7 +164,7 @@ function handleCommand(command: ProjectCommand, project: Project) {
   aspect-ratio: 2 / 3;
   overflow: hidden;
   border-radius: var(--radius-md);
-  background: linear-gradient(145deg, var(--color-primary), #8b5e83);
+  background: linear-gradient(145deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 68%, #1f1a17));
   color: white;
   font-size: 28px;
   font-weight: 800;
@@ -198,14 +198,14 @@ function handleCommand(command: ProjectCommand, project: Project) {
 
 .pin-label {
   color: var(--color-primary);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .author {
   margin: 4px 0 0;
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .menu-button { flex: none; }
@@ -216,14 +216,14 @@ function handleCommand(command: ProjectCommand, project: Project) {
   gap: 5px 12px;
   margin-top: auto;
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .risk-link,
 .risk-clear {
   align-self: flex-start;
   margin-top: var(--space-2);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .risk-link {

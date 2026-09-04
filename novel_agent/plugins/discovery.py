@@ -115,12 +115,19 @@ class PluginDiscovery:
         if not spec or not spec.loader:
             raise ImportError(f"Could not load spec for {module_path}")
         module = importlib.util.module_from_spec(spec)
-        sys.path.insert(0, str(plugin_root))
+        plugin_root_str = str(plugin_root)
+        inserted = False
+        if plugin_root_str not in sys.path:
+            sys.path.append(plugin_root_str)
+            inserted = True
         try:
             spec.loader.exec_module(module)
         finally:
-            if str(plugin_root) in sys.path:
-                sys.path.remove(str(plugin_root))
+            if inserted:
+                try:
+                    sys.path.remove(plugin_root_str)
+                except ValueError:
+                    pass
         plugin_class = getattr(module, class_name, None)
         if not plugin_class:
             raise AttributeError(f"Module {module_path.name} does not define {class_name}")

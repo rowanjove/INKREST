@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref } from 'vue'
+import { defineAsyncComponent, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Pane, Splitpanes } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
 import { Refresh } from '@element-plus/icons-vue'
@@ -12,8 +13,11 @@ import { PLANNING_KIND_LABELS } from '../entities/planning/planningWorkspace'
 import { usePlanningWorkspace } from '../composables/usePlanningWorkspace'
 
 const OutlineEditor = defineAsyncComponent(() => import('./OutlineEditor.vue'))
+const route = useRoute()
+const router = useRouter()
 const viewMode = ref<'editor' | 'cards' | 'relations' | 'timeline'>('cards')
 const advanced = ref(false)
+const showWelcome = ref(false)
 const {
   workspace,
   loading,
@@ -30,6 +34,14 @@ function selectById(id: string) {
   const entity = workspace.value.entities.find((item) => item.id === id)
   if (entity) selectEntity(entity)
 }
+
+onMounted(() => {
+  if (String(route.query.welcome || '') !== '1') return
+  showWelcome.value = true
+  const nextQuery = { ...route.query }
+  delete nextQuery.welcome
+  void router.replace({ path: route.path, query: nextQuery })
+})
 </script>
 
 <template>
@@ -53,6 +65,16 @@ function selectById(id: string) {
       </div>
     </header>
 
+    <el-alert
+      v-if="showWelcome"
+      class="planning-warning"
+      type="success"
+      show-icon
+      closable
+      title="作品骨架已建好"
+      description="先补全人物、世界和卷弧。生产动作仍要到生产中心确认，这里不会自动生成章节。"
+      @close="showWelcome = false"
+    />
     <el-alert
       v-for="warning in workspace.warnings"
       :key="warning"
@@ -86,7 +108,7 @@ function selectById(id: string) {
       </nav>
 
       <div v-if="viewMode === 'editor'" class="legacy-editor">
-        <OutlineEditor />
+        <OutlineEditor :advanced="advanced" />
       </div>
 
       <Splitpanes v-else class="planning-split" :dbl-click-splitter="false">
@@ -121,7 +143,9 @@ function selectById(id: string) {
 <style scoped>
 .planning-page {
   min-width: 0;
-  min-height: 100%;
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-canvas);
@@ -156,7 +180,7 @@ function selectById(id: string) {
 }
 .advanced-note { color: var(--color-text-muted); font-size: 11px; }
 .planning-split { flex: 1; min-height: 580px; }
-.legacy-editor { flex: 1; overflow: auto; padding: var(--space-5); }
+.legacy-editor { flex: 1; padding: var(--space-5); }
 .source-path { margin: -10px var(--space-4) var(--space-4); color: var(--color-text-muted); font-size: 11px; word-break: break-all; }
 
 :deep(.splitpanes__splitter) {

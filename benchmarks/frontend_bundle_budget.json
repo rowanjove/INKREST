@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "description": "Frontend dist/assets JS size ceilings (raw bytes). Bumped for P2 onboarding/tour + studio kanban + readiness alignment (2026-06), local quality center evidence UI (2026-08), and long-form capability badges (2026-08).",
-  "max_total_js_bytes": 1842000,
+  "description": "Frontend dist/assets JS size ceilings (raw bytes). Bumped for P2 onboarding/tour + studio kanban + readiness alignment (2026-06), local quality center evidence UI (2026-08), shanshan assistant refactor (2026-09), dual-region plugin architecture (2026-09), quality-center/factory-mode copy (2026-09), and dashboard pipeline bar (2026-09).",
+  "max_total_js_bytes": 1920000,
   "max_element_plus_js_bytes": 1150000,
   "max_single_js_bytes": 75000,
   "max_index_js_bytes": 69000

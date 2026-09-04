@@ -4,10 +4,17 @@ from typing import Any, Dict, List, Optional
 
 from novel_agent.agents.base import PromptAgent
 from novel_agent.control.chapter_window import VALID_DETAIL_LEVELS, VALID_SCENE_TYPES
+from novel_agent.exceptions import LLMResponseError
 from novel_agent.json_utils import loads_json_object
 from novel_agent.logging_config import get_logger
 
 logger = get_logger("agents.planner")
+
+# A malformed planner response is commonly caused by the model reaching its
+# output limit or emitting a partial JSON document.  Retry exactly once at the
+# planner boundary so transient format failures do not abort a whole chapter,
+# while still keeping the failure bounded and visible to the caller.
+_PLAN_PARSE_RETRIES = 1
 
 ANTI_AI_MUST_NOT_INCLUDE = [
     "禁止直接写角色情绪",
@@ -77,7 +84,30 @@ class PlannerAgent(PromptAgent):
                 "\n\n## 跨章衔接与角色一致性（硬性约束）\n"
                 f"{continuity_context.strip()}"
             )
+        prompt += (
+            "\n\n输出硬约束：只输出一个完整、可解析的 JSON 对象；不要 Markdown、"
+            "解释或注释。每个字符串尽量使用短句，确保响应在一次输出内完整结束。"
+        )
         return prompt.strip()
+
+    @staticmethod
+    def _build_parse_retry_prompt(
+        prompt: str, error: LLMResponseError, max_plan_scenes: int
+    ) -> str:
+        """Make a compact second request after a malformed JSON response.
+
+        Do not include the malformed model output: it can be very large and
+        repeating it makes another truncation more likely.  The original
+        prompt remains the source of truth for the chapter constraints.
+        """
+        error_summary = str(error).strip()[:240]
+        return (
+            f"{prompt}\n\n"
+            "【JSON 格式重试】上一条章规划响应未形成完整 JSON，可能在输出上限处被截断。"
+            f"解析错误摘要：{error_summary}\n"
+            f"请重新生成完整结果：场景不超过 {max_plan_scenes} 个；每个字符串保持简短；"
+            "只输出一个 JSON 对象，不要 Markdown、解释或省略结尾的引号/括号。"
+        ).strip()
 
     def _parse_and_validate_plan(
         self,
@@ -137,24 +167,7 @@ class PlannerAgent(PromptAgent):
             return plan
         except Exception as exc:
             logger.error("Failed to parse planner output: %s", exc)
-            return {
-                "chapter_id": chapter_id,
-                "chapter_title": chapter_goal,
-                "target_chars": [1200, 2200],
-                "scenes": [{
-                    "scene_id": f"{chapter_id}-01",
-                    "title": "降级场景",
-                    "target_chars": [400, 800],
-                    "purpose": "自动生成的降级场景",
-                    "scene_type": "setup",
-                    "detail_level": "brief",
-                    "hook_type": "info",
-                    "entry": "",
-                    "exit": "",
-                    "must_include": [],
-                    "must_not_include": ANTI_AI_MUST_NOT_INCLUDE[:],
-                }],
-            }
+            raise LLMResponseError(f"章规划输出无法解析，已中止生成: {exc}") from exc
 
     def create_plan(
         self,
@@ -180,13 +193,35 @@ class PlannerAgent(PromptAgent):
             continuity_context,
         )
         raw = self.run(prompt)
-        return self._parse_and_validate_plan(
-            raw,
-            chapter_id,
-            chapter_goal,
-            max_plan_scenes=max_plan_scenes,
-            root_dir=root_dir,
-        )
+        try:
+            return self._parse_and_validate_plan(
+                raw,
+                chapter_id,
+                chapter_goal,
+                max_plan_scenes=max_plan_scenes,
+                root_dir=root_dir,
+            )
+        except LLMResponseError as first_error:
+            if _PLAN_PARSE_RETRIES <= 0:
+                raise
+            logger.warning(
+                "Planner response was not parseable; retrying once: %s", first_error
+            )
+            retry_raw = self.run(
+                self._build_parse_retry_prompt(prompt, first_error, max_plan_scenes)
+            )
+            try:
+                return self._parse_and_validate_plan(
+                    retry_raw,
+                    chapter_id,
+                    chapter_goal,
+                    max_plan_scenes=max_plan_scenes,
+                    root_dir=root_dir,
+                )
+            except LLMResponseError as retry_error:
+                raise LLMResponseError(
+                    f"{retry_error}（首次解析失败后自动重试仍失败）"
+                ) from retry_error
 
     async def acreate_plan(
         self,
@@ -212,13 +247,35 @@ class PlannerAgent(PromptAgent):
             continuity_context,
         )
         raw = await self.arun(prompt)
-        return self._parse_and_validate_plan(
-            raw,
-            chapter_id,
-            chapter_goal,
-            max_plan_scenes=max_plan_scenes,
-            root_dir=root_dir,
-        )
+        try:
+            return self._parse_and_validate_plan(
+                raw,
+                chapter_id,
+                chapter_goal,
+                max_plan_scenes=max_plan_scenes,
+                root_dir=root_dir,
+            )
+        except LLMResponseError as first_error:
+            if _PLAN_PARSE_RETRIES <= 0:
+                raise
+            logger.warning(
+                "Planner response was not parseable; retrying once: %s", first_error
+            )
+            retry_raw = await self.arun(
+                self._build_parse_retry_prompt(prompt, first_error, max_plan_scenes)
+            )
+            try:
+                return self._parse_and_validate_plan(
+                    retry_raw,
+                    chapter_id,
+                    chapter_goal,
+                    max_plan_scenes=max_plan_scenes,
+                    root_dir=root_dir,
+                )
+            except LLMResponseError as retry_error:
+                raise LLMResponseError(
+                    f"{retry_error}（首次解析失败后自动重试仍失败）"
+                ) from retry_error
 
     def _infer_scene_type(self, purpose: str) -> str:
         if any(word in purpose for word in ("爆发", "高潮", "兑现", "反击", "冲突")):

@@ -89,10 +89,41 @@ class ContextBuilderAgent:
         # --- CRITICAL: scene card and chapter goal (never trimmed) ---
         scene_block = self._build_scene_block(chapter_goal, scene)
         blocks.append(("场景信息", scene_block, PRIORITY_CRITICAL))
+        live_state = self._build_live_character_state_block(scene)
+        if live_state:
+            blocks.append(("在场人物状态", live_state, PRIORITY_CRITICAL))
+
+        try:
+            from novel_agent.agents.writer_task_card import (
+                build_writer_task_card,
+                format_writer_task_card,
+            )
+
+            card_text = format_writer_task_card(build_writer_task_card(plan, scene))
+            if card_text:
+                blocks.append(("写前任务卡", card_text, PRIORITY_CRITICAL))
+        except Exception:
+            logger.debug("Writer task card skipped", exc_info=True)
 
         # --- HIGH: characters, state, memories, constraints ---
         state = self._get_current_state(scene)
         blocks.extend(self._build_high_priority_blocks(scene, state, plan=plan))
+
+        try:
+            from novel_agent.services.hierarchical_summary import assemble_hierarchical_context
+
+            chapter_id = str(
+                (plan or {}).get("chapter_id")
+                or scene.get("chapter_id")
+                or scene.get("scene_id")
+                or "1"
+            )
+            packed = assemble_hierarchical_context(self.root_dir, chapter_id)
+            hierarchy = str(packed.get("compiled_prompt_block") or "").strip()
+            if hierarchy:
+                blocks.append(("分层叙事蓝图", hierarchy, PRIORITY_HIGH))
+        except Exception:
+            pass
 
         # --- MEDIUM: history, vector recall, prev chapter tail ---
         blocks.extend(self._build_medium_priority_blocks(chapter_goal, scene))
@@ -212,6 +243,20 @@ class ContextBuilderAgent:
         blocks = []
         characters = self._prune_character_cards(scene)
         blocks.append(("人物资产", characters, PRIORITY_HIGH))
+
+        try:
+            from novel_agent.services.realm_quarantine import build_realm_quarantine_hint
+
+            chapter_id = str(
+                (plan or {}).get("chapter_id")
+                or scene.get("chapter_id")
+                or str(scene.get("scene_id") or "").split("-")[0]
+            )
+            hint = build_realm_quarantine_hint(self.root_dir, chapter_id)
+            if hint:
+                blocks.append(("世界域隔离", hint, PRIORITY_HIGH))
+        except Exception:
+            logger.debug("Realm quarantine hint skipped", exc_info=True)
 
         state_text = json.dumps(state, ensure_ascii=False, indent=2)
         blocks.append(("当前状态", state_text, PRIORITY_HIGH))
@@ -359,9 +404,16 @@ class ContextBuilderAgent:
                 current_number = None
             events = self.store.list_narrative_events(limit=160)
             if not events:
-                # Existing projects may have the JSON projection before the
-                # SQLite backfill runs.  It is a read-only compatibility path.
-                events = load_narrative_event_projections(self.root_dir)
+                historical = self.store.list_narrative_events(limit=1, include_superseded=True)
+                if not historical:
+                    # Existing projects may have the JSON projection before the
+                    # SQLite backfill runs.  It is a read-only compatibility path.
+                    events = load_narrative_event_projections(self.root_dir)
+            events = [
+                event
+                for event in events
+                if not event.get("superseded") and not event.get("superseded_by")
+            ]
             if current_number is not None:
                 events = [
                     event
@@ -379,6 +431,18 @@ class ContextBuilderAgent:
                 scene_objects = [scene_objects]
             if isinstance(scene_threads, str):
                 scene_threads = [scene_threads]
+            try:
+                from novel_agent.retrieval.entity_index import (
+                    build_entity_alias_map,
+                    expand_entity_tokens,
+                )
+
+                alias_map = build_entity_alias_map(self.store)
+                scene_chars = expand_entity_tokens(scene_chars, alias_map)
+                scene_objects = expand_entity_tokens(scene_objects, alias_map)
+                scene_threads = expand_entity_tokens(scene_threads, alias_map)
+            except Exception:
+                logger.debug("Entity alias expansion skipped", exc_info=True)
 
             # M3 canon visibility is deterministic and fail-closed for future,
             # superseded, invalidated, or unknowable character-belief facts.
@@ -675,6 +739,28 @@ class ContextBuilderAgent:
         pruned_data = {"characters": filtered}
         return yaml.safe_dump(pruned_data, allow_unicode=True, sort_keys=False)
 
+    def _build_live_character_state_block(self, scene: Dict[str, Any]) -> str:
+        scene_chars = scene.get("characters", [])
+        if isinstance(scene_chars, str):
+            scene_chars = [scene_chars]
+        if not scene_chars:
+            return ""
+        try:
+            from novel_agent.retrieval.entity_index import (
+                build_entity_alias_map,
+                format_live_character_state,
+            )
+
+            characters = self.store.list_characters()
+            return format_live_character_state(
+                characters,
+                scene_chars,
+                build_entity_alias_map(self.store),
+            )
+        except Exception:
+            logger.debug("Live character state skipped", exc_info=True)
+            return ""
+
     def _build_scene_block(self, chapter_goal: str, scene: Dict[str, Any]) -> str:
         """Build the critical scene information block."""
         lines = [
@@ -786,9 +872,23 @@ class ContextBuilderAgent:
                     trimmed_count += 1
                     continue
                 trimmed_count += 1
+                reason = (
+                    "Token 预算与字符预算均不足"
+                    if (block_tokens > remaining and len(block_text) > remaining_chars)
+                    else ("Token 预算不足" if block_tokens > remaining else "字符预算不足")
+                )
                 logger.info(
-                    "Context block '%s' truncated (tokens: %d -> ~%d)",
-                    title, block_tokens, remaining,
+                    "Context block '%s' truncated: reason=%s, original_chars=%d, "
+                    "kept_chars=%d, original_tokens~%d, kept_tokens~%d, "
+                    "remaining_token_budget=%d, remaining_char_budget=%d",
+                    title,
+                    reason,
+                    len(block_text),
+                    len(truncated) if char_len > 15 else 0,
+                    block_tokens,
+                    self._estimate_tokens(truncated) if char_len > 15 else 0,
+                    remaining,
+                    remaining_chars,
                 )
             else:
                 assembled.append(block_text)
@@ -810,7 +910,7 @@ class ContextBuilderAgent:
 
         # 1. 尝试从上一章的 plan.json 中读取最后一个场景的人物
         plan_path = self.root_dir / "workspace" / "chapters" / f"chapter_{prev_id}" / "plan.json"
-        if plan_path.exists():
+        if plan_path.is_file():
             try:
                 import json
                 plan_data = json.loads(plan_path.read_text(encoding="utf-8"))
@@ -827,10 +927,11 @@ class ContextBuilderAgent:
                 pass
 
         # 2. Fallback: 从数据库中查询所有的角色名字，并在前一章末尾 300 字里查找
-        prev_txt_path = self.root_dir / "workspace" / "chapters" / f"chapter_{prev_id}" / "chapter_final.txt"
-        if prev_txt_path.exists():
+        from novel_agent.services.manuscript_workspace import read_chapter_plain_text
+
+        text = read_chapter_plain_text(self.root_dir, prev_id).strip()
+        if text:
             try:
-                text = prev_txt_path.read_text(encoding="utf-8").strip()
                 tail_text = text[-300:] if len(text) > 300 else text
                 
                 # 查询 SQLite 中已注册的所有人物名字
@@ -865,23 +966,25 @@ class ContextBuilderAgent:
         if cached is not None:
             return cached
 
-        try:
-            import sqlite3
-            conn = sqlite3.connect(self.store.db_path, timeout=10.0)
-            conn.row_factory = sqlite3.Row
+        db_path = getattr(self.store, "db_path", None)
+        if isinstance(db_path, (str, Path)) and Path(db_path).is_file():
             try:
-                row = conn.execute(
-                    "select summary from chapter_summaries where chapter_id = ?",
-                    (prev_id,)
-                ).fetchone()
-                if row and row["summary"]:
-                    summary = str(row["summary"]).strip()
-                    self._prev_summary_cache[prev_id] = summary
-                    return summary
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.warning("Failed to query chapter summary for %s: %s", prev_id, e)
+                import sqlite3
+                conn = sqlite3.connect(str(db_path), timeout=10.0)
+                conn.row_factory = sqlite3.Row
+                try:
+                    row = conn.execute(
+                        "select summary from chapter_summaries where chapter_id = ?",
+                        (prev_id,)
+                    ).fetchone()
+                    if row and row["summary"]:
+                        summary = str(row["summary"]).strip()
+                        self._prev_summary_cache[prev_id] = summary
+                        return summary
+                finally:
+                    conn.close()
+            except Exception as e:
+                logger.warning("Failed to query chapter summary for %s: %s", prev_id, e)
         
         # Fallback: 尝试读 workspace 下的 chapter_summary.md 文件
         summary_path = (
@@ -891,7 +994,7 @@ class ContextBuilderAgent:
             / f"chapter_{prev_id}"
             / "chapter_summary.md"
         )
-        if summary_path.exists():
+        if summary_path.is_file():
             try:
                 summary = summary_path.read_text(encoding="utf-8").strip()
                 self._prev_summary_cache[prev_id] = summary
@@ -986,20 +1089,12 @@ class ContextBuilderAgent:
             if summary:
                 parts_info.append(f"【前一章（第 {prev_id} 章）剧情梗概】\n{summary}")
             
-            prev_path = (
-                self.root_dir
-                / "workspace"
-                / "chapters"
-                / f"chapter_{prev_id}"
-                / "chapter_final.txt"
-            )
-            if prev_path.exists():
-                try:
-                    text = prev_path.read_text(encoding="utf-8").strip()
-                    tail = text[-500:] if len(text) > 500 else text
-                    parts_info.append(f"【时序无缝衔接参考 | 第 {prev_id} 章结尾段落】\n{tail}\n（请在此段落基础上，进行无缝的时序与剧情延续，保持笔触和镜头连贯）")
-                except Exception:
-                    pass
+            from novel_agent.services.manuscript_workspace import read_chapter_plain_text
+
+            text = read_chapter_plain_text(self.root_dir, prev_id).strip()
+            if text:
+                tail = text[-500:] if len(text) > 500 else text
+                parts_info.append(f"【时序无缝衔接参考 | 第 {prev_id} 章结尾段落】\n{tail}\n（请在此段落基础上，进行无缝的时序与剧情延续，保持笔触和镜头连贯）")
 
         if parts_info:
             result = "\n\n".join(parts_info)

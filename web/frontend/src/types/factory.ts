@@ -4,6 +4,7 @@ export type FactoryMode =
   | 'platform_review'
   | 'longform_stable'
   | 'studio'
+  | 'unset'
 
 export type FactoryState =
   | 'empty'
@@ -34,6 +35,7 @@ export interface FactoryModeProfile {
   automation_level: FactoryAutomationLevel
   priorities: string[]
   operator_hint: string
+  explicit?: boolean
 }
 
 export type FactoryCommandIntent = 'create' | 'plan' | 'run' | 'monitor' | 'repair' | 'export'

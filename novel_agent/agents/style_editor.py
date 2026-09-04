@@ -1,4 +1,3 @@
-import asyncio
 from typing import List, Optional
 from novel_agent.agents.base import PromptAgent
 from novel_agent.logging_config import get_logger
@@ -84,24 +83,12 @@ class StyleEditorAgent(PromptAgent):
         logger.info("Chapter length (%d) exceeds max_chunk_chars (%d), enabling sliding window style editing.", 
                     len(chapter_text), self.max_chunk_chars)
         chunks = self._split_into_chunks(chapter_text, self.max_chunk_chars)
-        polished_chunks = []
-        
+        polished_chunks: List[str] = []
         for idx, chunk in enumerate(chunks):
-            prev_chunk = chunks[idx - 1] if idx > 0 else None
-            next_chunk = chunks[idx + 1] if idx < len(chunks) - 1 else None
-            
-            prev_context = self._get_tail_paras(prev_chunk) if prev_chunk else None
-            next_context = self._get_head_paras(next_chunk) if next_chunk else None
-            
-            prompt = self._build_chunk_prompt(chunk, prev_context, next_context)
+            prompt = self._chunk_prompt_with_polished_context(chunks, polished_chunks, idx, chunk)
             logger.debug("Polishing style editor chunk %d/%d (len=%d)", idx + 1, len(chunks), len(chunk))
             polished = self.run(prompt).strip()
-            if polished:
-                polished_chunks.append(polished)
-            else:
-                logger.warning("Polished chunk %d was empty, falling back to original chunk", idx + 1)
-                polished_chunks.append(chunk)
-                
+            polished_chunks.append(polished or chunk)
         return "\n\n".join(polished_chunks)
 
     async def aedit(self, chapter_text: str) -> str:
@@ -117,27 +104,29 @@ class StyleEditorAgent(PromptAgent):
         logger.info("Chapter length (%d) exceeds max_chunk_chars (%d), enabling sliding window style editing (Async).", 
                     len(chapter_text), self.max_chunk_chars)
         chunks = self._split_into_chunks(chapter_text, self.max_chunk_chars)
-        
-        async def _polish_chunk(idx: int, chunk: str) -> str:
-            prev_chunk = chunks[idx - 1] if idx > 0 else None
-            next_chunk = chunks[idx + 1] if idx < len(chunks) - 1 else None
-            
-            prev_context = self._get_tail_paras(prev_chunk) if prev_chunk else None
-            next_context = self._get_head_paras(next_chunk) if next_chunk else None
-            
-            prompt = self._build_chunk_prompt(chunk, prev_context, next_context)
+        polished_chunks: List[str] = []
+        for idx, chunk in enumerate(chunks):
+            prompt = self._chunk_prompt_with_polished_context(chunks, polished_chunks, idx, chunk)
             logger.debug("Polishing style editor chunk %d/%d (len=%d, Async)", idx + 1, len(chunks), len(chunk))
-            
             try:
-                polished = await self.arun(prompt)
-                polished = polished.strip()
-                if polished:
-                    return polished
+                polished = (await self.arun(prompt)).strip()
+                polished_chunks.append(polished or chunk)
             except Exception as exc:
                 logger.error("Failed to polish style editor chunk %d asynchronously: %s", idx + 1, exc)
-                
-            return chunk
-
-        tasks = [_polish_chunk(idx, chunk) for idx, chunk in enumerate(chunks)]
-        polished_chunks = await asyncio.gather(*tasks)
+                polished_chunks.append(chunk)
         return "\n\n".join(polished_chunks)
+
+    def _chunk_prompt_with_polished_context(
+        self,
+        chunks: List[str],
+        polished_chunks: List[str],
+        idx: int,
+        chunk: str,
+    ) -> str:
+        prev_source = polished_chunks[-1] if polished_chunks else None
+        next_source = chunks[idx + 1] if idx + 1 < len(chunks) else None
+        return self._build_chunk_prompt(
+            chunk,
+            self._get_tail_paras(prev_source) if prev_source else None,
+            self._get_head_paras(next_source) if next_source else None,
+        )

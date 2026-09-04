@@ -135,7 +135,9 @@ def get_chapter(chapter_id: str, session: ProjectSession = RequireProjectDep) ->
         raise HTTPException(404, f"Chapter {chapter_id} not found")
 
     plan = ws_server._read_json(chapter_dir / "plan.json")
-    final_text = ws_server._read_text(chapter_dir / "chapter_final.txt")
+    from novel_agent.services.manuscript_workspace import read_chapter_plain_text
+
+    final_text = read_chapter_plain_text(session.root_dir, chapter_id)
     wordcount = ws_server._read_json(chapter_dir / "reports" / "wordcount.json")
     target_chars = plan.get("target_chars") if isinstance(plan.get("target_chars"), list) else []
     target_min = int(target_chars[0]) if len(target_chars) > 0 and str(target_chars[0]).isdigit() else 0
@@ -236,24 +238,6 @@ def create_new_chapter(req: CreateChapterRequest, session: ProjectSession = Requ
     
     store = task_manager_for(session).store
     ensure_manuscript_document(session.root_dir, safe_id, store=store)
-
-    # 新建默认活跃分支记录
-    try:
-        store.save_chapter_version(
-            chapter_id=safe_id,
-            version_name="版本 A",
-            content="",
-            plan=json.dumps(plan, ensure_ascii=False),
-            is_active=True,
-            note="新建章节自动初始化版本"
-        )
-        import random
-        bounce = round(random.uniform(0.08, 0.18), 3)
-        retention = round(random.uniform(0.78, 0.88), 3)
-        readers = random.randint(3000, 12000)
-        store.save_reader_feedback(safe_id, bounce, retention, readers)
-    except Exception as e:
-        ws_server.logger.warning("Failed to initialize chapter_versions or feedback: %s", e)
         
     touch_project_activity(session)
 
@@ -326,39 +310,6 @@ def save_chapter(chapter_id: str, req: SaveChapterRequest, session: ProjectSessi
         )
     except Exception as e:
         ws_server.logger.warning("Failed to create automatic snapshot: %s", e)
-
-    try:
-        versions = store.list_chapter_versions(chapter_id)
-        active_version = next((v for v in versions if v.get("is_active") == 1), None)
-        if active_version:
-            store.save_chapter_version(
-                chapter_id=chapter_id,
-                version_name=active_version["version_name"],
-                content=req.final_text,
-                plan=json.dumps(plan, ensure_ascii=False),
-                is_active=True,
-                note=active_version.get("note", ""),
-                version_id=active_version["id"],
-            )
-        else:
-            store.save_chapter_version(
-                chapter_id=chapter_id,
-                version_name="版本 A",
-                content=req.final_text,
-                plan=json.dumps(plan, ensure_ascii=False),
-                is_active=True,
-                note="保存章节同步创建",
-            )
-        feedback = store.get_reader_feedback(chapter_id)
-        if not feedback:
-            import random
-
-            bounce = round(random.uniform(0.08, 0.18), 3)
-            retention = round(random.uniform(0.78, 0.88), 3)
-            readers = random.randint(3000, 12000)
-            store.save_reader_feedback(chapter_id, bounce, retention, readers)
-    except Exception as e:
-        ws_server.logger.warning("Failed to sync save to chapter_versions or feedback: %s", e)
 
     touch_project_activity(session)
 

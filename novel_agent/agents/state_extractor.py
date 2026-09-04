@@ -84,7 +84,7 @@ class StateExtractorAgent(PromptAgent):
             return result
         except Exception as exc:
             logger.error("Failed to parse state extractor output: %s", exc)
-            return self._empty_state()
+            raise
 
     def extract(
         self, chapter_text: str, chapter_id: str, chapter_summary: str = ""

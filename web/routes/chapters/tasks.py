@@ -34,8 +34,35 @@ from web.models import (
     SaveChapterRequest,
 )
 from novel_agent.scripts.count_chars import count_chinese_chars, wordcount_report
+from novel_agent.services.novel_run_guard import build_readiness_report
 
 router = APIRouter()
+
+
+def _reset_chapter_generation_artifacts(chapter_dir: Path) -> None:
+    """Drop resume markers so rewrite/run cannot stitch leftover scene files."""
+    checkpoint_path = chapter_dir / "checkpoint.json"
+    if checkpoint_path.exists():
+        try:
+            checkpoint_path.unlink()
+        except OSError as exc:
+            ws_server.logger.warning("Failed to delete checkpoint file %s: %s", checkpoint_path, exc)
+    scenes_dir = chapter_dir / "scenes"
+    if not scenes_dir.is_dir():
+        return
+    for path in scenes_dir.glob("scene_*.txt"):
+        try:
+            path.unlink()
+        except OSError as exc:
+            ws_server.logger.warning("Failed to delete leftover scene file %s: %s", path, exc)
+
+
+def _require_generation_ready(root: Path) -> None:
+    report = build_readiness_report(root)
+    pending = report.get("pending") or []
+    if pending:
+        labels = "、".join(str(item.get("label") or "") for item in pending)
+        raise HTTPException(400, f"开书清单未就绪：{labels}")
 
 
 @router.post("/api/chapters/run")
@@ -43,18 +70,11 @@ async def run_chapter(req: ChapterRequest, session: ProjectSession = RequireProj
     session = coerce_project_session(session)
     outline = ws_server.get_outline(session.root_dir)
     task_manager = task_manager_for(session)
-    if not outline or not outline.get("chosen_title"):
-        raise HTTPException(400, "生成章节要求在大纲中确定小说最终名称。")
+    _require_generation_ready(session.root_dir)
     try:
-        # 清理已有的 checkpoint.json，确保是重新运行而非恢复
         safe_id = ws_server._validate_id(req.chapter_id, "chapter_id")
         chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
-        checkpoint_path = chapter_dir / "checkpoint.json"
-        if checkpoint_path.exists():
-            try:
-                checkpoint_path.unlink()
-            except OSError as e:
-                ws_server.logger.warning("Failed to delete checkpoint file %s: %s", checkpoint_path, e)
+        _reset_chapter_generation_artifacts(chapter_dir)
         
         task_id = await task_manager.submit_chapter(
             chapter_id=req.chapter_id,
@@ -141,13 +161,7 @@ async def rewrite_chapter(chapter_id: str, session: ProjectSession = RequireProj
     if not chapter_dir.exists():
         raise HTTPException(404, f"Chapter {safe_id} not found")
         
-    # 清理已有的 checkpoint.json，保证重写会完整重新跑 Steps 2-13
-    checkpoint_path = chapter_dir / "checkpoint.json"
-    if checkpoint_path.exists():
-        try:
-            checkpoint_path.unlink()
-        except OSError as e:
-            ws_server.logger.warning("Failed to delete checkpoint file %s: %s", checkpoint_path, e)
+    _reset_chapter_generation_artifacts(chapter_dir)
             
     plan = ws_server._read_json(chapter_dir / "plan.json")
     goal = (
@@ -261,8 +275,7 @@ class RewriteBatchRequest(BaseModel):
 async def run_batch(req: BatchChapterRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
     outline = ws_server.get_outline(session.root_dir)
-    if not outline or not outline.get("chosen_title"):
-        raise HTTPException(400, "生成章节要求在大纲中确定小说最终名称。")
+    _require_generation_ready(session.root_dir)
     chapters = [ch.model_dump() for ch in req.chapters]
     batch_id = await task_manager_for(session).submit_batch(chapters, req.dry_run)
     return {"batch_id": batch_id, "chapter_count": len(chapters)}
@@ -331,6 +344,7 @@ async def get_task_queue(session: ProjectSession = RequireProjectDep) -> Dict[st
 
 
 @router.get("/api/chapters/tasks/{task_id}")
+@router.get("/api/tasks/{task_id}")
 async def get_task(task_id: str, session: ProjectSession = RequireProjectDep) -> TaskStatus:
     session = coerce_project_session(session)
     task = await task_manager_for(session).get_task_async(task_id)
@@ -340,10 +354,56 @@ async def get_task(task_id: str, session: ProjectSession = RequireProjectDep) ->
 
 
 @router.post("/api/chapters/tasks/{task_id}/abort")
-async def abort_task(task_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+@router.post("/api/chapters/tasks/{task_id}/cancel")
+@router.post("/api/tasks/{task_id}/cancel")
+async def cancel_task(task_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
     task_manager = task_manager_for(session)
-    success = await task_manager.abort_task(task_id)
-    if not success:
-        return {"status": "ignored", "message": f"Task {task_id} not running or not found"}
-    return {"status": "cancelled", "task_id": task_id}
+    task = await task_manager.get_task_async(task_id)
+    if not task:
+        raise HTTPException(404, f"Task {task_id} not found")
+    if task.get("status") in ("succeeded", "failed", "cancelled"):
+        return {"status": task.get("status"), "task_id": task_id, "task": task}
+    try:
+        await task_manager.abort_task(task_id)
+    except Exception as exc:
+        updated = await task_manager.get_task_async(task_id) or task
+        status = str(updated.get("status") or "")
+        if status in {"cancelled", "succeeded", "failed"}:
+            return {"status": status, "task_id": task_id, "task": updated}
+        raise HTTPException(
+            409,
+            f"取消失败，当前状态为 {status or 'unknown'}: {exc}",
+        ) from exc
+    updated = await task_manager.get_task_async(task_id) or task
+    status = str(updated.get("status") or "")
+    if status not in {"cancelled", "succeeded", "failed"}:
+        raise HTTPException(409, f"取消未生效，当前状态为 {status or 'unknown'}")
+    return {"status": status, "task_id": task_id, "task": updated}
+
+
+# Export alias for backward compatibility
+abort_task = cancel_task
+
+
+@router.post("/api/chapters/tasks/{task_id}/pause")
+@router.post("/api/tasks/{task_id}/pause")
+async def pause_task(task_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    task = await task_manager_for(session).pause_task(task_id)
+    if task is None:
+        raise HTTPException(404, f"Task {task_id} not found")
+    return task
+
+
+@router.post("/api/chapters/tasks/{task_id}/resume")
+@router.post("/api/tasks/{task_id}/resume")
+async def resume_task(task_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    try:
+        task = await task_manager_for(session).resume_task(task_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if task is None:
+        raise HTTPException(404, f"Task {task_id} not found")
+    return task

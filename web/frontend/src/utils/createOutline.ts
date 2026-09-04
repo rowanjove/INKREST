@@ -24,9 +24,11 @@ export function buildMinimalOutline(data: QuickCreatePayload): Record<string, un
   const spanEnd = Math.min(target, opt?.scale === 'micro' ? 3 : 80)
   const genre =
     data.genre ||
+    data.composition?.theme_label ||
     data.composition?.theme ||
     data.channel ||
     ''
+  const directRunSkeleton = opt?.scale === 'micro' || opt?.scale === 'short'
 
   const scaleProfile: Record<string, unknown> = {
     scale: data.scale,
@@ -45,6 +47,7 @@ export function buildMinimalOutline(data: QuickCreatePayload): Record<string, un
     logline: data.description || data.name,
     core_theme: data.description || data.name,
     genre_positioning: genre,
+    planning_status: directRunSkeleton ? 'ready' : 'draft',
     target_chapters: target,
     scale_profile: scaleProfile,
     reader_promise: data.description ? [data.description.slice(0, 120)] : ['精彩的故事'],
@@ -58,7 +61,7 @@ export function buildMinimalOutline(data: QuickCreatePayload): Record<string, un
     main_cast: [],
     antagonistic_forces: ['待定'],
     forbidden_moves: [],
-    macro_outline: [
+    macro_outline: directRunSkeleton ? [
       {
         arc_id: 'A01',
         name: '起始卷',
@@ -67,7 +70,7 @@ export function buildMinimalOutline(data: QuickCreatePayload): Record<string, un
         turning_point: '待定',
         payoff: '待定',
       },
-    ],
+    ] : [],
   }
 }
 

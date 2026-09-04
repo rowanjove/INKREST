@@ -271,6 +271,23 @@ class ApiProjectsTests(ApiTestBase):
             web_server._active_project_id = original_active
             web_server.BASE_DIR = original_base
 
+    def test_create_project_persists_factory_mode(self):
+        original_active = web_server._active_project_id
+        original_base = web_server.BASE_DIR
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            web_server._active_project_id = None
+            result = web_server.create_project(web_server.ProjectCreateRequest(
+                name="协作书",
+                factory_mode="author_copilot",
+            ))
+            project_dir = self.tmpdir / "projects" / result["id"]
+            meta = json.loads((project_dir / "config" / "project_meta.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["factory_mode"], "author_copilot")
+        finally:
+            web_server._active_project_id = original_active
+            web_server.BASE_DIR = original_base
+
     def test_dashboard_html_contains_chapter_report_summary(self):
         chapter_dir = self.tmpdir / "workspace" / "chapters" / "chapter_001"
         reports_dir = chapter_dir / "reports"

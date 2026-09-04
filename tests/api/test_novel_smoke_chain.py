@@ -1,6 +1,7 @@
 """Smoke: ensure-queue + continue preflight (no real LLM)."""
 
 import json
+import time
 from unittest.mock import AsyncMock, patch
 
 from tests.api._base import *  # noqa: F403
@@ -53,24 +54,31 @@ class NovelSmokeChainTests(ApiTestBase):
 
             web_context._task_manager = None
             _seed(self.tmpdir)
-            client = TestClient(web_app)
-            with patch(
+            with TestClient(web_app) as client, patch(
                 "novel_agent.services.rolling_planner.prepare_queue_for_run",
                 new_callable=AsyncMock,
                 return_value={"arcs_created": 0, "briefs_added": 0, "pending_briefs": 1},
             ):
                 q = client.post("/api/novel/ensure-queue")
-            self.assertIn(q.status_code, (200, 400), q.text)
-            r = client.post(
-                "/api/novel/continue",
-                json={"dry_run": True, "autopilot": True, "max_chapters": 0, "force_resume": True},
-            )
-            self.assertEqual(r.status_code, 200, r.text)
-            self.assertIn("task_id", r.json())
-            b = client.get("/api/novel/batch-status")
-            self.assertEqual(b.status_code, 200)
-            self.assertIn("pending_total", b.json())
-            self.assertIn("authoritative_progress_note", b.json())
+                self.assertEqual(q.status_code, 202, q.text)
+                task_id = q.json()["task_id"]
+                deadline = time.time() + 5
+                while time.time() < deadline:
+                    task = client.get(f"/api/chapters/tasks/{task_id}").json()
+                    if task.get("status") in {"succeeded", "failed", "cancelled"}:
+                        break
+                    time.sleep(0.05)
+                self.assertEqual(task.get("status"), "succeeded", task)
+                r = client.post(
+                    "/api/novel/continue",
+                    json={"dry_run": True, "autopilot": True, "max_chapters": 0, "force_resume": True},
+                )
+                self.assertEqual(r.status_code, 200, r.text)
+                self.assertIn("task_id", r.json())
+                b = client.get("/api/novel/batch-status")
+                self.assertEqual(b.status_code, 200)
+                self.assertIn("pending_total", b.json())
+                self.assertIn("authoritative_progress_note", b.json())
         finally:
             web_context._task_manager = None
             web_server._active_project_id = original_active

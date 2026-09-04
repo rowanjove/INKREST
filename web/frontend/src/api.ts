@@ -167,6 +167,7 @@ export const createProject = (data: {
   preset_theme?: string
   preset_mechanisms?: string[]
   preset_cool_points?: string[]
+  factory_mode?: string
 }) =>
   api.post('/projects', data)
 
@@ -227,6 +228,9 @@ export const getComponent = (type: string, id: string) =>
 
 // ---- Models ----
 
+export const getModelReadiness = () =>
+  api.get('/models/readiness')
+
 export const listModels = () =>
   api.get('/models')
 
@@ -266,11 +270,50 @@ export const getSetupLocalStatus = () =>
 export const listPlugins = () =>
   api.get('/plugins')
 
+export const fetchPluginNavigation = () =>
+  api.get('/plugins/navigation')
+
+export const createPluginViewSession = (pluginId: string, viewId: string, projectId?: string) =>
+  api.post(`/plugins/${pluginId}/views/${viewId}/session`, { project_id: projectId })
+
+export const closePluginViewSession = (pluginId: string, viewId: string, sessionId: string) =>
+  api.delete(`/plugins/${pluginId}/views/${viewId}/session/${sessionId}`)
+
+export const fetchPluginViewDocument = (pluginId: string, viewId: string, sessionId: string) =>
+  api.get<{ title: string; html: string; has_document: boolean }>(
+    `/plugins/${pluginId}/views/${viewId}/document`,
+    { params: { session_id: sessionId } },
+  )
+
+export const executePluginViewRpc = (
+  pluginId: string,
+  viewId: string,
+  sessionId: string,
+  method: string,
+  params?: any,
+  contextRevision = 1,
+) =>
+  api.post(`/plugins/${pluginId}/views/${viewId}/rpc`, {
+    session_id: sessionId,
+    method,
+    params,
+    context_revision: contextRevision,
+  })
+
 export const listUntrustedPlugins = () =>
   api.get('/plugins/untrusted')
 
-export const trustPlugin = (name: string, digest: string, capabilities: string[]) =>
-  api.post(`/plugins/${name}/trust`, { digest, capabilities })
+export const trustPlugin = (
+  name: string,
+  digest: string,
+  capabilities: string[],
+  acknowledgeLocalCode = false,
+) =>
+  api.post(`/plugins/${name}/trust`, {
+    digest,
+    capabilities,
+    acknowledge_local_code: acknowledgeLocalCode,
+  })
 
 export const togglePlugin = (name: string, enabled: boolean) =>
   api.put(`/plugins/${name}/toggle`, { enabled })
@@ -308,6 +351,90 @@ export const getAssistantContext = () =>
 
 export const sendAssistantChat = (data: { message: string; history: any[]; context?: any }) =>
   api.post('/assistant/chat', data)
+
+export const sendAssistantChatStream = async (
+  data: { message: string; history: any[]; context?: any },
+  onChunk: (chunk: string) => void,
+  onDone: (result: { reply: string; actions: any[]; suggestions: string[] }) => void,
+  onError: (err: any) => void | Promise<void>,
+) => {
+  try {
+    const baseURL = api.defaults.baseURL || '/api'
+    const token = typeof window !== 'undefined' ? window.localStorage.getItem('novel-agent-access-token') : null
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (token) {
+      headers['X-Novel-Agent-Token'] = token
+    }
+
+    const res = await fetch(`${baseURL}/assistant/chat/stream`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`)
+    }
+    const reader = res.body?.getReader()
+    if (!reader) {
+      throw new Error('No stream body')
+    }
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let receivedDone = false
+    let failed = false
+
+    const consumePart = async (part: string) => {
+      const trimmed = part.trim()
+      if (!trimmed || failed) return
+      const eventMatch = trimmed.match(/^event:\s*(\w+)/)
+      const dataMatch = trimmed.match(/data:\s*(.+)$/s)
+      const eventType = eventMatch ? eventMatch[1] : 'chunk'
+      const dataStr = dataMatch ? dataMatch[1] : ''
+      let parsed: any
+      try {
+        parsed = JSON.parse(dataStr)
+      } catch {
+        failed = true
+        await onError(new Error('Malformed assistant stream payload'))
+        return
+      }
+      if (eventType === 'chunk') {
+        onChunk(parsed.chunk || '')
+      } else if (eventType === 'done') {
+        receivedDone = true
+        onDone({
+          reply: parsed.reply || '',
+          actions: parsed.actions || [],
+          suggestions: parsed.suggestions || [],
+        })
+      } else if (eventType === 'error') {
+        failed = true
+        await onError(new Error(parsed.error || 'Stream failed'))
+      }
+    }
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const parts = buffer.split('\n\n')
+      buffer = parts.pop() || ''
+      for (const part of parts) {
+        await consumePart(part)
+        if (failed) return
+      }
+    }
+    buffer += decoder.decode()
+    if (buffer.trim()) {
+      await consumePart(buffer)
+    }
+    if (!failed && !receivedDone) {
+      await onError(new Error('Assistant stream ended without completion'))
+    }
+  } catch (err) {
+    await onError(err)
+  }
+}
 
 export const getAssistantDiagnose = (ignoredTaskIds?: string[]) =>
   api.get('/assistant/diagnose', { params: { ignored_task_ids: ignoredTaskIds?.join(',') } })

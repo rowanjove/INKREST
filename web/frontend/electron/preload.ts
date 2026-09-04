@@ -37,6 +37,10 @@ export interface ElectronAPI {
   getPetWindowBounds: () => Promise<{ x: number; y: number; width: number; height: number } | null>;
   getPetWorkArea: () => Promise<{ x: number; y: number; width: number; height: number } | null>;
   setPetWindowBounds: (bounds: { x: number; y: number; width?: number; height?: number }) => Promise<void>;
+  animatePetWindowBounds: (
+    bounds: { x: number; y: number; width?: number; height?: number },
+    durationMs?: number,
+  ) => Promise<void>;
 
   // Agent events (one-way from main)
   onProgress: (callback: (data: unknown) => void) => () => void;
@@ -61,6 +65,8 @@ const electronAPI: ElectronAPI = {
   getPetWindowBounds: () => ipcRenderer.invoke('pet:getWindowBounds'),
   getPetWorkArea: () => ipcRenderer.invoke('pet:getWorkArea'),
   setPetWindowBounds: (bounds) => ipcRenderer.invoke('pet:setWindowBounds', bounds),
+  animatePetWindowBounds: (bounds, durationMs) =>
+    ipcRenderer.invoke('pet:animateBounds', { bounds, durationMs }),
   onNavigate: (callback) => {
     const handler = (_event: IpcRendererEvent, route: string) => callback(route);
     ipcRenderer.on('app:navigate', handler);

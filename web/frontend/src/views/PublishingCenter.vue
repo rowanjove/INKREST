@@ -171,44 +171,45 @@ function openWriter(chapterId: string) {
 }
 .publishing-header { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 18px; }
 .publishing-header > div:first-child { display: grid; gap: 3px; }
-.publishing-header small { color: var(--color-primary); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
-.publishing-header h1 { margin: 0; color: var(--color-text-strong); font-size: 22px; line-height: 1.1; }
-.publishing-header p { margin: 0; color: var(--color-text-muted); font-size: 11px; }
+.publishing-header small { color: var(--color-primary); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+.publishing-header h1 { margin: 0; color: var(--color-text-strong); font-size: 24px; line-height: 1.15; }
+.publishing-header p { margin: 0; color: var(--color-text-muted); font-size: 13px; }
 .header-actions { display: flex; gap: 8px; }
 .publishing-tabs {
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 3px;
-  min-height: 38px;
-  padding: 3px;
+  gap: 4px;
+  min-height: 42px;
+  padding: 4px;
   border: 1px solid var(--color-border);
   border-radius: 10px;
   background: var(--color-bg-surface);
 }
 .publishing-tabs button {
   display: inline-flex;
-  min-height: 30px;
+  min-height: 34px;
   align-items: center;
-  gap: 7px;
-  padding: 0 13px;
+  gap: 8px;
+  padding: 0 15px;
   border: 0;
   border-radius: 7px;
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 13.5px;
   font-weight: 700;
 }
 .publishing-tabs button:hover { color: var(--color-text-strong); background: var(--color-bg-hover); }
 .publishing-tabs button.active { color: var(--color-primary); background: var(--color-primary-soft); }
 .publishing-tabs button > span {
-  min-width: 17px;
-  padding: 2px 5px;
+  min-width: 18px;
+  padding: 2px 6px;
   border-radius: 999px;
   background: var(--color-bg-surface-muted);
   color: var(--color-text-muted);
-  font-size: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
   text-align: center;
 }
 .publishing-tabs button > span.danger { background: var(--color-danger-soft); color: var(--color-danger); }

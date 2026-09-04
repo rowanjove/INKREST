@@ -92,7 +92,11 @@ class NovelOrchestrator:
         inject_agents(self, config)
         
         self.state_manager = StateManager(self.root_dir)
-        self.approval_gate = ApprovalGate(interactive=config.interactive, plugin_manager=config.plugin_manager)
+        self.approval_gate = ApprovalGate(
+            interactive=config.interactive,
+            plugin_manager=config.plugin_manager,
+            root_dir=self.root_dir,
+        )
         self.vector_store: VectorStore = create_vector_store(
             config.embedding_config, self.root_dir
         )

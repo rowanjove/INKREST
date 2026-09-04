@@ -113,8 +113,15 @@ def _merge_issue(target: list[dict[str, Any]], issue: dict[str, Any]) -> None:
     existing["details"] = existing_details[:20]
 
 
-def build_quality_review_queue(root_dir: Path) -> dict[str, Any]:
-    """Build one review item per chapter without exposing filesystem paths."""
+def build_quality_review_queue(
+    root_dir: Path,
+    *,
+    cursor: str | None = None,
+    limit: int | None = None,
+    status_filter: str | None = None,
+    severity_filter: str | None = None,
+) -> dict[str, Any]:
+    """Build review items per chapter with optional cursor-based pagination and filtering."""
     root = Path(root_dir)
     chapters_root = root / "workspace" / "chapters"
     items: dict[str, dict[str, Any]] = {}
@@ -137,6 +144,8 @@ def build_quality_review_queue(root_dir: Path) -> dict[str, Any]:
             "severity": "warning" if stage == "external_review_pending" else "error",
             "message": str(alert.get("message") or STAGE_LABELS.get(stage) or "需要处理"),
             "overall_score": None,
+            "chapter_score": None,
+            "blocked_by": [],
             "issues": [],
             "completed_stages": [
                 str(value) for value in (alert.get("completed_stages") or [])
@@ -165,6 +174,8 @@ def build_quality_review_queue(root_dir: Path) -> dict[str, Any]:
                     "severity": "error",
                     "message": "质量报告无法读取，需要重新审校",
                     "overall_score": None,
+                    "chapter_score": None,
+                    "blocked_by": [],
                     "issues": [],
                     "completed_stages": [],
                     "updated_at": None,
@@ -204,6 +215,8 @@ def build_quality_review_queue(root_dir: Path) -> dict[str, Any]:
                 "severity": "error",
                 "message": "质量检查未通过",
                 "overall_score": None,
+                "chapter_score": None,
+                "blocked_by": [],
                 "issues": [],
                 "completed_stages": [],
                 "updated_at": None,
@@ -214,6 +227,14 @@ def build_quality_review_queue(root_dir: Path) -> dict[str, Any]:
             item["overall_score"] = int(round(float(report.get("overall_score"))))
         except (TypeError, ValueError):
             item["overall_score"] = None
+        chapter_score = report.get("chapter_score")
+        if isinstance(chapter_score, dict) and chapter_score.get("score") is not None:
+            try:
+                item["chapter_score"] = round(float(chapter_score.get("score")), 1)
+            except (TypeError, ValueError):
+                item["chapter_score"] = item.get("chapter_score")
+        if blocked_by:
+            item["blocked_by"] = blocked_by
         for code, raw_check in checks.items():
             if not isinstance(raw_check, dict) or raw_check.get("pass") is not False:
                 continue
@@ -241,11 +262,41 @@ def build_quality_review_queue(root_dir: Path) -> dict[str, Any]:
     for item in ordered:
         stage = str(item["stage"])
         stage_counts[stage] = stage_counts.get(stage, 0) + 1
+
+    filtered_items = ordered
+    if severity_filter:
+        sev = str(severity_filter).strip().lower()
+        filtered_items = [it for it in filtered_items if str(it.get("severity", "")).lower() == sev]
+    if status_filter:
+        stat = str(status_filter).strip().lower()
+        filtered_items = [it for it in filtered_items if str(it.get("stage", "")).lower() == stat]
+
+    total_filtered = len(filtered_items)
+
+    if limit is not None or cursor is not None:
+        page_limit = max(1, limit if limit is not None else 50)
+        start_idx = 0
+        if cursor:
+            for i, it in enumerate(filtered_items):
+                if str(it.get("chapter_id")) == str(cursor):
+                    start_idx = i + 1
+                    break
+        page_items = filtered_items[start_idx : start_idx + page_limit]
+        has_more = (start_idx + page_limit) < total_filtered
+        next_cursor = page_items[-1]["chapter_id"] if has_more and page_items else None
+    else:
+        page_items = filtered_items
+        has_more = False
+        next_cursor = None
+
     return {
         "summary": {
             **quality_summary,
             "open_items": len(ordered),
             "stage_counts": stage_counts,
         },
-        "items": ordered,
+        "items": page_items,
+        "next_cursor": next_cursor,
+        "total": total_filtered,
+        "has_more": has_more,
     }

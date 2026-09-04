@@ -28,6 +28,27 @@ from novel_agent.state.sqlite_store import SQLiteStateStore
 from novel_agent.state.manuscript_repository import DocumentConflictError
 
 
+def read_chapter_plain_text(
+    root_dir: Path,
+    chapter_id: str,
+    *,
+    store: Optional[SQLiteStateStore] = None,
+) -> str:
+    """Return authoritative chapter prose, preferring SQLite over disk projection."""
+    root = Path(root_dir)
+    state = store or SQLiteStateStore(root)
+    document = state.get_manuscript_document(chapter_id)
+    if document is not None:
+        return str(document.get("plain_text") or "")
+    disk_path = root / "workspace" / "chapters" / f"chapter_{chapter_id}" / "chapter_final.txt"
+    if disk_path.is_file():
+        try:
+            return disk_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+    return ""
+
+
 def _safe_json(path: Path) -> Dict[str, Any]:
     if not path.is_file():
         return {}
@@ -254,6 +275,57 @@ def ensure_manuscript_document(
     )
 
 
+def sync_chapter_manuscript_document(
+    root_dir: Path,
+    chapter_id: str,
+    *,
+    text: Optional[str] = None,
+    title: Optional[str] = None,
+    store: Optional[SQLiteStateStore] = None,
+    source: str = "generation",
+) -> Dict[str, Any]:
+    """Ensure or update the authoritative manuscript in SQLite documents table."""
+    root = Path(root_dir)
+    state = store or SQLiteStateStore(root)
+    chapter_dir = root / "workspace" / "chapters" / f"chapter_{chapter_id}"
+
+    if text is None:
+        final_path = chapter_dir / "chapter_final.txt"
+        text = final_path.read_text(encoding="utf-8") if final_path.is_file() else ""
+
+    if title is None:
+        plan = _safe_json(chapter_dir / "plan.json")
+        title = str(plan.get("chapter_title") or f"第 {chapter_id} 章")
+
+    content_json = plain_text_to_tiptap(text)
+    derived_plain, markdown_text = derive_document_text(content_json)
+
+    existing = state.get_manuscript_document(chapter_id)
+    if existing is None:
+        return state.create_manuscript_document(
+            chapter_id=chapter_id,
+            title=title,
+            content_json=content_json,
+            plain_text=derived_plain,
+            markdown_text=markdown_text,
+            source=source,
+        )
+    elif (
+        existing.get("plain_text", "").strip() != derived_plain.strip()
+        or existing.get("title") != title
+    ):
+        return state.save_manuscript_document(
+            chapter_id=chapter_id,
+            title=title,
+            content_json=content_json,
+            plain_text=derived_plain,
+            markdown_text=markdown_text,
+            expected_revision=int(existing["revision"]),
+            source=source,
+        )
+    return existing
+
+
 def build_manuscript_workspace(
     root_dir: Path,
     *,
@@ -429,6 +501,12 @@ def apply_plain_text_to_manuscript(
         or str(current.get("title") or "")
         or f"第 {chapter_id} 章"
     )
+    if (
+        str(current.get("plain_text") or "") == (plain_text or "")
+        and str(current.get("title") or "") == resolved_title
+        and expected_revision in (None, int(current.get("revision") or 0))
+    ):
+        return current
     return save_manuscript_document(
         root_dir,
         chapter_id=chapter_id,
@@ -446,6 +524,7 @@ def sync_generated_manuscript_document(
     final_path: Path,
     expected_revision: Optional[int],
     source: str = "generation",
+    plain_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Commit generated text into the authoritative document and its projection."""
     root = Path(root_dir)
@@ -454,7 +533,8 @@ def sync_generated_manuscript_document(
     expected_final = (chapter_dir / "chapter_final.txt").resolve()
     if resolved_final != expected_final:
         raise ValueError("Generated manuscript path does not match the requested chapter")
-    plain_text = resolved_final.read_text(encoding="utf-8")
+    if plain_text is None:
+        plain_text = resolved_final.read_text(encoding="utf-8")
     plan = _safe_json(chapter_dir / "plan.json")
     title = str(plan.get("chapter_title") or f"第 {chapter_id} 章")
     content_json = plain_text_to_tiptap(plain_text)

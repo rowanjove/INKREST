@@ -9,8 +9,23 @@ export const listTasks = () =>
 export const abortTask = (taskId: string) =>
   api.post(`/chapters/tasks/${taskId}/abort`)
 
-export const getTask = (taskId: string) =>
-  api.get(`/chapters/tasks/${taskId}`)
+export const pauseTask = (taskId: string) =>
+  api.post(`/chapters/tasks/${taskId}/pause`)
+
+export const resumeTask = (taskId: string) =>
+  api.post(`/chapters/tasks/${taskId}/resume`)
+
+export const cancelTask = (taskId: string) =>
+  api.post(`/chapters/tasks/${taskId}/cancel`)
+
+export const getTask = (
+  taskId: string,
+  options?: { signal?: AbortSignal; timeout?: number },
+) =>
+  api.get(`/chapters/tasks/${taskId}`, {
+    signal: options?.signal,
+    timeout: options?.timeout,
+  })
 
 export const getArcProgress = () =>
   api.get('/novel/arc-progress')
@@ -44,6 +59,9 @@ export const continueNovel = (
   opts?: { signal?: AbortSignal },
 ) =>
   api.post('/novel/continue', data || {}, { signal: opts?.signal })
+
+export const pauseNovelBatch = () =>
+  api.post('/novel/pause')
 
 export const ensureNovelQueue = (opts?: { timeout?: number; signal?: AbortSignal }) =>
   api.post('/novel/ensure-queue', undefined, {

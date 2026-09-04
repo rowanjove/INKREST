@@ -3,10 +3,11 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import QuickCreateForm from '../components/QuickCreateForm.vue'
 import { useProjectStore } from '../stores/project'
-import { analyzeNovelIntro, getConfig, listModels } from '../api'
+import { analyzeNovelIntro, getConfig, getModelReadiness, listModels } from '../api'
 import { buildMinimalOutline } from '../utils/createOutline'
-import { markPendingFirstBookGuide } from '../utils/firstBookGuide'
 import type { Composition } from '../types/preset'
+import { completeOnboarding, markAppTourPending } from './useAppTour'
+import { resolveEngine } from '../utils/dashboardEngine'
 
 export type CreateMode = 'quick' | 'ai' | 'parse'
 
@@ -86,7 +87,8 @@ export function useCreateWizard() {
   ) => {
     const project = await projectStore.createProject(name, description, presetId, extra)
     await projectStore.switchProject(project.id)
-    markPendingFirstBookGuide(project.id)
+    completeOnboarding()
+    markAppTourPending()
     ElMessage.success('作品骨架已创建')
     await router.push({ path: '/outline', query: { welcome: '1' } })
   }
@@ -96,7 +98,7 @@ export function useCreateWizard() {
     pendingAi.value = data
   }
 
-  const commitAiCreate = async (data: AiCreateDraft) => {
+  const commitAiCreate = async (data: AiCreateDraft, factoryMode?: string) => {
     const ctx = (data.context as Record<string, any>) || {}
     const card = (ctx.summary_card as Record<string, any>) || {}
     const readerPromise = (ctx.reader_promise as Record<string, any>) || {}
@@ -142,7 +144,12 @@ export function useCreateWizard() {
       extra.preset_mechanisms = composition.mechanisms
       extra.preset_cool_points = composition.cool_points
     }
-    await createProject(data.name, data.description, extra, ctx.preset_id)
+    await createProject(data.name, data.description, applyFactoryMode(extra, factoryMode), ctx.preset_id)
+  }
+
+  const applyFactoryMode = (extra: Record<string, unknown>, factoryMode?: string) => {
+    if (factoryMode) extra.factory_mode = factoryMode
+    return extra
   }
 
   const handleQuickCreate = (data: QuickCreateDraft) => {
@@ -150,7 +157,7 @@ export function useCreateWizard() {
     pendingQuick.value = data
   }
 
-  const commitQuickCreate = async (data: QuickCreateDraft) => {
+  const commitQuickCreate = async (data: QuickCreateDraft, factoryMode?: string) => {
     const extra: Record<string, unknown> = {
       genre: data.genre,
       channel: data.channel,
@@ -166,15 +173,15 @@ export function useCreateWizard() {
       extra.preset_mechanisms = data.composition.mechanisms
       extra.preset_cool_points = data.composition.cool_points
     }
-    await createProject(data.name, data.description, extra)
+    await createProject(data.name, data.description, applyFactoryMode(extra, factoryMode))
   }
 
-  const commitCreate = async () => {
+  const commitCreate = async (factoryMode?: string) => {
     if (!hasDraft.value || creating.value) return
     creating.value = true
     try {
-      if (pendingQuick.value) await commitQuickCreate(pendingQuick.value)
-      else if (pendingAi.value) await commitAiCreate(pendingAi.value)
+      if (pendingQuick.value) await commitQuickCreate(pendingQuick.value, factoryMode)
+      else if (pendingAi.value) await commitAiCreate(pendingAi.value, factoryMode)
     } catch (err: any) {
       ElMessage.error(err?.response?.data?.detail || err.message || '创建失败')
     } finally {
@@ -224,9 +231,22 @@ export function useCreateWizard() {
 
   onMounted(async () => {
     try {
-      const [{ data: models }, { data: config }] = await Promise.all([listModels(), getConfig()])
-      aiModelLabel.value = resolveAiGuideModel(config, models)
-      aiModelReady.value = Boolean(aiModelLabel.value)
+      const [{ data: models }, { data: config }, readinessRes] = await Promise.all([
+        listModels(),
+        getConfig(),
+        getModelReadiness().catch(() => null),
+      ])
+      const engine = resolveEngine(config, models)
+      const readiness = readinessRes?.data
+      if (readiness) {
+        aiModelReady.value = Boolean(readiness.ok) && engine.ready
+        aiModelLabel.value = (readiness.ok && engine.ready)
+          ? resolveAiGuideModel(config, models)
+          : (readiness.missing?.length ? `缺少配置：${readiness.missing.join('、')}` : engine.label)
+      } else {
+        aiModelReady.value = engine.ready
+        aiModelLabel.value = engine.ready ? resolveAiGuideModel(config, models) : engine.label
+      }
     } catch {
       aiModelReady.value = false
     }

@@ -36,6 +36,25 @@ describe('useAppTour helpers', () => {
     expect(APP_TOUR_STEPS).toHaveLength(5)
   })
 
+  it('only references current V2 routes and stable shell anchors', () => {
+    expect(APP_TOUR_STEPS.map((step) => step.route)).toEqual([
+      '/',
+      '/workspace',
+      '/workspace',
+      '/workspace',
+      '/workspace',
+    ])
+    expect(APP_TOUR_STEPS.map((step) => step.selector)).toEqual([
+      '[data-tour="library-header"]',
+      '[data-tour="nav-overview"]',
+      '[data-tour="project-journey"]',
+      '[data-tour="next-action"]',
+      '[data-tour="command-palette"]',
+    ])
+    expect(APP_TOUR_STEPS.map((step) => `${step.title}${step.body}`).join(''))
+      .not.toMatch(/AI 工厂|套路工坊|山山/)
+  })
+
   it('stops auto tour after completion', () => {
     expect(shouldStartAppTour()).toBe(true)
     markAppTourCompleted()

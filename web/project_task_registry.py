@@ -67,7 +67,14 @@ class ProjectTaskRegistry:
         key = self._key(root_dir)
         with self._lock:
             manager = self._managers.get(key)
-            return bool(manager and manager.has_active_tasks())
+            if manager and manager.has_active_tasks():
+                return True
+        try:
+            from novel_agent.services.v2_reset import _has_persisted_active_tasks
+
+            return bool(_has_persisted_active_tasks(Path(root_dir)))
+        except Exception:
+            return False
 
     def drop(self, root_dir: Path) -> None:
         key = self._key(root_dir)

@@ -25,9 +25,10 @@ def resolve_hook_timeout_seconds(root_dir: Any) -> float:
 
 
 def plugin_sandbox_enabled(root_dir: Any) -> bool:
-    return bool(
-        load_pipeline_settings(root_dir).get("runtime", {}).get("plugin_sandbox", False)
-    )
+    raw = load_pipeline_settings(root_dir).get("runtime", {}).get("plugin_sandbox", True)
+    if isinstance(raw, str):
+        return raw.strip().lower() not in {"0", "false", "no", "off"}
+    return bool(raw)
 
 
 def dispatch_hook(

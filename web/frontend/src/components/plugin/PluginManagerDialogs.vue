@@ -6,6 +6,7 @@ const configDialogVisible = defineModel<boolean>('configDialogVisible', { requir
 const installDialogVisible = defineModel<boolean>('installDialogVisible', { required: true })
 const trustDialogVisible = defineModel<boolean>('trustDialogVisible', { required: true })
 const trustAcknowledged = defineModel<boolean>('trustAcknowledged', { required: true })
+const localCodeAcknowledged = defineModel<boolean>('localCodeAcknowledged', { required: true })
 const configForm = defineModel<Record<string, any>>('configForm', { required: true })
 const configJsonText = defineModel<string>('configJsonText', { required: true })
 const installDragOver = defineModel<boolean>('installDragOver', { required: true })
@@ -32,7 +33,7 @@ defineProps<{
     title="检查插件权限"
     width="560px"
     align-center
-    @closed="trustAcknowledged = false"
+    @closed="trustAcknowledged = false; localCodeAcknowledged = false"
   >
     <div v-if="trustTarget" class="trust-dialog">
       <el-alert
@@ -81,6 +82,13 @@ defineProps<{
         <code>{{ trustTarget.digest }}</code>
       </div>
 
+      <el-checkbox
+        v-if="(trustTarget.effective_capabilities || []).includes('local_code')"
+        v-model="localCodeAcknowledged"
+        class="trust-check"
+      >
+        我确认此插件将在本机进程运行 Python（local_code，最高风险），不可跳过。
+      </el-checkbox>
       <el-checkbox v-model="trustAcknowledged" class="trust-check">
         我已核对来源、内容摘要与上述权限，并理解 Python 插件不受操作系统沙箱隔离。
       </el-checkbox>
@@ -90,7 +98,7 @@ defineProps<{
       <el-button
         type="warning"
         :loading="trustLoading"
-        :disabled="!trustAcknowledged"
+        :disabled="!trustAcknowledged || ((trustTarget?.effective_capabilities || []).includes('local_code') && !localCodeAcknowledged)"
         @click="onConfirmTrust"
       >
         仅建立信任

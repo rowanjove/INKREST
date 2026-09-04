@@ -1,36 +1,171 @@
+# 写作规则与词句级风控规则表（rules.yaml）
+# 直接由 novel_agent/rules.py 解析并格式化注入所有生成/润色 Agent 提示词。
+
+# 1. 警惕高频堆叠词（单章严格限制频次，超过 2 次需报警替换）
 commonWords:
   - content: 愣住
-    description: 高频反应词，同一段内避免重复堆叠。
+    description: 典型被动迟钝反应词，一章出现不宜超过 1 次，优先改为身体重心微移、瞳仁微缩或手中动作停顿。
   - content: 深吸一口气
-    description: 可用，但一章不宜出现多次。
+    description: 廉价情绪调整词，一章禁止超过 1 次，改为胸口起伏、吐出冷气或喉结滚动。
+  - content: 苦笑
+    description: 滥用自嘲标签，避免全员动辄苦笑，改为自嘲的短促嗤笑、嘴角抽动或垂下眼帘。
+  - content: 皱眉
+    description: 观察高频词，改为伸手按揉眉心、眼神聚焦或视线沉下。
+  - content: 沉吟
+    description: 思考套话，改为食指轻叩桌面、视线扫视地图或沉默片刻。
+  - content: 叹了口气
+    description: 滥用感叹，改为吐出一口白雾、视线移向窗外。
+  - content: 缓缓
+    description: 滥用慢动作副词，删除副词直接写具体动作。
+  - content: 猛然
+    description: 突发动作滥用词，直接写出客体发力爆发。
+  - content: 冷哼
+    description: 脸谱化反派对白起手，改为从鼻腔里发出轻蔑的气音或嘴角牵扯。
+  - content: 咬牙
+    description: 情绪标签，改为后槽牙咬得生疼、两腮肌肉绷紧。
+
+# 2. 警惕常见机械起手句（需注重前后文动作与环境咬合，严禁连续段首机械重复）
 commonSentences:
   - content: 他抬起头
-    description: 常见动作起句，注意与上文衔接，避免机械重复。
+    description: 机械起手句，注意与上文动作衔接，避免每段开头都写抬头。
+  - content: 他转过身
+    description: 机械起手句，避免反复原地打转。
+  - content: 他脚步一顿
+    description: 机械打断句，可改为脚底碾过碎石的杂音、鞋底擦过青砖。
+  - content: 他心中暗想
+    description: 旁白化内心独白，应尽可能通过对话或下意识抉择展现。
+  - content: 他深深地看了对方一眼
+    description: 假大空眼神戏，缺乏信息量，写清楚对方具体哪个破绽引起了他的注意。
+
+# 3. 严格禁用词（高危 AI 套话、劣质网络流行烂梗与空洞修辞，正文严禁出现）
 forbiddenWords:
+  # AI 常见哲学升华与宏大套话
   - content: 命运的齿轮
-    description: 模板化、宏大化表达，容易产生 AI 腔。
+    description: 泛滥的大词模板，严重脱离现场细节。
   - content: 空气仿佛凝固
-    description: 常见套话，除非场景确实需要，否则避免。
+    description: 烂俗场景气氛描写，改用具体的物理声响或呼吸停滞。
   - content: 从这一刻起
-    description: 容易变成总结式旁白。
+    description: 容易引发剧透型总结旁白。
   - content: 无法言说
-    description: 空泛抽象，优先改成具体动作或感官细节。
+    description: 抽象空洞，偷懒不写细节。
+  - content: 一切都悄然改变
+    description: 空泛人生总结。
+  - content: 不知不觉间
+    description: 模糊时序推移，写清楚具体过了多久或天色变化。
+  - content: 仿佛过了几个世纪
+    description: 夸张老套的心理主观时间感。
+  - content: 心中掀起惊涛骇浪
+    description: 烂俗内心惊骇描写。
+  - content: 眼神闪过一丝决然
+    description: 脸谱化情绪标签，严禁动辄闪过决然/复杂。
+  - content: 整个人如遭雷击
+    description: 夸张老套的震惊反应。
+  - content: 无力感油然而生
+    description: 抽象情绪总结，应写出指尖冰凉、四肢发软。
+
+  # 劣质网络烂梗与降智词
   - content: 瞳孔地震
-    description: 网络梗感强，破坏沉浸感。
+    description: 动漫网络梗，严重破坏小说沉浸感与文学质感。
+  - content: 倒吸一口凉气
+    description: 早期小白文滥用套话，改写周围人的错愕杂语或后退脚步。
+  - content: 嘴角勾起一抹弧度
+    description: 霸总/邪魅一笑油腻神态，坚决禁止。
+  - content: 冷笑一声
+    description: 降智反派标配，写出具体的讽刺动作。
+  - content: 宛如神明降世
+    description: 虚无缥缈的威能赞誉，毫无具体视觉冲击。
+  - content: 令人窒息的威压
+    description: 偷懒不写重力、气浪与受力反应。
+  - content: 不怒自威
+    description: 抽象陈词滥调。
+  - content: 不可置信
+    description: 直白贴标签，写出具体张大嘴、后退撞倒椅子的动作。
+  - content: 整个人都不好了
+    description: 现代网络口语梗，破坏历史、玄幻、严肃文学氛围。
+  - content: 蝼蚁岂敢与日月争辉
+    description: 极端烂大街中二口癖台词。
+  - content: 绝绝子
+    description: 严禁任何现代短视频黑话入文。
+  - content: 斯国一
+    description: 严禁音译网络梗。
+
+  # 空泛大词与假大空修辞
+  - content: 倾国倾城
+    description: 偷懒的外貌描写，改写具体骨相、体态或穿戴。
+  - content: 颠倒众生
+    description: 抽象修辞，无实感。
+  - content: 恐怖如斯
+    description: 网文老梗，严禁出现。
+  - content: 毁天灭地
+    description: 失去尺度的浮夸滥词，写碎石飞溅、空气爆鸣的真实破坏力。
+  - content: 无上威能
+    description: 缺乏物理受力细节的大词。
+  - content: 宛如九天神雷
+    description: 老旧比喻，写光芒刺盲眼睛与雷火焦糊味。
+
+  # 机械公文式转折连接词（非学术/非议论场景严禁使用）
+  - content: 显而易见
+    description: AI 议论腔，叙事小说中应让读者自行得出结论。
+  - content: 毫无疑问
+    description: 傲慢且偷懒的断言。
+  - content: 不可否认
+    description: 议论文腔调，小说中禁用。
+  - content: 总而言之
+    description: 强行总结，切断故事沉浸感。
+  - content: 众所周知
+    description: 说明文腔调。
+  - content: 毋庸置疑
+    description: 说明文词汇。
+
+# 4. 严格禁用句式（破坏叙事沉浸、上帝视角穿透与 AI 辨证升华句式）
 forbiddenSentences:
   - content: 他不知道的是
-    description: 容易提前剧透和制造机械悬念。
+    description: 经典上帝视角剧透，打破限知视角的代入感。
   - content: 一切都悄然改变了
     description: 总结升华感强，弱化故事现场。
   - content: 这一刻，他明白了
-    description: 说教式顿悟，宜改为具体事件或对话让读者自己体会。
+    description: 说教式顿悟，宜改为具体行动或对话让读者自行体会。
+  - content: 这不是……而是……
+    description: 典型 AI 辨证式假深度废话，直接陈述事实。
+  - content: 与其说是……倒不如说是……
+    description: AI 特征鲜明的二元辨析句式。
+  - content: 无论如何，有一点是明确的
+    description: 浓厚公文总结感。
+  - content: 随着时间的推移
+    description: 懒惰的时间流逝交代，应写天色渐沉、灯油燃尽或胡茬泛青。
+  - content: 时间仿佛在这一刻停止了
+    description: 老套陈词滥调。
+  - content: 如果说……那么……就是……
+    description: 假大空修辞排比，禁止在正文叙事中使用。
+  - content: 他的眼中闪过一丝复杂的情绪
+    description: 偷懒不写具体是什么情绪、什么动机。
+  - content: 这不仅是……更是……
+    description: 高高在上的主题强行拔高，读者极为反感。
+  - content: 他深知，这一战不可避免
+    description: 无效内心旁白，拔刀即是明证。
+  - content: 冥冥之中自有天意
+    description: 机械降神与命运论陈腐表达。
+
+# 5. 写作手法（Writing Techniques：全员执行的微观技法铁律）
 writingTechniques: |
-  - 直接承接上一场景，不写前情提要。
-  - 用具体动作、物体、声音、气味、停顿推动画面。
-  - 人物心理尽量通过动作、反应、说话方式体现。
-  - 对话保留潜台词，允许省略、打断、重复和不完整句。
-  - 紧张场景多用短句，舒缓场景可以使用较长句。
-  - 每个句子都应推动情节、展现人物或加强氛围。
-  - 禁止把设定、资料、提示词原样复制进正文。
-  - 新角色出场用一两个可见特征锚定，不要连续贴标签。
-referenceAuthors: []
+  - 【受力与物理反馈】：所有打斗、碰撞、逃亡动作必须有准确的重心偏移、阻力感与肉体受力代价，严禁无痛流血或反重力虚空漂移。
+  - 【视点严防穿透】：正文严格受限于 POV 视点人物的见闻，绝对禁止描写当前视点人物感知不到的他人心绪或远方暗流。
+  - 【对白留白与错位】：对白允许回避、打断、答非所问与讽刺反问，坚决禁止全员化身礼貌的设定讲解员。
+  - 【动作插手分割呼吸】：对话之间必须穿插具体的物理动作（斟酒、擦拭剑刃、指尖轻弹碎屑、挪动烛台），绝不空口对喷。
+  - 【三元排比必杀】：严格杜绝三个形容词、三个动词或三个并列短句的成串连缀修辞，坚决采用单项强动作。
+  - 【切除即时人生大总结】：严禁在交锋、对话或决断之后紧跟一句哲学感悟或人生哲理升华。
+  - 【呼吸感与句长突变】：环境铺垫多用中长句，核心爆发与致命转折强制单句成段（10~15 字硬停顿）。
+  - 【严防设定说明文】：严禁把大纲资料、世界观词条原文直接塞进正文，所有规则必须通过人物受挫或现场触碰自然展示。
+
+# 6. 对标作者与作品气质参考建议
+referenceAuthors:
+  - 烽火戏诸侯《雪中悍刀行》（草蛇灰线的群像铺陈、江湖气与悲凉宿命感）
+  - 猫腻《庆余年》《间客》（严密的政治权谋博弈、人物灰度与精巧对白潜台词）
+  - 金庸（博大精深的招式受力、奇门道具与家国情怀）
+  - 阿加莎·克里斯蒂 / 东野圭吾（严密逻辑诡计、反转解谜与人性幽微深渊）
+  - 特德·姜 / 刘慈欣（冷酷宏大的科学假说推演、硬核宇宙震撼）
+  - 汪曾祺 / 路遥（平实厚重的生活颗粒感、具象风土人情与语言白描质感）
+  - 渡航《春物》/ 西尾维新《物语系列》（日系轻小说高密度吐槽、语言双关与青春期心魔解构）
+  - 新海诚《秒速五厘米》（日系物哀之美、时光流逝的温柔眷恋与细腻白描）
+  - 雷蒙德·钱德勒《漫长的告别》（欧美冷硬派硬汉、黑色幽默暗喻与疲惫道德坚守）
+  - 弗兰克·赫伯特《沙丘》/ 乔治·马丁《冰与火之歌》（宏大太空歌剧与残酷封建史诗奇幻）

@@ -92,6 +92,21 @@ export function coreAssetsReady(
   })
 }
 
+export function outlinePlanningReady(outline: Record<string, unknown> | null): boolean {
+  if (!outline) return false
+  const macro = Array.isArray(outline.macro_outline) ? outline.macro_outline : []
+  if (!macro.length || outline.planning_status === 'draft') return false
+  if (macro.length !== 1) return true
+  const arc = macro[0] as Record<string, unknown> | undefined
+  if (!arc) return false
+  const placeholder =
+    String(arc.name || '') === '起始卷'
+    && String(arc.goal || '') === '确立主线与读者抓手'
+    && String(arc.turning_point || '') === '待定'
+    && String(arc.payoff || '') === '待定'
+  return !placeholder
+}
+
 export function buildReadinessItems(opts: {
   engineReady: boolean
   outline: Record<string, unknown> | null
@@ -108,7 +123,7 @@ export function buildReadinessItems(opts: {
   arcQueueStale?: boolean
 }): ReadinessItem[] {
   const outline = opts.outline
-  const macro = (outline?.macro_outline as unknown[]) || []
+  const planningReady = outlinePlanningReady(outline)
   const scale = opts.workScale || String((outline?.scale_profile as { scale?: string })?.scale || '')
   const vectorOn = opts.vectorEnabled !== false
   const semanticOk = opts.semanticSearchEffective !== false
@@ -149,9 +164,14 @@ export function buildReadinessItems(opts: {
     {
       id: 'outline',
       label: '已生成并保存大纲（含卷纲）',
-      ok: macro.length > 0 && !opts.arcQueueStale,
+      ok: planningReady,
+      warn: Boolean(opts.arcQueueStale && planningReady),
       route: '/outline',
-      hint: opts.arcQueueStale ? '卷队列与大纲不一致，请到大纲页同步卷队列' : undefined,
+      hint: !planningReady
+        ? '请先生成并保存可执行卷纲；快速建书的占位骨架不能直接生产'
+        : opts.arcQueueStale
+        ? '卷队列与大纲不一致，确认连写时会自动同步'
+        : undefined,
     },
     {
       id: 'title',
@@ -223,13 +243,12 @@ export function readinessAllOk(items: ReadinessItem[]): boolean {
   return items.length > 0 && items.every((i) => i.ok)
 }
 
-/** Gate连写：本地清单全绿且服务端 readiness 未否决（卷队列陈旧等）。 */
+/** Gate连写：清单红灯才阻断。缺卷队列由确认连写时自动同步，不挡在全绿之后。 */
 export function readinessCanContinue(opts: {
   items: ReadinessItem[]
   serverOk?: boolean
 }): boolean {
-  if (opts.serverOk === false) return false
-  return readinessAllOk(opts.items)
+  return opts.serverOk !== false && readinessAllOk(opts.items)
 }
 
 /** 存在未通过项（红灯），warn 黄标不阻断连写 */

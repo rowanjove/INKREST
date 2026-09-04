@@ -140,3 +140,54 @@ def test_snapshot_tolerates_valid_json_with_malformed_optional_outline_fields(
 
     assert snapshot.outline_progress["target_chapters"] == 0
     assert snapshot.project["scale"] == ""
+
+
+def test_next_actions_does_not_navigate_readiness_issues_to_reviews() -> None:
+    from novel_agent.services.project_snapshot import _next_actions
+
+    readiness = {"ok": False}
+    blocking_issues = [
+        {"code": "engine", "source": "readiness", "label": "日常模型可用"},
+        {"code": "outline", "source": "readiness", "label": "已生成并保存大纲"},
+        {"code": "assets", "source": "readiness", "label": "核心写作资产齐全"},
+    ]
+    actions = _next_actions(readiness, blocking_issues, [], {"chosen_title": "测试作品"})
+    targets = {a["id"]: a["target"] for a in actions}
+
+    assert "resolve_blocking_issues" not in targets
+    assert targets.get("configure_model") == "/config"
+    assert targets.get("complete_outline") == "/outline"
+    assert targets.get("complete_assets") == "/state"
+
+
+def test_next_actions_routes_pipeline_alerts_to_reviews() -> None:
+    from novel_agent.services.project_snapshot import _next_actions
+
+    readiness = {"ok": False}
+    blocking_issues = [
+        {
+            "code": "quality_blocked",
+            "source": "pipeline",
+            "chapter_id": "002",
+            "label": "第2章门禁阻断",
+        }
+    ]
+    actions = _next_actions(readiness, blocking_issues, [], {"chosen_title": "测试作品"})
+    review_actions = [a for a in actions if a["id"] == "resolve_blocking_issues"]
+
+    assert len(review_actions) == 1
+    assert review_actions[0]["target"] == "/production?tab=reviews"
+
+
+def test_demo_factory_novel_template_readiness() -> None:
+    from novel_agent.services.project_snapshot import build_project_snapshot
+
+    demo_root = Path(__file__).resolve().parents[1] / "assets" / "demo_projects" / "demo-factory-novel"
+    snapshot = build_project_snapshot(demo_root, project_id="demo-factory-novel")
+
+    # 示例书大纲与资产完备，不应报大纲或资产缺失
+    codes = {issue["code"] for issue in snapshot.blocking_issues}
+    assert "outline" not in codes
+    assert "assets" not in codes
+    assert "title" not in codes
+

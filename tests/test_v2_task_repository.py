@@ -225,6 +225,73 @@ def test_expired_lease_cannot_exceed_attempt_budget(tmp_path):
     assert repository.claim_task("bounded") is None
 
 
+def test_orphan_recovery_keeps_running_continue_with_valid_lease(tmp_path):
+    store = _new_store(tmp_path)
+    repository = store.task_repository
+    repository.create_task(
+        task_id="cont-1",
+        project_id="book-1",
+        task_type=TaskType.NOVEL_CONTINUE,
+        payload={"goal": "Novel continue"},
+        max_attempts=2,
+    )
+    claimed = repository.claim_task("cont-1", lease_seconds=600)
+    repository.start_task("cont-1", claimed.claim_token or "")
+
+    assert repository.recover_orphaned_leases() == []
+    task = repository.get_task("cont-1")
+    assert task.status is TaskStatus.RUNNING
+
+
+def test_orphan_recovery_does_not_steal_a_valid_lease_from_another_process(tmp_path):
+    store = _new_store(tmp_path)
+    repository = store.task_repository
+    repository.create_task(
+        task_id="cross-process",
+        project_id="book-1",
+        task_type=TaskType.NOVEL_CONTINUE,
+        payload={"goal": "Novel continue"},
+    )
+    claimed = repository.claim_task("cross-process", lease_seconds=600)
+    repository.start_task("cross-process", claimed.claim_token or "")
+
+    assert repository.recover_orphaned_leases() == []
+    assert repository.get_task("cross-process").status is TaskStatus.RUNNING
+
+
+def test_orphaned_recovery_skips_live_workers(tmp_path):
+    store = _new_store(tmp_path)
+    repository = store.task_repository
+    repository.create_task(
+        task_id="live-1",
+        project_id="book-1",
+        task_type=TaskType.NOVEL_CONTINUE,
+        payload={"goal": "Novel continue"},
+    )
+    claimed = repository.claim_task("live-1", lease_seconds=600)
+    repository.start_task("live-1", claimed.claim_token or "")
+
+    assert repository.recover_orphaned_leases(live_task_ids={"live-1"}) == []
+    assert repository.get_task("live-1").status is TaskStatus.RUNNING
+
+
+def test_orphan_recovery_keeps_running_standard_chapter_with_valid_lease(tmp_path):
+    store = _new_store(tmp_path)
+    repository = store.task_repository
+    repository.create_task(
+        task_id="ch-1",
+        project_id="book-1",
+        task_type=TaskType.CHAPTER,
+        payload={"chapter_id": "001", "mode": "standard"},
+    )
+    claimed = repository.claim_task("ch-1", lease_seconds=600)
+    repository.start_task("ch-1", claimed.claim_token or "")
+
+    assert repository.recover_orphaned_leases() == []
+    task = repository.get_task("ch-1")
+    assert task.status is TaskStatus.RUNNING
+
+
 def test_task_json_fields_round_trip_as_objects(tmp_path):
     store = _new_store(tmp_path)
     repository = store.task_repository

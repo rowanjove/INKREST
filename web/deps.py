@@ -88,6 +88,16 @@ def current_project_info(session: ProjectSession) -> Dict[str, Any]:
     return {"id": session.project_id, "name": name}
 
 
+def get_global_session(request: Request) -> ProjectSession:
+    return ProjectSession(
+        project_id=None,
+        root_dir=ctx.BASE_DIR,
+        actor_id=_resolve_actor_id(request),
+    )
+
+
 # Typed aliases for route signatures
 ProjectSessionDep = Depends(get_project_session)
 RequireProjectDep = Depends(require_project_session)
+GlobalSessionDep = Depends(get_global_session)
+GlobalConfigDep = GlobalSessionDep

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { usePetStore } from '../../stores/pet'
 import { SHANSHAN_CHAT_PLACEHOLDER, SHANSHAN_CHAT_SCOPE } from '../../constants/shanshanCopy'
 import type { PetAction } from '../../composables/usePetBubbleView'
@@ -21,6 +22,7 @@ const emit = defineEmits<{
 }>()
 
 const pet = usePetStore()
+const hasStreamingMessage = computed(() => pet.chatHistory.some((m) => m.streaming))
 </script>
 
 <template>
@@ -50,6 +52,7 @@ const pet = usePetStore()
             :class="{ welcome: index === 0 && msg.role === 'assistant' }"
           >
             <div class="msg-text" v-html="renderMarkdown(msg.content)" />
+            <span v-if="msg.streaming" class="streaming-cursor">▍</span>
             <div v-if="msg.actions && msg.actions.length" class="msg-actions">
               <button
                 v-for="(act, aIdx) in msg.actions"
@@ -61,11 +64,22 @@ const pet = usePetStore()
                 {{ act.label }}
               </button>
             </div>
+            <div v-if="msg.suggestions && msg.suggestions.length && !pet.chatLoading" class="msg-suggestions">
+              <button
+                v-for="(sug, sIdx) in msg.suggestions"
+                :key="sIdx"
+                type="button"
+                class="sug-pill-btn"
+                @click="onSuggestQuestion(sug)"
+              >
+                {{ sug }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div v-if="pet.chatLoading" class="chat-row assistant">
+      <div v-if="pet.chatLoading && !hasStreamingMessage" class="chat-row assistant">
         <img class="msg-avatar" :src="avatar" alt="" draggable="false" />
         <div class="msg-stack">
           <span class="msg-sender">山山</span>
@@ -303,7 +317,47 @@ const pet = usePetStore()
   color: var(--color-bg-surface);
 }
 
+.streaming-cursor {
+  display: inline-block;
+  color: #007aff;
+  font-weight: bold;
+  animation: blink 0.8s infinite;
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.msg-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(100, 120, 150, 0.15);
+}
+
+.sug-pill-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(88, 132, 190, 0.28);
+  background: rgba(240, 246, 255, 0.85);
+  color: #2b569a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sug-pill-btn:hover {
+  background: #007aff;
+  color: #fff;
+  border-color: #007aff;
+}
+
 .loading-bubble {
+
   display: flex;
   gap: 3px;
 }

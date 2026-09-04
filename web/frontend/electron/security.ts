@@ -31,7 +31,13 @@ const PET_SETTING_KEYS = new Set<string>([
   'size',
   'position',
   'petId',
+  'dockedEdge',
 ])
+
+export interface AnimateBoundsPayload {
+  bounds: WindowBounds
+  durationMs?: number
+}
 
 function recordValue(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -174,6 +180,21 @@ export function parseMoveDelta(value: unknown): MoveDelta {
   return delta
 }
 
+export function parseAnimateBoundsPayload(value: unknown): AnimateBoundsPayload {
+  const input = recordValue(value, 'animate bounds')
+  assertKnownKeys(input, new Set(['bounds', 'durationMs']), 'animate bounds')
+  const bounds = parseWindowBounds(input.bounds)
+  let durationMs: number | undefined
+  if (input.durationMs !== undefined) {
+    const dur = finiteNumber(input.durationMs, 'durationMs')
+    if (dur < 50 || dur > 2000) {
+      throw new RangeError('durationMs must be between 50 and 2000')
+    }
+    durationMs = dur
+  }
+  return { bounds, durationMs }
+}
+
 export function parsePetSettingsPatch(
   value: unknown,
 ): Partial<PetSettings> {
@@ -221,6 +242,13 @@ export function parsePetSettingsPatch(
       throw new TypeError('petId contains unsupported characters')
     }
     patch.petId = input.petId
+  }
+
+  if (input.dockedEdge !== undefined) {
+    if (input.dockedEdge !== null && !['left', 'right', 'top'].includes(String(input.dockedEdge))) {
+      throw new TypeError('dockedEdge must be left, right, top, or null')
+    }
+    patch.dockedEdge = (input.dockedEdge as 'left' | 'right' | 'top' | null) ?? null
   }
 
   return patch

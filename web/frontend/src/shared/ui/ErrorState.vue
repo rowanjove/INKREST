@@ -1,11 +1,21 @@
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue'
+
+const props = defineProps<{
   title?: string
   description: string
   retryLabel?: string
+  actionLabel?: string
 }>()
 
-defineEmits<{ retry: [] }>()
+const emit = defineEmits<{ retry: []; action: [] }>()
+
+const label = computed(() => props.retryLabel || props.actionLabel)
+
+function handleRetry() {
+  emit('retry')
+  emit('action')
+}
 </script>
 
 <template>
@@ -14,8 +24,8 @@ defineEmits<{ retry: [] }>()
     <div class="ui-error-state__copy">
       <h2>{{ title || '暂时无法完成' }}</h2>
       <p>{{ description }}</p>
-      <button v-if="retryLabel" type="button" @click="$emit('retry')">
-        {{ retryLabel }}
+      <button v-if="label" type="button" @click="handleRetry">
+        {{ label }}
       </button>
     </div>
   </section>

@@ -32,7 +32,7 @@ class YamlMirrorTests(unittest.TestCase):
 
     def test_yaml_mirror_enabled_by_default(self):
         self.assertFalse(is_yaml_mirror_enabled(self.tmpdir))
-        self.assertEqual(resolve_yaml_mirror_mode(self.tmpdir), "off")
+        self.assertEqual(resolve_yaml_mirror_mode(self.tmpdir), "read_only")
 
     def test_yaml_mirror_can_be_disabled(self):
         self._write_runtime_flag(False)

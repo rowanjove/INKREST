@@ -22,7 +22,7 @@ describe('formatModelLabel', () => {
 })
 
 describe('resolveEngine', () => {
-  const models = [{ id: 'daily', name: '日常模型', model: 'glm-4' }]
+  const models = [{ id: 'daily', name: '日常模型', model: 'glm-4', provider: 'openai', has_api_key: true }]
 
   it('prefers daily_model_id', () => {
     expect(
@@ -32,7 +32,7 @@ describe('resolveEngine', () => {
 
   it('falls back to llm.default provider', () => {
     expect(
-      resolveEngine({ llm: { default: { provider: 'openai', model: 'gpt-4o' } } }, []),
+      resolveEngine({ llm: { default: { provider: 'openai', model: 'gpt-4o', api_key: 'test-key' } } }, []),
     ).toEqual({ ready: true, label: 'gpt-4o', route: 'llm.default' })
   })
 
@@ -42,5 +42,23 @@ describe('resolveEngine', () => {
       label: '未配置可用模型',
       route: 'static',
     })
+  })
+
+  it('rejects a remote model that has no configured api key', () => {
+    expect(
+      resolveEngine(
+        { llm: { daily_model_id: 'remote' } },
+        [{ id: 'remote', provider: 'openai', base_url: 'https://api.deepseek.com/v1', has_api_key: false }],
+      ),
+    ).toEqual({ ready: false, label: '未配置可用模型', route: 'credentials' })
+  })
+
+  it('allows a loopback model without an api key', () => {
+    expect(
+      resolveEngine(
+        { llm: { daily_model_id: 'local' } },
+        [{ id: 'local', provider: 'openai', base_url: 'http://127.0.0.1:11434/v1', has_api_key: false }],
+      ),
+    ).toEqual({ ready: true, label: 'local', route: 'daily_model_id' })
   })
 })

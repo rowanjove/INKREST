@@ -103,6 +103,27 @@ export interface ProductionReviewItem {
     | 'external_review'
     | 'inspect_report'
     | 'open_writer'
+  blocked_by: string[]
+  chapter_score: number | null
+}
+
+export interface QualityRecoveryStep {
+  id: 'inspect' | 'quality' | 'rerun'
+  label: string
+  description: string
+  action: 'noop' | 'open_quality' | 'rerun_gate'
+}
+
+export const QUALITY_CHECK_LABELS: Record<string, string> = {
+  continuity_physical: '前后章连续性',
+  style: '文风与表达',
+  anti_ai_flavor: '机械感与套路化',
+  layout: '段落与排版',
+  scene_delta: '场景推进',
+  reference_similarity: '参考文本相似度',
+  non_empty_final_text: '正文非空',
+  canon_visibility: '设定可见性',
+  fact_ledger: '事实账本',
 }
 
 export interface ProductionReviewQueue {
@@ -243,6 +264,42 @@ export function filterProductionReviews(
       ...item.issues.flatMap((issue) => [issue.label, ...issue.details]),
     ].some((value) => value.toLocaleLowerCase().includes(needle))
   })
+}
+
+export function qualityBlockedByLabels(
+  item: Pick<ProductionReviewItem, 'blocked_by'>,
+): string[] {
+  return (item.blocked_by || []).map((code) => QUALITY_CHECK_LABELS[code] || code.replaceAll('_', ' '))
+}
+
+export function qualityHref(chapterId: string): { path: string; query: { chapter: string } } {
+  return { path: '/quality', query: { chapter: chapterId } }
+}
+
+export function qualityRecoverySteps(item: ProductionReviewItem): QualityRecoveryStep[] {
+  if (!['quality_blocked', 'report_failed'].includes(item.stage)) return []
+  const labels = qualityBlockedByLabels(item)
+  const blockedCopy = labels.length ? labels.join('、') : '质量门禁'
+  return [
+    {
+      id: 'inspect',
+      label: '看拦截项',
+      description: `本章被 ${blockedCopy} 拦住。先看清失败项，再决定改稿还是只重跑门禁。`,
+      action: 'noop',
+    },
+    {
+      id: 'quality',
+      label: '去质量中心',
+      description: '打开质量中心查看 L0 证据和章节分，不重新生成正文。',
+      action: 'open_quality',
+    },
+    {
+      id: 'rerun',
+      label: '改稿后重跑门禁',
+      description: '正文改完后只重跑门禁，不重跑规划与写作。',
+      action: 'rerun_gate',
+    },
+  ]
 }
 
 export function resolveReviewActionTargets(

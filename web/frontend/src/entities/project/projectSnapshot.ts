@@ -16,6 +16,7 @@ export type TaskType =
   | 'arc_run'
   | 'novel_continue'
   | 'novel_autopilot'
+  | 'arc_queue_sync'
   | 'embedding_setup'
   | 'export'
 
@@ -57,6 +58,7 @@ export interface SnapshotTask {
   created_at: string
   started_at: string | null
   finished_at: string | null
+  control_action?: string
 }
 
 export interface SnapshotProject {
@@ -129,10 +131,13 @@ export interface CostSummary {
     total_cost_cny: number
     today_tokens?: number
     today_cost_cny?: number
+    last_event_at?: string | null
+    last_call_at?: string | null
   }
   persisted_error?: string | null
   recent_rounds?: Array<Record<string, unknown>>
   disclaimer?: string
+  usage_state?: 'recorded' | 'no_calls' | string
 }
 
 export interface SnapshotAction {

@@ -80,7 +80,7 @@ const handleSubmit = () => {
   emit('create', {
     name: form.value.name.trim(),
     description: form.value.description.trim(),
-    genre: form.value.genre.trim() || comp?.theme || '',
+    genre: form.value.genre.trim() || comp?.theme_label || comp?.theme || '',
     channel: comp?.channel || '',
     target_chapters: form.value.target_chapters,
     scale: form.value.scale,

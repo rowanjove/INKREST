@@ -1,4 +1,7 @@
+import json
+import re
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type
 
@@ -31,12 +34,15 @@ from novel_agent.plugins.discovery import PluginDiscovery, PluginEntry
 from novel_agent.plugins.installer import install_plugin_zip, uninstall_plugin
 from novel_agent.plugins.manifest import find_manifest_path, load_manifest, manifest_to_plugin_meta, ManifestError
 from novel_agent.plugins.permissions import (
+    PluginCapability,
     capability_details,
     digest_plugin_path,
     effective_capabilities,
     risk_level,
     risk_summary,
 )
+
+_PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 logger = get_logger("plugins.manager")
 
@@ -88,6 +94,7 @@ class PluginManager:
         self.config_path = self.root_dir / "config" / "plugins.yaml"
         self.plugins: Dict[str, LoadedPlugin] = {}
         self._state_config: Dict[str, Any] = {}
+        self._view_sessions: Dict[str, Dict[str, Any]] = {}
         
         # Caches of active plugins grouped by type
         self._active_by_type: Dict[PluginType, List[PluginBase]] = {t: [] for t in PluginType}
@@ -105,7 +112,7 @@ class PluginManager:
         for name, entry in discovered_entries.items():
             try:
                 plugin_state = self._state_config.get("plugins", {}).get("registry", {}).get(name, {})
-                enabled = plugin_state.get("enabled", entry.source == "entry_point")
+                enabled = bool(plugin_state.get("enabled", False))
                 descriptor = self._security_descriptor(name, entry)
                 if entry.source == "local":
                     if enabled and not plugin_state.get("trust_digest"):
@@ -119,6 +126,20 @@ class PluginManager:
                                 "Disabling local plugin '%s' because its code or permission grant changed.",
                                 name,
                             )
+                        continue
+                    if not enabled:
+                        continue
+                else:
+                    if enabled and not plugin_state.get("trust_digest"):
+                        self._migrate_legacy_trust(plugin_state, descriptor)
+                        state_changed = True
+                    if enabled and not self._is_security_grant_current(plugin_state, descriptor):
+                        plugin_state["enabled"] = False
+                        state_changed = True
+                        logger.warning(
+                            "Disabling plugin '%s' because its permission grant is missing or stale.",
+                            name,
+                        )
                         continue
                     if not enabled:
                         continue
@@ -549,6 +570,7 @@ class PluginManager:
             "capabilities": [],
             "declared_capabilities": [],
             "capability_mode": "legacy",
+            "contributes": {"navigation": [], "commands": []},
         }
 
     def list_plugin_catalog(self) -> List[Dict[str, Any]]:
@@ -577,10 +599,7 @@ class PluginManager:
             )
             trusted = bool(
                 catalog_entry
-                and (
-                    catalog_entry.source == "entry_point"
-                    or self._is_security_grant_current(reg, descriptor)
-                )
+                and self._is_security_grant_current(reg, descriptor)
             )
             security_fields = {
                 "digest": descriptor["digest"],
@@ -605,6 +624,7 @@ class PluginManager:
             }
             if loaded:
                 meta = loaded.meta
+                discovery_meta = self._meta_from_discovery_entry(loaded.entry.name, loaded.entry)
                 catalog.append({
                     "name": loaded.entry.name,
                     "display_name": meta.display_name or loaded.entry.name,
@@ -623,6 +643,7 @@ class PluginManager:
                     "loaded": True,
                     "installed_version": reg.get("installed_version", meta.version),
                     "capabilities": descriptor["effective_capabilities"],
+                    "contributes": discovery_meta.get("contributes", {"navigation": [], "commands": []}),
                     **security_fields,
                 })
             elif entry:
@@ -637,6 +658,7 @@ class PluginManager:
                     "loaded": False,
                     "installed_version": reg.get("installed_version", meta.get("version")),
                     "capabilities": descriptor["effective_capabilities"],
+                    "contributes": meta.get("contributes", {"navigation": [], "commands": []}),
                     **security_fields,
                 })
         return catalog
@@ -669,3 +691,439 @@ class PluginManager:
         if name in self.plugins:
             del self.plugins[name]
         return True
+
+    def get_navigation_contributions(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Return safe, active dual-region navigation contributions partitioned by surface."""
+        catalog = self.list_plugin_catalog()
+        result: Dict[str, List[Dict[str, Any]]] = {
+            "library_sidebar": [],
+            "project_sidebar": [],
+        }
+
+        for item in catalog:
+            if not item.get("enabled"):
+                continue
+            if item.get("source") == "local" and not item.get("trusted"):
+                continue
+
+            plugin_id = item.get("name") or ""
+            plugin_display = item.get("display_name") or plugin_id
+            granted_caps = set(item.get("capabilities") or [])
+
+            contributes = item.get("contributes") or {}
+            nav_items = contributes.get("navigation") or []
+
+            for nav in nav_items:
+                surface = nav.get("surface")
+                if surface not in result:
+                    continue
+
+                requires = nav.get("requires") or []
+                if requires and not set(requires).issubset(granted_caps):
+                    logger.warning(
+                        "Skipping navigation entry '%s' for plugin '%s': missing required capabilities %s",
+                        nav.get("id"),
+                        plugin_id,
+                        set(requires) - granted_caps,
+                    )
+                    continue
+
+                view_id = nav.get("view")
+                path = (
+                    f"/extensions/library/{plugin_id}/{view_id}"
+                    if surface == "library_sidebar"
+                    else f"/extensions/project/{plugin_id}/{view_id}"
+                )
+
+                result[surface].append({
+                    "id": f"{plugin_id}:{nav['id']}",
+                    "plugin_id": plugin_id,
+                    "plugin_name": plugin_display,
+                    "contribution_id": nav["id"],
+                    "title": nav["title"],
+                    "surface": surface,
+                    "icon": nav.get("icon", "extensions"),
+                    "view": view_id,
+                    "path": path,
+                    "order": nav.get("order", 200),
+                    "default_visibility": nav.get("default_visibility", "visible"),
+                    "requires": requires,
+                })
+
+        for surf in result:
+            result[surf].sort(key=lambda x: (x["order"], x["plugin_id"], x["id"]))
+
+        return result
+
+    def _prune_expired_sessions(self, max_age_seconds: float = 86400.0) -> None:
+        """Prune view sessions older than max_age_seconds."""
+        now = time.time()
+        expired = [
+            sid for sid, data in self._view_sessions.items()
+            if now - data.get("created_at", 0) > max_age_seconds
+        ]
+        for sid in expired:
+            del self._view_sessions[sid]
+
+    def _assert_safe_project_id(self, project_id: str) -> None:
+        if (
+            not project_id
+            or ".." in project_id
+            or "/" in project_id
+            or "\\" in project_id
+            or not _PROJECT_ID_RE.fullmatch(project_id)
+        ):
+            raise ValueError("Invalid project_id")
+
+    def _resolve_project_dir(self, project_id: Optional[str]) -> Optional[Path]:
+        """Resolve a project directory regardless of whether root_dir is repository root or a project."""
+        if not project_id:
+            return None
+        self._assert_safe_project_id(project_id)
+        candidates: List[Path] = []
+        if self.root_dir.name == project_id and (self.root_dir / "workspace").is_dir():
+            candidates.append(self.root_dir)
+        candidates.append(self.root_dir / "projects" / project_id)
+        if self.root_dir.parent.name == "projects":
+            candidates.append(self.root_dir.parent / project_id)
+        try:
+            from web.context import BASE_DIR
+            candidates.append(BASE_DIR / "projects" / project_id)
+        except Exception:
+            pass
+        for candidate in candidates:
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                continue
+            if resolved.is_dir() and resolved.name == project_id:
+                return resolved
+        return None
+
+    def _resolve_all_project_dirs(self) -> List[Path]:
+        """Discover all project directories under any possible projects/ root."""
+        candidates: List[Path] = []
+        if (self.root_dir / "projects").is_dir():
+            candidates.append(self.root_dir / "projects")
+        if self.root_dir.parent.name == "projects":
+            candidates.append(self.root_dir.parent)
+        try:
+            from web.context import BASE_DIR
+            if (BASE_DIR / "projects").is_dir() and (BASE_DIR / "projects") not in candidates:
+                candidates.append(BASE_DIR / "projects")
+        except Exception:
+            pass
+
+        seen = set()
+        pdirs: List[Path] = []
+        for pdir in candidates:
+            if pdir.is_dir():
+                for sub in sorted(pdir.iterdir()):
+                    if sub.is_dir() and sub.name not in seen and (sub / "workspace").is_dir():
+                        seen.add(sub.name)
+                        pdirs.append(sub)
+        return pdirs
+
+    def create_view_session(
+        self,
+        plugin_id: str,
+        view_id: str,
+        project_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Allocate an authenticated view session for a plugin view."""
+        self._prune_expired_sessions()
+        catalog = {p["name"]: p for p in self.list_plugin_catalog()}
+        plugin = catalog.get(plugin_id)
+        if not plugin:
+            raise ValueError(f"Plugin '{plugin_id}' not found")
+        if not plugin.get("enabled"):
+            raise ValueError(f"Plugin '{plugin_id}' is not enabled")
+        if plugin.get("source") == "local" and not plugin.get("trusted"):
+            raise ValueError(f"Plugin '{plugin_id}' is not trusted")
+
+        contributes = plugin.get("contributes") or {}
+        nav_items = contributes.get("navigation") or []
+        target_nav = next(
+            (n for n in nav_items if n.get("id") == view_id or n.get("view") == view_id),
+            None,
+        )
+        if not target_nav:
+            raise ValueError(f"View '{view_id}' is not registered for plugin '{plugin_id}'")
+
+        surface = target_nav.get("surface")
+        if surface == "project_sidebar" and not project_id:
+            raise ValueError("project_id is required for project_sidebar views")
+        if surface != "project_sidebar" and project_id:
+            raise ValueError("library views cannot bind a project_id")
+
+        granted_caps = set(plugin.get("capabilities") or [])
+        if project_id:
+            resolved = self._resolve_project_dir(project_id)
+            if resolved is None:
+                raise ValueError(f"Unknown project '{project_id}'")
+            bound_to_project = self.root_dir.parent.name == "projects" and (
+                self.root_dir / "workspace"
+            ).is_dir()
+            if bound_to_project and self.root_dir.name != project_id:
+                if (
+                    PluginCapability.ALL_PROJECTS_READ.value not in granted_caps
+                    and PluginCapability.LEGACY_FULL_ACCESS.value not in granted_caps
+                ):
+                    raise ValueError("Cross-project access requires all_projects_read")
+        requires = target_nav.get("requires") or []
+        if requires and not set(requires).issubset(granted_caps):
+            raise ValueError(
+                f"Plugin is missing required capabilities: {set(requires) - granted_caps}"
+            )
+
+        session_id = f"sess_{uuid.uuid4().hex[:16]}"
+        session_data = {
+            "session_id": session_id,
+            "plugin_id": plugin_id,
+            "view_id": target_nav["view"],
+            "surface": surface,
+            "project_id": project_id,
+            "granted_capabilities": sorted(granted_caps),
+            "created_at": time.time(),
+        }
+        self._view_sessions[session_id] = session_data
+        return session_data
+
+    def load_view_document(
+        self, plugin_id: str, view_id: str, session_id: str
+    ) -> Dict[str, Any]:
+        """Return plugin-authored view HTML for an active session, or an empty document."""
+        session = self._view_sessions.get(session_id)
+        if (
+            not session
+            or session.get("plugin_id") != plugin_id
+            or session.get("view_id") != view_id
+        ):
+            raise ValueError("Invalid view session")
+        catalog = {item["name"]: item for item in self.list_plugin_catalog()}
+        plugin = catalog.get(plugin_id)
+        if not plugin:
+            raise ValueError(f"Plugin '{plugin_id}' not found")
+        nav_items = (plugin.get("contributes") or {}).get("navigation") or []
+        target_nav = next(
+            (
+                item
+                for item in nav_items
+                if item.get("id") == view_id or item.get("view") == view_id
+            ),
+            None,
+        )
+        if not target_nav:
+            raise ValueError(f"View '{view_id}' is not registered for plugin '{plugin_id}'")
+        title = str(target_nav.get("title") or view_id)
+        html_rel = str(target_nav.get("html") or "").strip()
+        if not html_rel:
+            return {"title": title, "html": "", "has_document": False}
+        entry = self.discovery.discover_all().get(plugin_id)
+        if not entry or not entry.path:
+            raise ValueError("Plugin path is unavailable")
+        plugin_root = entry.path if entry.path.is_dir() else entry.path.parent
+        from novel_agent.plugins.manifest import _validate_view_html
+
+        safe_rel = _validate_view_html(plugin_root, html_rel)
+        html_path = (plugin_root / safe_rel).resolve()
+        text = html_path.read_text(encoding="utf-8")
+        if len(text.encode("utf-8")) > 256_000:
+            raise ValueError("View HTML exceeds 256KB")
+        return {"title": title, "html": text, "has_document": True}
+
+    def close_view_session(self, session_id: str) -> bool:
+        """Terminate an active view session."""
+        if session_id in self._view_sessions:
+            del self._view_sessions[session_id]
+            return True
+        return False
+
+    def execute_view_rpc(
+        self,
+        plugin_id: str,
+        view_id: str,
+        session_id: str,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+        context_revision: int = 1,
+    ) -> Dict[str, Any]:
+        """Execute a controlled RPC request from an active plugin view sandbox."""
+        self._prune_expired_sessions()
+        params = params or {}
+        session = self._view_sessions.get(session_id)
+        if not session:
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32001, "message": "Session not found or expired"},
+            }
+        if session["plugin_id"] != plugin_id or session["view_id"] != view_id:
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32002, "message": "Session plugin or view mismatch"},
+            }
+
+        granted = set(session.get("granted_capabilities") or [])
+        project_id = session.get("project_id")
+
+        METHOD_CAPABILITIES = {
+            "host.ping": None,
+            "catalog.listProjects": "project_catalog_read",
+            "project.getInfo": "project_read",
+            "project.getChapters": "project_read",
+            "project.getCharacters": "project_read",
+            "project.getOutline": "project_read",
+        }
+
+        if method not in METHOD_CAPABILITIES:
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32601, "message": f"Method '{method}' not found or unauthorized"},
+            }
+
+        required_cap = METHOD_CAPABILITIES[method]
+        if required_cap and required_cap not in granted:
+            return {
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32003,
+                    "message": f"Permission denied: method requires '{required_cap}' capability",
+                },
+            }
+
+        try:
+            if method == "host.ping":
+                return {"jsonrpc": "2.0", "result": {"pong": True, "time": time.time()}}
+
+            elif method == "catalog.listProjects":
+                results = []
+                for pdir in self._resolve_all_project_dirs():
+                    meta_file = pdir / "config" / "project_meta.json"
+                    name = pdir.name
+                    if meta_file.is_file():
+                        try:
+                            m = json.loads(meta_file.read_text(encoding="utf-8"))
+                            name = m.get("name") or name
+                        except Exception:
+                            pass
+                    results.append({
+                        "id": pdir.name,
+                        "name": name,
+                        "updated_at": pdir.stat().st_mtime,
+                    })
+                return {"jsonrpc": "2.0", "result": {"projects": results}}
+
+            elif method == "project.getInfo":
+                if not project_id:
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32004, "message": "No active project in session"},
+                    }
+                pdir = self._resolve_project_dir(project_id)
+                if not pdir:
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32005, "message": f"Project '{project_id}' not found"},
+                    }
+                name = project_id
+                meta_file = pdir / "config" / "project_meta.json"
+                if meta_file.is_file():
+                    try:
+                        m = json.loads(meta_file.read_text(encoding="utf-8"))
+                        name = m.get("name") or name
+                    except Exception:
+                        pass
+                return {"jsonrpc": "2.0", "result": {"id": project_id, "name": name}}
+
+            elif method == "project.getChapters":
+                if not project_id:
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32004, "message": "No active project in session"},
+                    }
+                pdir = self._resolve_project_dir(project_id)
+                if not pdir:
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32005, "message": f"Project '{project_id}' not found"},
+                    }
+                chap_dir = pdir / "workspace" / "chapters"
+                chapters = []
+                if chap_dir.is_dir():
+                    for cdir in sorted(chap_dir.iterdir()):
+                        if cdir.is_dir():
+                            content_file = None
+                            for fname in ("chapter_final.txt", "chapter_draft.txt", "content.txt"):
+                                cand = cdir / fname
+                                if cand.is_file():
+                                    content_file = cand
+                                    break
+                            if content_file:
+                                chapters.append({
+                                    "chapter_id": cdir.name,
+                                    "word_count": len(content_file.read_text(encoding="utf-8", errors="ignore")),
+                                })
+                return {"jsonrpc": "2.0", "result": {"chapters": chapters}}
+
+            elif method == "project.getCharacters":
+                if not project_id:
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32004, "message": "No active project in session"},
+                    }
+                pdir = self._resolve_project_dir(project_id)
+                if not pdir:
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32005, "message": f"Project '{project_id}' not found"},
+                    }
+                characters = []
+                card_yaml = pdir / "assets" / "character_cards.yaml"
+                card_json = pdir / "assets" / "characters.json"
+                if card_yaml.is_file():
+                    try:
+                        import yaml
+                        loaded = yaml.safe_load(card_yaml.read_text(encoding="utf-8"))
+                        if isinstance(loaded, list):
+                            characters = loaded
+                        elif isinstance(loaded, dict):
+                            characters = [
+                                {"name": k, **(v if isinstance(v, dict) else {"description": str(v)})}
+                                for k, v in loaded.items()
+                            ]
+                    except Exception:
+                        characters = []
+                elif card_json.is_file():
+                    try:
+                        characters = json.loads(card_json.read_text(encoding="utf-8"))
+                    except Exception:
+                        characters = []
+                return {"jsonrpc": "2.0", "result": {"characters": characters}}
+
+            elif method == "project.getOutline":
+                if not project_id:
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32004, "message": "No active project in session"},
+                    }
+                pdir = self._resolve_project_dir(project_id)
+                if not pdir:
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32005, "message": f"Project '{project_id}' not found"},
+                    }
+                outline_file = pdir / "workspace" / "outline.json"
+                outline = {}
+                if outline_file.is_file():
+                    try:
+                        outline = json.loads(outline_file.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+                return {"jsonrpc": "2.0", "result": {"outline": outline}}
+
+        except Exception as exc:
+            logger.error("Error executing RPC method '%s': %s", method, exc, exc_info=True)
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32603, "message": "Internal RPC error"},
+            }

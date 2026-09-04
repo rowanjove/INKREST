@@ -23,6 +23,22 @@ def _chapter_number(value: Any) -> int | None:
     return int(digits) if digits else None
 
 
+def facts_as_of_chapter(
+    facts: Iterable[Mapping[str, Any]],
+    current_chapter: str,
+) -> list[Mapping[str, Any]]:
+    """Drop events whose source chapter is later than the chapter being checked."""
+    current = _chapter_number(current_chapter)
+    if current is None:
+        return list(facts)
+    visible: list[Mapping[str, Any]] = []
+    for fact in facts:
+        source = _chapter_number(fact.get("source_chapter") or fact.get("chapter_id"))
+        if source is None or source <= current:
+            visible.append(fact)
+    return visible
+
+
 def check_canon_visibility(
     facts: Iterable[Mapping[str, Any]],
     *,

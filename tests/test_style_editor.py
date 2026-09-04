@@ -55,6 +55,7 @@ class TestStyleEditorAgent(unittest.TestCase):
         last_called_prompt = self.mock_llm.generate.call_args_list[-1][0][1]
         self.assertIn("=== 前文参考", last_called_prompt)
         self.assertIn("=== 待润色片段 ===", last_called_prompt)
+        self.assertIn("Polished:", last_called_prompt)
 
     async def _async_test_long_text_triggers_split(self):
         # 异步测试分段

@@ -1,10 +1,16 @@
 from pathlib import Path
 from typing import Any, Dict, List
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 import web.context as ws_server
 import web.helpers as ws_helpers
-from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, task_manager_for
+from web.deps import (
+    ProjectSession,
+    RequireProjectDep,
+    coerce_project_session,
+    get_project_session,
+    task_manager_for,
+)
 from web.security import ALLOW_RUNTIME_INSTALL_ENV, validate_outbound_model_base_url
 from web.model_library import ModelLibrary
 
@@ -120,7 +126,7 @@ def post_config_migration(body: Dict[str, Any], session: ProjectSession = Requir
 
 
 @router.get("/api/config")
-def get_config(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+def get_config(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
     session = coerce_project_session(session)
     try:
         config = ws_server._mask_config_secrets(
@@ -141,10 +147,23 @@ def get_config(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
 
 
 @router.put("/api/config")
-def update_config(body: ConfigUpdate, session: ProjectSession = RequireProjectDep) -> Dict[str, str]:
+def update_config(body: ConfigUpdate, session: ProjectSession = Depends(get_project_session)) -> Dict[str, str]:
     session = coerce_project_session(session)
     root_dir = session.root_dir
     global_dir = resolve_global_config_dir(root_dir)
+
+    if not session.has_project and (
+        (ws_server.BASE_DIR / "projects").is_dir()
+        or (ws_server.BASE_DIR / "projects.json").is_file()
+    ):
+        if body.runtime is not None or body.chapter is not None:
+            raise HTTPException(400, "请先打开一本书再保存 runtime/chapter 配置。")
+        _save_global_model_sections(
+            ws_server.BASE_DIR / "config",
+            llm=body.llm,
+            embedding=body.embedding,
+        )
+        return {"status": "updated"}
 
     if global_dir:
         if body.llm is not None or body.embedding is not None:
@@ -188,14 +207,21 @@ def update_global_defaults(body: ConfigUpdate) -> Dict[str, str]:
 
 # ---- Models Library ----
 
+@router.get("/api/models/readiness")
+def get_model_readiness(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    from novel_agent.services.novel_run_guard import build_model_readiness
+    return build_model_readiness(session.root_dir)
+
+
 @router.get("/api/models")
-def list_models(session: ProjectSession = RequireProjectDep) -> List[Dict[str, Any]]:
+def list_models(session: ProjectSession = Depends(get_project_session)) -> List[Dict[str, Any]]:
     session = coerce_project_session(session)
     return ws_server.ModelLibrary(session.root_dir).list_models()
 
 
 @router.get("/api/models/slots")
-def get_model_slots(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+def get_model_slots(session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
     session = coerce_project_session(session)
     return ws_server.ModelLibrary(session.root_dir).get_slots()
 
@@ -204,7 +230,7 @@ def get_model_slots(session: ProjectSession = RequireProjectDep) -> Dict[str, An
 def set_model_slot(
     model_id: str,
     body: ModelSlotRequest,
-    session: ProjectSession = RequireProjectDep,
+    session: ProjectSession = Depends(get_project_session),
 ) -> Dict[str, Any]:
     session = coerce_project_session(session)
     ws_server._validate_id(model_id, "model_id")
@@ -212,7 +238,7 @@ def set_model_slot(
 
 
 @router.post("/api/models")
-def save_model(req: ModelSaveRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+def save_model(req: ModelSaveRequest, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
     session = coerce_project_session(session)
     data = req.model_dump()
     model_id = data.pop("id")
@@ -220,7 +246,7 @@ def save_model(req: ModelSaveRequest, session: ProjectSession = RequireProjectDe
 
 
 @router.delete("/api/models/{model_id}")
-def delete_model(model_id: str, session: ProjectSession = RequireProjectDep) -> Dict[str, str]:
+def delete_model(model_id: str, session: ProjectSession = Depends(get_project_session)) -> Dict[str, str]:
     session = coerce_project_session(session)
     ws_server._validate_id(model_id, "model_id")
     ws_server.ModelLibrary(session.root_dir).delete_model(model_id)
@@ -228,7 +254,7 @@ def delete_model(model_id: str, session: ProjectSession = RequireProjectDep) -> 
 
 
 @router.post("/api/models/test")
-def test_model(req: ModelTestRequest, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+def test_model(req: ModelTestRequest, session: ProjectSession = Depends(get_project_session)) -> Dict[str, Any]:
     session = coerce_project_session(session)
     config = req.model_dump()
     return ws_server.ModelLibrary(session.root_dir).test_model(config)
@@ -265,7 +291,7 @@ class EmbeddingTestRequest(BaseModel):
 @router.post("/api/models/test-context")
 def test_model_context(
     req: ModelContextTestRequest,
-    session: ProjectSession = RequireProjectDep,
+    session: ProjectSession = Depends(get_project_session),
 ) -> Dict[str, Any]:
     session = coerce_project_session(session)
     config = req.model_dump()
@@ -276,7 +302,7 @@ def test_model_context(
 @router.post("/api/config/embedding/test")
 def test_embedding_config(
     req: EmbeddingTestRequest,
-    session: ProjectSession = RequireProjectDep,
+    session: ProjectSession = Depends(get_project_session),
 ) -> Dict[str, Any]:
     session = coerce_project_session(session)
     root_dir = session.root_dir

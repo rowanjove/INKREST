@@ -1,7 +1,9 @@
+import asyncio
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 import web.context as ws_server
@@ -11,6 +13,8 @@ from novel_agent.persona.shanshan import (
     SHANSHAN_REPLY_LLM_ERROR,
     SHANSHAN_REPLY_NO_LLM,
 )
+from novel_agent.services.assistant_knowledge import format_story_context_for_shanshan
+from novel_agent.services.assistant_diagnostics import generate_offline_heuristic_reply
 
 router = APIRouter()
 
@@ -25,7 +29,8 @@ class AssistantChatRequest(BaseModel):
 
 class AssistantChatResponse(BaseModel):
     reply: str
-    actions: List[Dict[str, Any]] = []
+    actions: List[Dict[str, Any]] = Field(default_factory=list)
+    suggestions: List[str] = Field(default_factory=list)
 
 
 # ---- Software Handbook & Troubleshooting Guide ----
@@ -55,42 +60,24 @@ HANDBOOK = """
    - Static 占位无法真实生成；写作档/逻辑档在模型路由中分角色绑定。
 
 5. **山山能力边界**
-   - 可：解释状态、指路页面、测模型、重试单章。
+   - 可：解释状态、指路页面、测模型、重试单章、分析作品角色与大纲、提供门禁修改建议。
    - 不可：改大纲、删项目、代写正文、在对话中直接续跑全书批量。
 """
 
 
-# ---- API Endpoints ----
-
-@router.post("/api/assistant/chat", response_model=AssistantChatResponse)
-async def assistant_chat(
+def _build_shanshan_prompt(
+    session: ProjectSession,
     req: AssistantChatRequest,
-    session: ProjectSession = Depends(get_project_session),
-) -> AssistantChatResponse:
-    """AI Assistant Chat Endpoint for pet assistant."""
-    import web.routes.assistant as assistant_module
-    llm = assistant_module._get_assistant_llm(session.root_dir)
-    
-    if not llm:
-        return AssistantChatResponse(
-            reply=SHANSHAN_REPLY_NO_LLM,
-            actions=[
-                {"label": "去模型配置页", "type": "navigate", "payload": {"route": "/config"}},
-                {"label": "测试当前模型", "type": "test_model", "payload": {}}
-            ]
-        )
-        
-    from web.routes.assistant import build_assistant_context
-
-    context_data = await build_assistant_context(session)
-    
+    context_data: Dict[str, Any],
+) -> str:
+    """Build a comprehensive context-aware prompt for ShanShan."""
     active_proj = context_data.get("active_project")
     proj_name = active_proj.get("name") if active_proj else "未选择项目"
     running_tasks = context_data.get("running_tasks", [])
     failed_tasks = context_data.get("failed_tasks", [])
-    
+
     running_str = ", ".join([f"任务{t['id']}(第{t.get('chapter_id')}章)" for t in running_tasks]) or "无"
-    
+
     work = context_data.get("work") or {}
     try:
         from novel_agent.services.assistant_snapshot import format_work_snapshot_line
@@ -101,7 +88,6 @@ async def assistant_chat(
     factory = context_data.get("factory") or {}
     try:
         from novel_agent.services.assistant_snapshot import format_factory_brief
-
         factory_str = format_factory_brief(factory) if factory else "工厂状态未加载"
     except Exception:
         factory_str = "工厂状态未加载"
@@ -162,7 +148,6 @@ async def assistant_chat(
     if pending.get("gate_blocked"):
         first = pending["gate_blocked"][0]
         from novel_agent.services.assistant_snapshot import format_repair_steps_hint
-
         repair_hint = format_repair_steps_hint(
             str(first.get("chapter_id") or ""),
             str(first.get("last_stage") or ""),
@@ -174,7 +159,11 @@ async def assistant_chat(
         + (f"\n排障建议: {repair_hint}" if repair_hint else "")
     )
 
+    story_context = format_story_context_for_shanshan(session.root_dir if session.has_project else None)
+
     system_context = f"""
+{story_context}
+
 【小说生成系统当前状态】
 - 当前活跃项目: {proj_name}
 - 作品概况: {work_str}
@@ -192,13 +181,13 @@ async def assistant_chat(
 - 底层服务日志文件（{log_path_str}，节选）:
 {sys_tail_str}
 """
-    
+
     history_lines = []
     for turn in req.history[-5:]:
         role = "用户" if turn.get("role") == "user" else "山山"
         history_lines.append(f"{role}: {turn.get('content')}")
     history_str = "\n".join(history_lines) if history_lines else "无"
-    
+
     system_prompt = f"""{SHANSHAN_CHAT_PERSONA}
 
 {system_context}
@@ -214,7 +203,7 @@ async def assistant_chat(
 
 【任务要求】
 1. 按上文人设回复，支持 Markdown 排版。
-2. 结合 system 状态；有失败任务或配置问题时点明原因并给出可执行建议。
+2. 结合 system 状态与作品设定档案；有失败任务、门禁卡点或配置问题时点明原因并给出可执行建议。
 3. 如果用户的提问或当前问题可以通过特定快捷操作解决，请在回答的最后新起一行，输出动作指令：
 格式如下：
 ===ACTIONS===
@@ -232,24 +221,172 @@ async def assistant_chat(
 - auto_repair_chapter: 提交章节自动修复（降 AI 味/质量阻断）。参数 {{"chapter_id": "章节号"}}
 - rerun_gate: 只重跑门禁（用户已改稿后）。参数 {{"chapter_id": "章节号"}}
 - factory_intent: 执行工厂控制台建议动作。参数 {{"intent": "create|plan|run|monitor|repair|export"}}
-- 若失败任务有 gate_summary 且与门禁相关，优先建议 navigate 到该章详情，再视情况 auto_repair_chapter 或 rerun_gate。
-- 工厂状态为 blocked 时，优先解释 operator_brief，并给出 factory_intent repair 或 auto_repair_chapter。
-- 用户问「继续写」「为什么停了」「导出」时，优先使用 factory_intent 与上方「工厂建议动作」列表对齐。
+- inspect_gate_detail: 获取章节详细门禁诊断。参数 {{"chapter_id": "章节号"}}
+
+4. 在回答的最末尾（若有动作指令，则在动作指令之后），可以输出 2~3 个适合用户下一步提问的简短追问建议（每个不超过15字）：
+格式如下：
+===SUGGESTIONS===
+["查看第 1 章门禁详情", "下一章看点建议", "全书暂停了怎么续跑"]
 """
-    
+    return system_prompt
+
+
+# ---- API Endpoints ----
+
+@router.post("/api/assistant/chat", response_model=AssistantChatResponse)
+async def assistant_chat(
+    req: AssistantChatRequest,
+    session: ProjectSession = Depends(get_project_session),
+) -> AssistantChatResponse:
+    """AI Assistant Chat Endpoint for pet assistant."""
+    import web.routes.assistant as assistant_module
+    from web.routes.assistant import build_assistant_context
+
+    context_data = await build_assistant_context(session)
+    llm = assistant_module._get_assistant_llm(session.root_dir)
+
+    if not llm:
+        offline = generate_offline_heuristic_reply(
+            req.message,
+            session.root_dir if session.has_project else None,
+            context_data,
+        )
+        return AssistantChatResponse(
+            reply=offline.get("reply", SHANSHAN_REPLY_NO_LLM),
+            actions=offline.get("actions", []),
+            suggestions=offline.get("suggestions", []),
+        )
+
+    system_prompt = _build_shanshan_prompt(session, req, context_data)
+
     try:
         llm_response = await llm.agenerate(role="山山助手", prompt=system_prompt)
         parsed = assistant_module._parse_chat_response(llm_response)
         return AssistantChatResponse(
             reply=parsed.get("reply", ""),
-            actions=parsed.get("actions", [])
+            actions=parsed.get("actions", []),
+            suggestions=parsed.get("suggestions", []),
         )
     except Exception as e:
         ws_server.logger.error("LLM generation failed in assistant chat: %s", e)
+        offline = generate_offline_heuristic_reply(
+            req.message,
+            session.root_dir if session.has_project else None,
+            context_data,
+        )
+        # If offline has a specific answer for the query, use it; otherwise provide friendly error
+        reply = offline.get("reply") if offline.get("reply") != SHANSHAN_REPLY_NO_LLM else SHANSHAN_REPLY_LLM_ERROR.format(detail=str(e))
         return AssistantChatResponse(
-            reply=SHANSHAN_REPLY_LLM_ERROR.format(detail=str(e)),
-            actions=[
+            reply=reply,
+            actions=offline.get("actions", [
                 {"label": "测试模型连通性", "type": "test_model", "payload": {}},
                 {"label": "去模型配置页", "type": "navigate", "payload": {"route": "/config"}}
-            ]
+            ]),
+            suggestions=offline.get("suggestions", []),
         )
+
+
+@router.post("/api/assistant/chat/stream")
+async def assistant_chat_stream(
+    req: AssistantChatRequest,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Streaming AI Assistant Chat Endpoint for pet assistant (SSE)."""
+    import web.routes.assistant as assistant_module
+    from web.routes.assistant import build_assistant_context
+
+    context_data = await build_assistant_context(session)
+    llm = assistant_module._get_assistant_llm(session.root_dir)
+
+    async def sse_generator() -> AsyncGenerator[str, None]:
+        if not llm:
+            offline = generate_offline_heuristic_reply(
+                req.message,
+                session.root_dir if session.has_project else None,
+                context_data,
+            )
+            reply = offline.get("reply", SHANSHAN_REPLY_NO_LLM)
+            # Simulate smooth chunked delivery
+            chunk_size = max(1, len(reply) // 8)
+            for i in range(0, len(reply), chunk_size):
+                chunk = reply[i : i + chunk_size]
+                yield f"event: chunk\ndata: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.03)
+
+            done_payload = {
+                "reply": reply,
+                "actions": offline.get("actions", []),
+                "suggestions": offline.get("suggestions", []),
+            }
+            yield f"event: done\ndata: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
+            return
+
+        system_prompt = _build_shanshan_prompt(session, req, context_data)
+        accumulated = ""
+        marker_encountered = False
+
+        try:
+            if hasattr(llm, "astream"):
+                stream_iter = llm.astream(role="山山助手", prompt=system_prompt)
+            else:
+                full_resp = await llm.agenerate(role="山山助手", prompt=system_prompt)
+                async def _mock_stream():
+                    yield full_resp
+                stream_iter = _mock_stream()
+
+            buffer = ""
+            async for chunk in stream_iter:
+                accumulated += chunk
+                if not marker_encountered:
+                    buffer += chunk
+                    match = re.search(r'===(?:ACTIONS|SUGGESTIONS)===', buffer)
+                    if match:
+                        marker_encountered = True
+                        pre_text = buffer[:match.start()]
+                        if pre_text:
+                            yield f"event: chunk\ndata: {json.dumps({'chunk': pre_text}, ensure_ascii=False)}\n\n"
+                        buffer = ""
+                    else:
+                        LOOKAHEAD = 20
+                        if len(buffer) > LOOKAHEAD:
+                            safe_to_yield = buffer[:-LOOKAHEAD]
+                            buffer = buffer[-LOOKAHEAD:]
+                            yield f"event: chunk\ndata: {json.dumps({'chunk': safe_to_yield}, ensure_ascii=False)}\n\n"
+
+            if not marker_encountered and buffer:
+                match = re.search(r'===(?:ACTIONS|SUGGESTIONS)===', buffer)
+                if match:
+                    pre_text = buffer[:match.start()]
+                    if pre_text:
+                        yield f"event: chunk\ndata: {json.dumps({'chunk': pre_text}, ensure_ascii=False)}\n\n"
+                else:
+                    yield f"event: chunk\ndata: {json.dumps({'chunk': buffer}, ensure_ascii=False)}\n\n"
+
+            parsed = assistant_module._parse_chat_response(accumulated)
+            done_payload = {
+                "reply": parsed.get("reply", ""),
+                "actions": parsed.get("actions", []),
+                "suggestions": parsed.get("suggestions", []),
+            }
+            yield f"event: done\ndata: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
+
+        except Exception as e:
+            ws_server.logger.error("LLM streaming failed in assistant chat: %s", e)
+            offline = generate_offline_heuristic_reply(
+                req.message,
+                session.root_dir if session.has_project else None,
+                context_data,
+            )
+            err_reply = SHANSHAN_REPLY_LLM_ERROR.format(detail=str(e))
+            yield f"event: chunk\ndata: {json.dumps({'chunk': err_reply}, ensure_ascii=False)}\n\n"
+            done_payload = {
+                "reply": err_reply,
+                "actions": offline.get("actions", [
+                    {"label": "测试模型连通性", "type": "test_model", "payload": {}},
+                    {"label": "去模型配置页", "type": "navigate", "payload": {"route": "/config"}}
+                ]),
+                "suggestions": offline.get("suggestions", []),
+            }
+            yield f"event: done\ndata: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(sse_generator(), media_type="text/event-stream")

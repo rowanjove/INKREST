@@ -4,7 +4,12 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import {
+  abortTask,
+  cancelTask,
   continueNovel,
+  pauseNovelBatch,
+  pauseTask,
+  resumeTask,
   ensureNovelQueue,
   getArcProgress,
   getChapterCount,
@@ -12,6 +17,7 @@ import {
   getEmbeddingStatus,
   getNovelBatchStatus,
   getNovelReadiness,
+  getTask,
   getPipelineAlerts,
   getOutline,
   listAssets,
@@ -43,6 +49,8 @@ import { useProjectStore } from '../stores/project'
 import { useTasksStore } from '../stores/tasks'
 import { needsRepairBeforeResume } from '../utils/batchPause'
 import { notifyPipelineStarted } from '../utils/pipelineNotify'
+import { resolveEngine } from '../utils/dashboardEngine'
+import { waitForQueueTask as pollQueueTask } from '../utils/waitForQueueTask'
 
 export type NovelBatchRunContext = {
   outline: Record<string, any> | null
@@ -71,6 +79,7 @@ function closeBatchDialog() {
   dialogCloseGuardUntil = 0
   dialogInteractReady.value = false
   openError.value = ''
+  operationError.value = ''
   if (dialogInteractTimer) {
     clearTimeout(dialogInteractTimer)
     dialogInteractTimer = null
@@ -100,6 +109,10 @@ let runAbort: AbortController | null = null
 const form = ref({ target_chapters: 5, autopilot: true })
 const runPhase = ref<BatchRunPhase>('idle')
 const continueSubmitted = ref(false)
+const queueTaskId = ref('')
+const productionTaskId = ref('')
+const localControlAction = ref<'pause_requested' | 'resume_requested' | 'cancel_requested' | ''>('')
+const operationError = ref('')
 const roundStartChapterCount = ref(0)
 const roundTargetChapters = ref(0)
 let chapterCountPollTimer: ReturnType<typeof setInterval> | null = null
@@ -120,17 +133,6 @@ const ctx = ref<NovelBatchRunContext>({
   externalPendingCount: 0,
   blockContinueUntilExternal: false,
 })
-
-function resolveEngine(config: any, models: any[]) {
-  const llm = config?.llm || {}
-  const modelsById = new Map(models.map((m: any) => [m.id, m]))
-  const defaultId = llm.daily_model_id || llm.default_model_id || llm.default?.model_ref
-  const defaultModel = defaultId ? modelsById.get(defaultId) : null
-  if (defaultModel) return { ready: true }
-  if (llm.default?.provider && llm.default.provider !== 'static') return { ready: true }
-  if (llm.provider && llm.provider !== 'static') return { ready: true }
-  return { ready: false }
-}
 
 export function useNovelBatchRun() {
   const router = useRouter()
@@ -192,6 +194,35 @@ export function useNovelBatchRun() {
     () => ctx.value.batchPaused && needsRepairBeforeResume(ctx.value.pauseReason),
   )
 
+  const activeProductionTask = computed(() => {
+    let exactId = productionTaskId.value || tasksStore.currentTaskId
+    if (!exactId) {
+      try {
+        const pid = currentProject.value?.id || ''
+        if (pid) exactId = sessionStorage.getItem(`inkrest_active_batch_task_${pid}`) || ''
+      } catch {}
+    }
+    const productionTypes = ['novel_continue', 'novel_autopilot', 'arc_run', 'novel_run']
+    const activeStatuses = ['pending', 'claimed', 'running', 'paused']
+    const exact = tasksStore.taskList.find((task) => task.task_id === exactId)
+    if (
+      exact
+      && productionTypes.includes(String(exact.task_type || ''))
+      && activeStatuses.includes(String(exact.status || ''))
+    ) {
+      return exact
+    }
+    return tasksStore.taskList.find(
+      (task) =>
+        productionTypes.includes(String(task.task_type || ''))
+        && activeStatuses.includes(task.status),
+    ) || null
+  })
+
+  const activeProductionTaskId = computed(
+    () => activeProductionTask.value?.task_id || productionTaskId.value || '',
+  )
+
   const isExternalBlockActive = computed(
     () =>
       ctx.value.blockContinueUntilExternal && ctx.value.externalPendingCount > 0,
@@ -212,19 +243,23 @@ export function useNovelBatchRun() {
   })
 
   async function refreshContext() {
-    const [assetRes, countRes, outlineRes, modelsRes, configRes, embRes, arcRes, batchRes, alertsRes, readyRes] =
+    const [assetRes, countRes, embRes, arcRes, batchRes, alertsRes] =
       await Promise.all([
         listAssets().catch(() => ({ data: [] })),
         getChapterCount(true).catch(() => ({ data: { total: 0 } })),
-        getOutline().catch(() => ({ data: {} })),
-        listModels().catch(() => ({ data: [] })),
-        getConfig().catch(() => ({ data: {} })),
         getEmbeddingStatus().catch(() => ({ data: {} })),
         getArcProgress().catch(() => ({ data: { progress: null } })),
         getNovelBatchStatus().catch(() => ({ data: {} })),
         getPipelineAlerts().catch(() => ({ data: { alerts: [] } })),
-        getNovelReadiness().catch(() => ({ data: {} })),
       ])
+    // These responses define whether a run is safe. Let failures propagate so
+    // the dialog shows the actual backend error instead of a false empty state.
+    const [outlineRes, modelsRes, configRes, readyRes] = await Promise.all([
+      getOutline(),
+      listModels(),
+      getConfig(),
+      getNovelReadiness(),
+    ])
     try {
       const outlineData = outlineRes.data
       const progress = arcRes.data?.progress || batchRes.data || null
@@ -328,19 +363,112 @@ export function useNovelBatchRun() {
     return false
   }
 
-  function cancelBatchRun() {
+  async function pauseBatchRun() {
+    try {
+      localControlAction.value = 'pause_requested'
+      const taskId = activeProductionTaskId.value
+      const response = taskId ? await pauseTask(taskId) : await pauseNovelBatch()
+      const action = response.data?.control_action
+      if (response.data?.status === 'paused') {
+        ctx.value.batchPaused = true
+        ctx.value.pauseReason = 'user_paused'
+        ElMessage.success('生产任务已暂停，可从当前进度恢复')
+      } else if (action === 'pause_requested') {
+        ElMessage.info('正在暂停：等待当前模型请求完成并保存检查点')
+      } else {
+        ElMessage.info(response.data?.message || '当前没有可暂停的生产任务')
+      }
+      await tasksStore.refreshTaskList()
+      window.dispatchEvent(new CustomEvent('inkrest-batch-paused'))
+    } catch (error: any) {
+      ElMessage.error(error?.message || '暂停失败')
+    } finally {
+      localControlAction.value = ''
+    }
+  }
+
+  async function resumeBatchRun() {
+    const taskId = activeProductionTaskId.value
+    if (!taskId) {
+      await openDialog()
+      return
+    }
+    try {
+      localControlAction.value = 'resume_requested'
+      await resumeTask(taskId)
+      ctx.value.batchPaused = false
+      ctx.value.pauseReason = ''
+      await tasksStore.refreshTaskList()
+      ElMessage.success('已从保存的进度恢复生产')
+    } catch (error: any) {
+      ElMessage.error(error?.response?.data?.detail || error?.message || '恢复失败')
+    } finally {
+      localControlAction.value = ''
+    }
+  }
+
+  async function cancelBatchRun() {
     const phase = opening.value ? 'opening' : runPhase.value
     const submitted = continueSubmitted.value
     if (runAbort) {
       runAbort.abort()
       runAbort = null
     }
+    const activeQueueTask = queueTaskId.value
+    const activeProduction = activeProductionTaskId.value
+    queueTaskId.value = ''
+    if (activeQueueTask) {
+      await abortTask(activeQueueTask).catch(() => {
+        /* The task may already have reached a terminal state. */
+      })
+    }
+    if (activeProduction && activeProduction !== activeQueueTask) {
+      await cancelTask(activeProduction).catch(() => {
+        /* The task may already have reached a terminal state. */
+      })
+    }
     opening.value = false
     running.value = false
     runPhase.value = 'idle'
     continueSubmitted.value = false
+    productionTaskId.value = ''
+    try {
+      const pid = currentProject.value?.id || ''
+      if (pid) sessionStorage.removeItem(`inkrest_active_batch_task_${pid}`)
+    } catch {}
     stopChapterCountPoll()
-    ElMessage.info(cancelBatchRunMessage(phase, submitted))
+    await tasksStore.refreshTaskList().catch(() => undefined)
+    ElMessage.info(
+      activeProduction
+        ? '生产任务已取消，已生成内容会保留'
+        : cancelBatchRunMessage(phase, submitted),
+    )
+  }
+
+  function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) {
+        const error = new Error('同步卷队列已取消')
+        error.name = 'CanceledError'
+        reject(error)
+        return
+      }
+      const timer = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort)
+        resolve()
+      }, ms)
+      const onAbort = () => {
+        clearTimeout(timer)
+        const error = new Error('同步卷队列已取消')
+        error.name = 'CanceledError'
+        reject(error)
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+  }
+
+  async function waitForQueueTask(taskId: string, signal: AbortSignal) {
+    return pollQueueTask(taskId, signal, { getTask, abortTask }, { delay: abortableDelay })
   }
 
   /** 不经弹窗直接开跑（程序化入口）；界面按钮应走 openDialog → submit */
@@ -372,7 +500,7 @@ export function useNovelBatchRun() {
       ElMessage.warning(
         pending.length
           ? `开书清单尚有未就绪项：${pending.join('、')}。可在弹窗内查看详情后再启动。`
-          : '开书清单未全绿，请补齐后再确认连写。',
+          : '开书清单还有未完成项，请查看弹窗内的红灯条目。大纲已生成时，卷队列会在确认连写时自动同步。',
       )
     }
   }
@@ -386,6 +514,11 @@ export function useNovelBatchRun() {
   function goMonitorAlerts() {
     closeBatchDialog()
     router.push('/production?tab=reviews')
+  }
+
+  function goTaskLogs() {
+    closeBatchDialog()
+    router.push('/production?tab=logs')
   }
 
   function goChapterRepair() {
@@ -454,6 +587,7 @@ export function useNovelBatchRun() {
     roundStartChapterCount.value = ctx.value.chapterCountTotal
     roundTargetChapters.value = form.value.target_chapters
     continueSubmitted.value = false
+    operationError.value = ''
     running.value = true
     runAbort = new AbortController()
     const signal = runAbort.signal
@@ -473,7 +607,12 @@ export function useNovelBatchRun() {
         duration: 0,
         showClose: true,
       })
-      await ensureNovelQueue({ timeout: 600_000, signal })
+      const queueResponse = await ensureNovelQueue({ signal })
+      const acceptedTaskId = String(queueResponse.data?.task_id || '')
+      if (!acceptedTaskId) throw new Error('后台未返回卷队列同步任务编号')
+      queueTaskId.value = acceptedTaskId
+      await waitForQueueTask(acceptedTaskId, signal)
+      queueTaskId.value = ''
       tasksStore.addProgress({
         step: 'ensure_queue',
         status: 'done',
@@ -497,6 +636,14 @@ export function useNovelBatchRun() {
         { signal },
       )
       continueSubmitted.value = true
+      const newTaskId = String(data?.task_id || '')
+      productionTaskId.value = newTaskId
+      try {
+        const projectId = currentProject.value?.id || ''
+        if (projectId && newTaskId) {
+          sessionStorage.setItem(`inkrest_active_batch_task_${projectId}`, newTaskId)
+        }
+      } catch {}
       const mode = form.value.autopilot ? '后台自动续轮' : '单轮'
       ElMessage.success(
         `已启动${mode}（上限 ${cap} 章，任务 ${data?.task_id || ''}），请到日志中心查看任务流水。`,
@@ -526,12 +673,13 @@ export function useNovelBatchRun() {
             : error?.code === 'ECONNABORTED'
               ? '同步卷队列超时（模型过慢或未响应）。请检查设置中的 API，或到日志中心查看任务流水。'
               : error.message || '启动失败'
+      operationError.value = msg
       ElMessage.error(msg)
-      throw error
     } finally {
       queueMsg?.close()
       const aborted = signal.aborted
       runAbort = null
+      queueTaskId.value = ''
       running.value = false
       runPhase.value = 'idle'
       stopChapterCountPoll()
@@ -553,12 +701,15 @@ export function useNovelBatchRun() {
     () => {
       roundStartChapterCount.value = 0
       roundTargetChapters.value = 0
+      productionTaskId.value = ''
+      queueTaskId.value = ''
     },
   )
 
   return {
     dialogVisible,
     openError,
+    operationError,
     dialogInteractReady,
     beforeDialogClose,
     closeBatchDialog,
@@ -577,16 +728,22 @@ export function useNovelBatchRun() {
     readinessItems,
     canRun,
     isCircuitPaused,
+    activeProductionTask,
+    activeProductionTaskId,
+    localControlAction,
     isExternalBlockActive,
     dialogTitle,
     tokenEstimate,
     refreshContext,
     startBatchRun,
     cancelBatchRun,
+    pauseBatchRun,
+    resumeBatchRun,
     openDialog,
     retryDialogContext,
     submit,
     goMonitorAlerts,
+    goTaskLogs,
     goChapterRepair,
   }
 }

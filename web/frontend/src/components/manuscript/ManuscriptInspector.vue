@@ -239,23 +239,24 @@ defineExpose({ showAiTab })
 .inspector-tabs button {
   display: grid;
   place-items: center;
-  gap: 2px;
-  padding: 6px 2px;
+  gap: 3px;
+  padding: 7px 3px;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--color-text-muted);
-  font-size: 9px;
+  font-size: 12px;
   cursor: pointer;
 }
 .inspector-tabs button :deep(svg),
 .inspector-tabs button > svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
 }
 .inspector-tabs button.active {
   border-bottom-color: var(--color-primary);
   color: var(--color-primary);
+  font-weight: 700;
 }
 .inspector-body {
   flex: 1;
@@ -275,13 +276,13 @@ defineExpose({ showAiTab })
 }
 .section-heading span {
   color: var(--color-text-strong);
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 800;
 }
 .section-heading small,
 .history-row small {
   color: var(--color-text-muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 .context-lead {
   margin: 0;
@@ -289,7 +290,7 @@ defineExpose({ showAiTab })
   border-left: 3px solid var(--color-primary);
   background: var(--color-primary-soft);
   color: var(--color-text-strong);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.7;
 }
 .context-card,
@@ -302,13 +303,13 @@ defineExpose({ showAiTab })
   border-radius: 10px;
   background: var(--color-bg-surface-muted);
 }
-.context-card strong { font-size: 11px; }
+.context-card strong { font-size: 13px; }
 .context-card p,
 .intent-card p,
 .suggestion-card p {
   margin: 0;
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: 12.5px;
   line-height: 1.65;
 }
 .intent-card blockquote {
@@ -318,7 +319,7 @@ defineExpose({ showAiTab })
   padding: 8px;
   border-left: 2px solid var(--color-border);
   color: var(--color-text);
-  font-size: 11px;
+  font-size: 12px;
 }
 .intent-note { color: var(--color-warning) !important; }
 .suggested {
@@ -334,9 +335,9 @@ defineExpose({ showAiTab })
   gap: 10px;
   padding: 10px 0;
   border-bottom: 1px solid var(--color-border-subtle);
-  font-size: 11px;
+  font-size: 12.5px;
 }
-.muted { margin: 0; color: var(--color-text-muted); font-size: 11px; line-height: 1.6; }
+.muted { margin: 0; color: var(--color-text-muted); font-size: 12px; line-height: 1.6; }
 .candidate-card {
   display: grid;
   gap: 8px;
@@ -355,10 +356,10 @@ defineExpose({ showAiTab })
   color: var(--color-text);
   white-space: pre-wrap;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.65;
 }
-.candidate-stats { display: flex; gap: 10px; color: var(--color-text-muted); font-size: 10px; }
+.candidate-stats { display: flex; gap: 10px; color: var(--color-text-muted); font-size: 12px; }
 .diff-view {
   max-height: 170px;
   overflow: auto;
@@ -367,13 +368,13 @@ defineExpose({ showAiTab })
   border-radius: 7px;
   background: var(--color-bg-surface);
   white-space: pre-wrap;
-  font-size: 10px;
+  font-size: 12.5px;
   line-height: 1.65;
 }
 .diff-delete { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 12%, transparent); text-decoration: line-through; }
 .diff-insert { color: var(--color-success); background: color-mix(in srgb, var(--color-success) 12%, transparent); }
-.candidate-note { color: var(--color-text-muted); font-size: 10px; }
-.candidate-reasons { color: var(--color-warning); font-size: 10px; }
+.candidate-note { color: var(--color-text-muted); font-size: 12px; }
+.candidate-reasons { color: var(--color-warning); font-size: 12px; }
 .history-section { gap: 6px; }
 .history-row {
   display: grid;
@@ -390,13 +391,13 @@ defineExpose({ showAiTab })
 }
 .history-row:hover { background: var(--color-bg-hover); }
 .history-row > span:nth-child(2) { display: grid; gap: 3px; }
-.history-row strong { font-size: 11px; }
-.history-row time { color: var(--color-text-subtle); font-size: 9px; }
+.history-row strong { font-size: 13px; font-weight: 700; }
+.history-row time { color: var(--color-text-subtle); font-size: 11.5px; }
 .history-dot {
   width: 7px;
   height: 7px;
   border: 2px solid var(--color-primary);
   border-radius: 50%;
 }
-.inspector-section label { display: grid; gap: 8px; color: var(--color-text); font-size: 11px; }
+.inspector-section label { display: grid; gap: 8px; color: var(--color-text); font-size: 12.5px; }
 </style>

@@ -7,11 +7,13 @@ import { useRouter } from 'vue-router'
 import { getState, listChapters } from '../../api'
 import { useProjectStore } from '../../stores/project'
 import { useProjectSnapshotStore } from '../../stores/projectSnapshot'
+import { usePluginNavigationStore } from '../../stores/pluginNavigation'
 import {
   buildNavigationCommands,
   commandFromSnapshotAction,
   commandsFromChapters,
   commandsFromCharacters,
+  commandsFromPluginNavigation,
   searchCommands,
   type AppCommand,
 } from './commandRegistry'
@@ -21,6 +23,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 const router = useRouter()
 const projectStore = useProjectStore()
 const snapshotStore = useProjectSnapshotStore()
+const pluginNav = usePluginNavigationStore()
 const query = ref('')
 const dynamicCommands = ref<AppCommand[]>([])
 const selectedIndex = ref(0)
@@ -37,7 +40,15 @@ const commands = computed(() => {
   const base = buildNavigationCommands(Boolean(projectStore.currentProject?.id))
   const nextActions =
     snapshotStore.snapshot?.next_actions.map(commandFromSnapshotAction) || []
-  return [...nextActions, ...base, ...dynamicCommands.value]
+  return [
+    ...nextActions,
+    ...base,
+    ...commandsFromPluginNavigation([
+      ...pluginNav.visibleLibraryItems,
+      ...pluginNav.visibleProjectItems,
+    ]),
+    ...dynamicCommands.value,
+  ]
 })
 const results = computed(() => searchCommands(commands.value, query.value))
 const groupedResults = computed(() => {
@@ -127,6 +138,7 @@ watch(
     if (!visible) return
     query.value = ''
     selectedIndex.value = 0
+    if (pluginNav.status === 'idle') void pluginNav.fetchNavigation()
     void loadProjectCommands()
     void nextTick(() => input.value?.focus())
   },

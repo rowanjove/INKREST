@@ -7,63 +7,68 @@ defineProps<{
 
 <template>
   <div class="plugin-metrics">
-    <div class="metric-card total-card">
-      <span class="m-label">已装插件数</span>
-      <span class="m-val">{{ totalCount }}</span>
-    </div>
-    <div class="metric-card active-card">
+    <span class="metric-pill total-pill">
+      <span class="m-label">已装插件</span>
+      <strong class="m-val">{{ totalCount }}</strong>
+    </span>
+    <span class="metric-pill active-pill" :class="{ 'has-active': activeCount > 0 }">
+      <span class="m-dot" />
       <span class="m-label">启用运行中</span>
-      <span class="m-val">{{ activeCount }}</span>
-    </div>
+      <strong class="m-val">{{ activeCount }}</strong>
+    </span>
   </div>
 </template>
 
 <style scoped>
 .plugin-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  vertical-align: middle;
 }
 
-.metric-card {
-  background: var(--color-bg-surface);
-  border-radius: 16px;
-  padding: 22px 24px;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border-light);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.02);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+.metric-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid var(--border-light, #e2e8f0);
+  background: var(--color-bg-surface-muted, #f8fafc);
+  color: var(--text-muted, #64748b);
+  transition: all 0.2s ease;
 }
 
-.metric-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+.metric-pill .m-label {
+  font-weight: 500;
 }
 
-.total-card {
-  background: linear-gradient(135deg, var(--color-bg-surface) 0%, var(--color-bg-surface-muted) 100%);
+.metric-pill .m-val {
+  font-weight: 700;
+  color: var(--text-main, #0f172a);
 }
 
-.active-card {
-  background: linear-gradient(135deg, var(--color-bg-surface) 0%, #fff6f2 100%);
-  border-color: rgba(198, 111, 79, 0.2);
+.active-pill.has-active {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #166534;
 }
 
-.m-label {
-  font-size: 13.5px;
-  color: var(--text-muted);
-  font-weight: 600;
+.active-pill.has-active .m-val {
+  color: #15803d;
 }
 
-.m-val {
-  font-size: 34px;
-  font-weight: 800;
-  color: var(--text-main);
-  margin-top: 6px;
+.m-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #94a3b8;
 }
 
-.active-card .m-val {
-  color: var(--primary);
+.active-pill.has-active .m-dot {
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
 }
 </style>

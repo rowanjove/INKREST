@@ -22,9 +22,6 @@ const AppTourOverlay = defineAsyncComponent(
   () => import('./components/AppTourOverlay.vue'),
 )
 const SetupWizard = defineAsyncComponent(() => import('./components/SetupWizard.vue'))
-const FirstBookGuide = defineAsyncComponent(
-  () => import('./components/workbench/FirstBookGuide.vue'),
-)
 const NovelBatchRunDialog = defineAsyncComponent(
   () => import('./components/NovelBatchRunDialog.vue'),
 )
@@ -72,24 +69,34 @@ const handleWizardCompleted = () => {
 onMounted(async () => {
   if (isPetRoute.value) return
   await projectStore.hydrate()
+  const allowedWithoutOnboarding = new Set([
+    '/',
+    '/create',
+    '/onboarding',
+    '/config',
+    '/plugins',
+  ])
   if (
     !isOnboardingCompleted() &&
     projectStore.projects.length === 0 &&
-    route.path !== '/onboarding'
+    !allowedWithoutOnboarding.has(route.path)
   ) {
-    await router.push('/onboarding')
+    await router.push('/create?welcome=1')
     return
   }
-  if (isOnboardingCompleted()) void maybeAutoStart()
+  if (isOnboardingCompleted() && (route.path === '/' || route.path === '/workspace')) {
+    void maybeAutoStart()
+  }
 })
 
 watch(
   () => route.path,
-  () => {
+  (path) => {
     if (
       isOnboardingCompleted() &&
       isAppTourPending() &&
-      !isPetRoute.value
+      !isPetRoute.value &&
+      (path === '/' || path === '/workspace')
     ) {
       void maybeAutoStart()
     }
@@ -123,11 +130,6 @@ watch(
       @next="tourNextStep"
       @prev="tourPrevStep"
       @skip="skipTour"
-    />
-
-    <FirstBookGuide
-      v-if="projectStore.currentProject?.id"
-      :project-id="projectStore.currentProject.id"
     />
 
     <NovelBatchRunDialog />

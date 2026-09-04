@@ -51,10 +51,9 @@ defineProps<{
 .ui-page-shell__eyebrow {
   margin: 0 0 var(--space-1);
   color: var(--color-primary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
 }
 
 .ui-page-shell h1 {
@@ -70,7 +69,7 @@ defineProps<{
   max-width: 720px;
   margin: var(--space-2) 0 0;
   color: var(--color-text-muted);
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 1.65;
 }
 

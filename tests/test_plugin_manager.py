@@ -228,21 +228,35 @@ PLUGIN_CLASS = TestHook
         with patch("web.routes.plugins.get_plugin_manager", return_value=pm):
             denied = client.put("/api/plugins/api_guard/toggle", json={"enabled": True})
             row = next(item for item in pm.list_plugin_catalog() if item["name"] == "api_guard")
-            stale = client.post(
-                "/api/plugins/api_guard/trust",
-                json={"digest": "stale", "capabilities": row["effective_capabilities"]},
-            )
-            trusted = client.post(
+            missing_ack = client.post(
                 "/api/plugins/api_guard/trust",
                 json={
                     "digest": row["digest"],
                     "capabilities": row["effective_capabilities"],
                 },
             )
+            stale = client.post(
+                "/api/plugins/api_guard/trust",
+                json={
+                    "digest": "stale",
+                    "capabilities": row["effective_capabilities"],
+                    "acknowledge_local_code": True,
+                },
+            )
+            trusted = client.post(
+                "/api/plugins/api_guard/trust",
+                json={
+                    "digest": row["digest"],
+                    "capabilities": row["effective_capabilities"],
+                    "acknowledge_local_code": True,
+                },
+            )
             enabled = client.put("/api/plugins/api_guard/toggle", json={"enabled": True})
 
         self.assertEqual(denied.status_code, 409)
         self.assertEqual(denied.json()["code"], "plugin_trust_required")
+        self.assertEqual(missing_ack.status_code, 400)
+        self.assertEqual(missing_ack.json()["code"], "local_code_ack_required")
         self.assertEqual(stale.status_code, 409)
         self.assertEqual(trusted.status_code, 200)
         self.assertFalse(trusted.json()["enabled"])

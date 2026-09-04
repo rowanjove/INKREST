@@ -20,6 +20,7 @@
 ## 输入要求
 
 期望接收以下信息：
+- 写前任务卡（目标、必写、禁写、节拍、伏笔回收、出口钩子）；与场景卡冲突时以任务卡为准
 - 场景卡（scene_id、purpose、entry、exit、conflict、pov、must_include、must_not_include）
 - Context Pack（当前状态、相关人物、世界观、文风指南）
 - 设定集和预设指南

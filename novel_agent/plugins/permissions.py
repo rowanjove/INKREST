@@ -15,12 +15,16 @@ from typing import Any, Dict, Iterable, List
 
 class PluginCapability(str, Enum):
     LOCAL_CODE = "local_code"
+    PROJECT_CATALOG_READ = "project_catalog_read"
     PROJECT_READ = "project_read"
     PROJECT_WRITE = "project_write"
+    ALL_PROJECTS_READ = "all_projects_read"
+    ALL_PROJECTS_WRITE = "all_projects_write"
     MODEL_ACCESS = "model_access"
     NETWORK_ACCESS = "network_access"
     FILE_EXPORT = "file_export"
     WEB_ROUTES = "web_routes"
+    UI_EMBED = "ui_embed"
     COMMAND_EXECUTION = "command_execution"
     LEGACY_FULL_ACCESS = "legacy_full_access"
 
@@ -28,8 +32,13 @@ class PluginCapability(str, Enum):
 CAPABILITY_INFO: Dict[str, Dict[str, str]] = {
     PluginCapability.LOCAL_CODE.value: {
         "label": "运行本机 Python 代码",
-        "description": "代码在栖墨后端进程中运行，可继承当前用户权限。",
+        "description": "最高风险：代码在栖墨后端进程中运行，可继承当前用户权限，必须单独确认。",
         "risk": "high",
+    },
+    PluginCapability.PROJECT_CATALOG_READ.value: {
+        "label": "读取项目目录元数据",
+        "description": "读取作品列表、书名、ID、更新时间和章节数等目录元数据，不读取正文。",
+        "risk": "low",
     },
     PluginCapability.PROJECT_READ.value: {
         "label": "读取项目内容",
@@ -40,6 +49,16 @@ CAPABILITY_INFO: Dict[str, Dict[str, str]] = {
         "label": "修改项目内容",
         "description": "写入正文、状态、规则或项目配置。",
         "risk": "medium",
+    },
+    PluginCapability.ALL_PROJECTS_READ.value: {
+        "label": "跨项目读取正文与设定",
+        "description": "读取所有已存在作品的正文、设定与状态；跨作品检索或统计所需。",
+        "risk": "high",
+    },
+    PluginCapability.ALL_PROJECTS_WRITE.value: {
+        "label": "跨项目修改作品内容",
+        "description": "跨项目批量修改或删除内容；极高风险。",
+        "risk": "high",
     },
     PluginCapability.MODEL_ACCESS.value: {
         "label": "调用模型能力",
@@ -60,6 +79,11 @@ CAPABILITY_INFO: Dict[str, Dict[str, str]] = {
         "label": "注册本地 Web 路由",
         "description": "向本地应用增加 API 或页面入口。",
         "risk": "high",
+    },
+    PluginCapability.UI_EMBED.value: {
+        "label": "嵌入前端界面",
+        "description": "在栖墨宿主内嵌入独立页面或沙箱视图。",
+        "risk": "medium",
     },
     PluginCapability.COMMAND_EXECUTION.value: {
         "label": "注册命令",
@@ -151,6 +175,11 @@ def risk_summary(capabilities: Iterable[str], *, legacy: bool = False) -> str:
     values = set(capabilities)
     if legacy:
         return "旧式单文件插件没有权限清单，将以本机 Python 代码的最高风险边界运行。"
+    if (
+        PluginCapability.ALL_PROJECTS_READ.value in values
+        or PluginCapability.ALL_PROJECTS_WRITE.value in values
+    ):
+        return "插件请求了跨项目读取或修改全部作品内容的权限；请确认插件来源绝对可信。"
     if PluginCapability.NETWORK_ACCESS.value in values:
         return "插件会在本机运行代码并可访问网络；请只信任来源明确且内容经过核对的插件。"
     return "插件会在本机后端进程中运行 Python 代码；权限确认不等同于操作系统沙箱。"

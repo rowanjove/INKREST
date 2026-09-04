@@ -3,6 +3,12 @@ from tests.api._base import *  # noqa: F403
 class ApiChaptersTests(ApiTestBase):
 
     def test_activate_version_snapshots_current_text_before_replacing_it(self):
+        from novel_agent.services.manuscript_documents import plain_text_to_tiptap
+        from novel_agent.services.manuscript_workspace import (
+            ensure_manuscript_document,
+            save_manuscript_document,
+        )
+
         original_active = web_server._active_project_id
         original_base = web_server.BASE_DIR
         try:
@@ -15,28 +21,34 @@ class ApiChaptersTests(ApiTestBase):
                 json.dumps({"chapter_title": "第一章"}, ensure_ascii=False),
                 encoding="utf-8",
             )
-            store = SQLiteStateStore(self.tmpdir)
-            version_id = store.save_chapter_version(
+            current = ensure_manuscript_document(self.tmpdir, "001")
+            save_manuscript_document(
+                self.tmpdir,
                 chapter_id="001",
-                version_name="新分支",
-                content="新正文",
-                plan="{}",
-                is_active=False,
+                title="第一章",
+                content_json=plain_text_to_tiptap("新正文"),
+                expected_revision=current["revision"],
+                source="manual",
             )
+            store = SQLiteStateStore(self.tmpdir)
+            versions = store.list_chapter_versions("001")
+            older = next(item for item in versions if "旧正文" in str(item.get("content") or ""))
 
             response = TestClient(web_app).post(
-                f"/api/chapters/001/versions/{version_id}/activate"
+                f"/api/chapters/001/versions/{older['id']}/activate"
             )
 
             self.assertEqual(response.status_code, 200)
             snapshots = list((chapter_dir / ".snapshots").glob("snapshot_*.json"))
             self.assertEqual(len(snapshots), 1)
             payload = json.loads(snapshots[0].read_text(encoding="utf-8"))
-            self.assertEqual(payload["final_text"], "旧正文")
+            self.assertNotIn("final_text", payload)
+            self.assertTrue(payload.get("revision_id"))
             self.assertEqual(
                 (chapter_dir / "chapter_final.txt").read_text(encoding="utf-8"),
-                "新正文",
+                "旧正文",
             )
+            self.assertEqual(response.json()["revision"], store.get_manuscript_document("001")["revision"])
         finally:
             web_server._active_project_id = original_active
             web_server.BASE_DIR = original_base

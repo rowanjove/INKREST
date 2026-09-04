@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import sys
 import uuid
 import threading
 import queue
@@ -46,27 +47,77 @@ class SQLiteWriteQueue:
 def db_write_lock(func):
     def wrapper(self, *args, **kwargs):
         write_queue = SQLiteWriteQueue.get_instance(self.db_path)
+        if threading.current_thread() == write_queue._thread:
+            return func(self, *args, **kwargs)
         future = write_queue.submit(func, self, *args, **kwargs)
-        return future.result()
+        try:
+            return future.result(timeout=60)
+        except TimeoutError as exc:
+            raise TimeoutError(f"SQLite write queue timed out in {func.__name__}") from exc
     return wrapper
 
 
 class safe_connection:
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
+    """Safe SQLite connection context manager.
+    
+    Supports concurrent reads under WAL mode and serialized writes via per-database RLock.
+    Configures busy_timeout=30000ms and synchronous=NORMAL.
+    """
+    _locks: Dict[str, threading.RLock] = {}
+    _locks_guard = threading.Lock()
+
+    @classmethod
+    def get_lock(cls, db_path: Path) -> threading.RLock:
+        canonical = str(Path(db_path).resolve())
+        if sys.platform == "win32":
+            canonical = canonical.lower()
+        with cls._locks_guard:
+            if canonical not in cls._locks:
+                cls._locks[canonical] = threading.RLock()
+            return cls._locks[canonical]
+
+    def __init__(self, db_path: Path, is_write: bool = False):
+        self.db_path = Path(db_path)
+        self.is_write = is_write
         self.conn = None
+        self._acquired_lock = None
 
     def __enter__(self):
-        self.conn = sqlite3.connect(self.db_path, timeout=30.0)
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.__enter__()
-        return self.conn
+        if self.is_write:
+            self._acquired_lock = self.get_lock(self.db_path)
+            self._acquired_lock.acquire()
+        try:
+            self.conn = sqlite3.connect(self.db_path, timeout=30.0)
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA busy_timeout=30000")
+            self.conn.execute("PRAGMA synchronous=NORMAL")
+            self.conn.__enter__()
+            return self.conn
+        except BaseException:
+            if self._acquired_lock:
+                self._acquired_lock.release()
+                self._acquired_lock = None
+            raise
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
-            self.conn.__exit__(exc_type, exc_val, exc_tb)
+            if self.conn:
+                self.conn.__exit__(exc_type, exc_val, exc_tb)
         finally:
-            self.conn.close()
+            if self.conn:
+                try:
+                    self.conn.close()
+                except Exception:
+                    pass
+            if self._acquired_lock:
+                self._acquired_lock.release()
+                self._acquired_lock = None
+
+
+class safe_write_connection(safe_connection):
+    """Explicit exclusive writer connection context for serialized mutations."""
+    def __init__(self, db_path: Path):
+        super().__init__(db_path, is_write=True)
 
 
 class SchemaMixin:
@@ -291,8 +342,17 @@ class SchemaMixin:
                   input_cost_cny real,
                   output_cost_cny real,
                   created_at datetime default current_timestamp,
-                  project_id text
+                  project_id text,
+                  task_id text,
+                  chapter_id text,
+                  role text,
+                  outcome text,
+                  finish_reason text,
+                  provider_request_id text
                 );
+                create index if not exists idx_llm_cost_call_id on llm_cost_log(call_id);
+                create unique index if not exists uq_llm_cost_call_id on llm_cost_log(call_id) where call_id is not null and call_id != '';
+                create index if not exists idx_llm_cost_project_created on llm_cost_log(project_id, created_at);
 
                 -- Character relations graph
                 create table if not exists character_relations (
@@ -332,6 +392,9 @@ class SchemaMixin:
                   error text,
                   progress text,
                   llm_logs text,
+                  parent_task_id text,
+                  active_child_task_id text,
+                  checkpoint_kind text,
                   created_at datetime default current_timestamp
                 );
                 create table if not exists task_logs (
@@ -430,6 +493,7 @@ class SchemaMixin:
             )
             self._ensure_marker_columns(conn)
             self._ensure_task_columns(conn)
+            self._ensure_llm_cost_columns(conn)
             self._ensure_chapter_index_columns(conn)
             self._ensure_narrative_event_columns(conn)
             self._ensure_story_search_schema(conn)
@@ -527,6 +591,9 @@ class SchemaMixin:
             "checkpoint": "text",
             "started_at": "text",
             "finished_at": "text",
+            "parent_task_id": "text",
+            "active_child_task_id": "text",
+            "checkpoint_kind": "text",
         }
         for name, declaration in v2_columns.items():
             if name not in columns:
@@ -542,6 +609,40 @@ class SchemaMixin:
             create index if not exists idx_tasks_lease
             on tasks(status, lease_expires_at)
             """
+        )
+        conn.execute(
+            """
+            create index if not exists idx_tasks_parent_id
+            on tasks(parent_task_id)
+            """
+        )
+
+    def _ensure_llm_cost_columns(self, conn) -> None:
+        columns = {
+            row[1]
+            for row in conn.execute("pragma table_info(llm_cost_log)").fetchall()
+        }
+        additions = {
+            "task_id": "text",
+            "chapter_id": "text",
+            "role": "text",
+            "outcome": "text",
+            "finish_reason": "text",
+            "provider_request_id": "text",
+        }
+        for name, declaration in additions.items():
+            if name not in columns:
+                conn.execute(f"alter table llm_cost_log add column {name} {declaration}")
+        conn.execute(
+            "create index if not exists idx_llm_cost_call_id on llm_cost_log(call_id)"
+        )
+        conn.execute(
+            "create unique index if not exists uq_llm_cost_call_id "
+            "on llm_cost_log(call_id) where call_id is not null and call_id != ''"
+        )
+        conn.execute(
+            "create index if not exists idx_llm_cost_project_created "
+            "on llm_cost_log(project_id, created_at)"
         )
 
     def _ensure_marker_columns(self, conn) -> None:

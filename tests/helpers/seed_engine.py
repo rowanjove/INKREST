@@ -23,6 +23,9 @@ def seed_usable_daily_model(
                         "name": model_id,
                         "provider": provider,
                         "model": model_name,
+                        # Remote-compatible test models still need an explicit
+                        # credential so readiness tests exercise the real gate.
+                        "api_key": "test-key",
                     }
                 },
                 "slots": {"daily": model_id, "reasoning": model_id, "backup": []},

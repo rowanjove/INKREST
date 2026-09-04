@@ -115,3 +115,14 @@ if (build.error) {
 if (build.status !== 0) {
   process.exit(build.status ?? 1)
 }
+
+console.log('PyInstaller build completed. Synchronizing frontend assets...')
+const syncScript = resolve(root, 'scripts', 'sync_frontend_to_runtime.py')
+const sync = spawnSync(python.command, [...python.prefix, syncScript], {
+  cwd: root,
+  stdio: 'inherit',
+})
+if (sync.status !== 0) {
+  process.exit(sync.status ?? 1)
+}
+

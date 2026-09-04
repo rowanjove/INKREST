@@ -248,6 +248,11 @@ def build_publishing_workspace(
     )
     title = str(snapshot.project.get("name") or "未命名小说")
     store = SQLiteStateStore(root)
+    if store.count_manuscript_document_summaries() == 0:
+        from novel_agent.services.chapter_index_sync import sync_chapters_from_disk
+
+        sync_chapters_from_disk(root, store)
+
     page_offset = max(0, int(offset or 0))
     page_limit = max(1, min(int(limit or 100), 100))
     catalog_total = store.count_manuscript_document_summaries(

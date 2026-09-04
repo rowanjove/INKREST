@@ -4,6 +4,29 @@ from novel_agent.control.longform_readiness import build_longform_readiness
 from novel_agent.retrieval.reranker import resolve_reranker_readiness
 
 
+def test_short_scale_readiness_enables_hybrid_and_still_reports_fts_degraded(tmp_path: Path):
+    (tmp_path / "workspace").mkdir()
+    (tmp_path / "workspace" / "outline.json").write_text(
+        '{"scale_profile": {"scale": "short"}}',
+        encoding="utf-8",
+    )
+    result = build_longform_readiness(tmp_path)
+    assert result["flags"]["m2_hybrid_retrieval"] is True
+    assert "hybrid_retrieval_disabled" not in result["retrieval"]["degraded"]
+    assert "fts" in result["retrieval"]["degraded"]
+
+
+def test_micro_scale_readiness_marks_hybrid_disabled(tmp_path: Path):
+    (tmp_path / "workspace").mkdir()
+    (tmp_path / "workspace" / "outline.json").write_text(
+        '{"scale_profile": {"scale": "micro"}}',
+        encoding="utf-8",
+    )
+    result = build_longform_readiness(tmp_path)
+    assert result["flags"]["m2_hybrid_retrieval"] is False
+    assert "hybrid_retrieval_disabled" in result["retrieval"]["degraded"]
+
+
 def test_longform_readiness_is_read_only_and_explains_degradation(tmp_path: Path):
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "pipeline.yaml").write_text("llm:\n  provider: static\n", encoding="utf-8")

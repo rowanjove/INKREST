@@ -1,6 +1,8 @@
 """连写启动链路：对齐前端 refreshContext → ensure-queue → continue。"""
 
+import asyncio
 import json
+import time
 from unittest.mock import AsyncMock, patch
 
 from tests.api._base import *  # noqa: F403
@@ -23,6 +25,7 @@ def _seed_ready(root: Path, *, with_arcs: bool = True, pending_briefs: int = 16)
                         "name": "Test Daily",
                         "provider": "openai",
                         "model": "gpt-test",
+                        "api_key": "test-key",
                     }
                 },
                 "slots": {"daily": "test-daily", "reasoning": "test-daily", "backup": []},
@@ -73,6 +76,18 @@ REFRESH_PATHS = (
 
 class NovelLianxieChainTests(ApiTestBase):
 
+    def _wait_task(self, client: TestClient, task_id: str, timeout: float = 5.0):
+        deadline = time.time() + timeout
+        latest = {}
+        while time.time() < deadline:
+            response = client.get(f"/api/chapters/tasks/{task_id}")
+            self.assertEqual(response.status_code, 200, response.text)
+            latest = response.json()
+            if latest.get("status") in {"succeeded", "completed", "failed", "cancelled"}:
+                return latest
+            time.sleep(0.05)
+        self.fail(f"queue task did not finish: {latest}")
+
     def _run_refresh_chain(self, client: TestClient) -> None:
         for path in REFRESH_PATHS:
             resp = client.get(path)
@@ -89,30 +104,31 @@ class NovelLianxieChainTests(ApiTestBase):
 
             web_context._task_manager = None
             _seed_ready(self.tmpdir, with_arcs=True)
-            client = TestClient(web_app)
+            with TestClient(web_app) as client:
+                self._run_refresh_chain(client)
 
-            self._run_refresh_chain(client)
+                ready = client.get("/api/novel/readiness")
+                self.assertEqual(ready.status_code, 200)
+                self.assertTrue(ready.json().get("ok"), ready.json())
 
-            ready = client.get("/api/novel/readiness")
-            self.assertEqual(ready.status_code, 200)
-            self.assertTrue(ready.json().get("ok"), ready.json())
+                q = client.post("/api/novel/ensure-queue")
+                self.assertEqual(q.status_code, 202, q.text)
+                self.assertEqual(q.json().get("status"), "accepted")
+                queue_task = self._wait_task(client, q.json()["task_id"])
+                self.assertEqual(queue_task.get("status"), "succeeded", queue_task)
 
-            q = client.post("/api/novel/ensure-queue")
-            self.assertEqual(q.status_code, 200, q.text)
-            self.assertEqual(q.json().get("status"), "ok")
-
-            cont = client.post(
-                "/api/novel/continue",
-                json={
-                    "resume": True,
-                    "max_chapters": 5,
-                    "dry_run": True,
-                    "autopilot": True,
-                    "full_book": True,
-                },
-            )
-            self.assertEqual(cont.status_code, 200, cont.text)
-            self.assertIn("task_id", cont.json())
+                cont = client.post(
+                    "/api/novel/continue",
+                    json={
+                        "resume": True,
+                        "max_chapters": 5,
+                        "dry_run": True,
+                        "autopilot": True,
+                        "full_book": True,
+                    },
+                )
+                self.assertEqual(cont.status_code, 200, cont.text)
+                self.assertIn("task_id", cont.json())
         finally:
             web_context._task_manager = None
             web_server._active_project_id = original_active
@@ -134,9 +150,7 @@ class NovelLianxieChainTests(ApiTestBase):
 
             web_context._task_manager = None
             _seed_ready(self.tmpdir, with_arcs=False)
-            client = TestClient(web_app)
-
-            with patch(
+            with TestClient(web_app) as client, patch(
                 "novel_agent.agents.managing_editor.ManagingEditorAgent.asplit_chapters",
                 new_callable=AsyncMock,
                 return_value=fake_arc,
@@ -146,20 +160,58 @@ class NovelLianxieChainTests(ApiTestBase):
                 return_value=0,
             ):
                 q = client.post("/api/novel/ensure-queue")
-            self.assertEqual(q.status_code, 200, q.text)
-            self.assertTrue((self.tmpdir / "workspace" / "arc_A01.json").is_file())
+                self.assertEqual(q.status_code, 202, q.text)
+                queue_task = self._wait_task(client, q.json()["task_id"])
+                self.assertEqual(queue_task.get("status"), "succeeded", queue_task)
+                self.assertTrue((self.tmpdir / "workspace" / "arc_A01.json").is_file())
 
-            cont = client.post(
-                "/api/novel/continue",
-                json={
-                    "resume": True,
-                    "max_chapters": 1,
-                    "dry_run": True,
-                    "autopilot": False,
-                    "full_book": True,
-                },
-            )
-            self.assertEqual(cont.status_code, 200, cont.text)
+                cont = client.post(
+                    "/api/novel/continue",
+                    json={
+                        "resume": True,
+                        "max_chapters": 1,
+                        "dry_run": True,
+                        "autopilot": False,
+                        "full_book": True,
+                    },
+                )
+                self.assertEqual(cont.status_code, 200, cont.text)
+        finally:
+            web_context._task_manager = None
+            web_server._active_project_id = original_active
+            web_server.BASE_DIR = original_base
+
+    def test_queue_sync_is_deduplicated_and_cancellable(self):
+        original_active = web_server._active_project_id
+        original_base = web_server.BASE_DIR
+
+        async def wait_until_cancelled(*args, **kwargs):
+            await asyncio.sleep(30)
+            return {}
+
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            web_server._active_project_id = None
+            import web.context as web_context
+
+            web_context._task_manager = None
+            _seed_ready(self.tmpdir, with_arcs=False)
+            with TestClient(web_app) as client, patch(
+                "novel_agent.services.rolling_planner.prepare_queue_for_run",
+                new_callable=AsyncMock,
+                side_effect=wait_until_cancelled,
+            ):
+                first = client.post("/api/novel/ensure-queue")
+                second = client.post("/api/novel/ensure-queue")
+                self.assertEqual(first.status_code, 202, first.text)
+                self.assertEqual(second.status_code, 202, second.text)
+                task_id = first.json()["task_id"]
+                self.assertEqual(second.json()["task_id"], task_id)
+
+                abort = client.post(f"/api/chapters/tasks/{task_id}/abort")
+                self.assertEqual(abort.status_code, 200, abort.text)
+                terminal = self._wait_task(client, task_id)
+                self.assertEqual(terminal.get("status"), "cancelled", terminal)
         finally:
             web_context._task_manager = None
             web_server._active_project_id = original_active

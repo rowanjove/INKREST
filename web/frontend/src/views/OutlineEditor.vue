@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { DocumentAdd, Refresh, Tickets, Warning } from '@element-plus/icons-vue'
+
+const props = withDefaults(defineProps<{ advanced?: boolean }>(), {
+  advanced: false,
+})
 import OutlineQueueStatus from '../components/workbench/OutlineQueueStatus.vue'
 import NovelProgressHelp from '../components/NovelProgressHelp.vue'
 import OutlineGenesPanel from '../components/outline/OutlineGenesPanel.vue'
@@ -78,6 +82,26 @@ const {
         </el-button>
       </div>
     </header>
+
+    <!-- 卷纲 / 阶段概览（置于页头后、进度数字前） -->
+    <section v-if="outline && arcs && arcs.length" class="arcs-overview-panel">
+      <div class="arcs-overview-head">
+        <div class="head-left">
+          <h3>卷纲 / 阶段概览</h3>
+          <el-tag size="small" type="info" effect="plain">{{ arcs.length }} 个阶段</el-tag>
+          <span v-if="props.advanced" class="adv-tag">来源: workspace/outline.json</span>
+        </div>
+      </div>
+      <div class="arcs-scroll">
+        <div class="arcs-list">
+          <article v-for="(arc, index) in arcs" :key="index" class="arc-card">
+            <span class="phase-tag">Phase {{ displayIndex(index) }}</span>
+            <strong class="arc-title">{{ arc.title || arc.name || `阶段 ${displayIndex(index)}` }}</strong>
+            <p class="arc-desc">{{ arc.summary || arc.description || arc.goal || arc }}</p>
+          </article>
+        </div>
+      </div>
+    </section>
 
     <NovelProgressHelp />
 
@@ -189,28 +213,100 @@ const {
 .outline-page {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: calc(100vh - 72px);
-  overflow: hidden;
+  gap: 12px;
 }
 
 .mode-switcher {
   margin-right: 2px;
 }
 
-.outline-body {
+.arcs-overview-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 8px);
+  background: var(--color-bg-surface);
+  padding: 12px 14px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03);
+}
+
+.arcs-overview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.head-left h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-strong);
+}
+
+.adv-tag {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-family: ui-monospace, monospace;
+}
+
+.arcs-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.arcs-list {
+  display: flex;
+  gap: 10px;
+}
+
+.arcs-list .arc-card {
+  min-width: 220px;
+  max-width: 320px;
+  flex: 1;
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-md, 6px);
+  padding: 10px 12px;
+  background: var(--color-bg-surface-muted, #f8fafc);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  flex: 1;
-  min-height: 0;
+  gap: 4px;
+}
+
+.phase-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-primary, #2563eb);
+}
+
+.arc-title {
+  font-size: 13px;
+  color: var(--color-text-strong);
+}
+
+.arc-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
+.outline-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .outline-viewport {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+  min-height: 420px;
   display: flex;
   flex-direction: column;
 }

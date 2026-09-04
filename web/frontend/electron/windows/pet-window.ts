@@ -11,7 +11,7 @@ export function createPetWindow(options: {
   apiPort: number;
 }) {
   const { settings, isDev, apiPort } = options;
-  const position = clampPetPosition(settings.position, settings.size);
+  const position = clampPetPosition(settings.position, settings.size, settings.dockedEdge);
   const petWindow = new BrowserWindow({
     width: settings.size,
     height: settings.size,

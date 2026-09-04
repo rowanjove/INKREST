@@ -4,6 +4,7 @@ import json
 from typing import Any, Dict
 
 from novel_agent.agents.base import PromptAgent
+from novel_agent.exceptions import LLMResponseError
 from novel_agent.json_utils import loads_json_object
 from novel_agent.logging_config import get_logger
 
@@ -124,7 +125,7 @@ class ChapterPlannerAgent(PromptAgent):
             return result
         except Exception as exc:
             logger.error("Failed to parse chapter planner output: %s", exc)
-            return self._fallback(chapter_brief)
+            raise LLMResponseError(f"章纲展开无法解析，已中止规划: {exc}") from exc
 
     def expand(
         self, chapter_brief: Dict[str, Any], runtime_context: str = ""
@@ -153,6 +154,9 @@ class ChapterPlannerAgent(PromptAgent):
 
         # Validate beats
         beats = result.get("beats", [])
+        chapter_number = self._chapter_number(chapter_id)
+        if chapter_number in (1, 2, 3):
+            self._assert_golden_three_beats(beats, chapter_number)
         if not beats or not isinstance(beats, list):
             result["beats"] = [{
                 "beat_id": "B01",
@@ -180,6 +184,27 @@ class ChapterPlannerAgent(PromptAgent):
         result["handoff_to_scene_planner"] = handoff
 
         return result
+
+    @staticmethod
+    def _chapter_number(chapter_id: Any) -> int:
+        text = str(chapter_id or "")
+        digits = "".join(ch for ch in text if ch.isdigit())
+        try:
+            return int(digits) if digits else 1
+        except ValueError:
+            return 1
+
+    @staticmethod
+    def _assert_golden_three_beats(beats: Any, chapter_number: int) -> None:
+        valid = [
+            item
+            for item in (beats or [])
+            if isinstance(item, dict) and str(item.get("content") or "").strip()
+        ]
+        if len(valid) < 2:
+            raise LLMResponseError(
+                f"黄金三章（第 {chapter_number} 章）规划至少需要两个有内容的节拍，已中止规划"
+            )
 
     def _fallback(self, brief: Dict[str, Any]) -> Dict[str, Any]:
         """Return a minimal valid expansion when LLM fails."""

@@ -39,6 +39,8 @@ class CostTracker:
                 )
             self.orchestrator._round_tokens_acc = int(getattr(self.orchestrator, "_round_tokens_acc", 0) or 0) + round_tokens
             for log in logs:
+                if log.get("persisted"):
+                    continue
                 model_name = log.get("model", "")
                 prompt_tokens = log.get("prompt_tokens", 0)
                 completion_tokens = log.get("completion_tokens", 0)
@@ -46,7 +48,7 @@ class CostTracker:
                 input_cost = usd_to_cny((prompt_tokens / 1000) * in_price)
                 output_cost = usd_to_cny((completion_tokens / 1000) * out_price)
 
-                call_id = f"call_{uuid.uuid4().hex[:8]}"
+                call_id = str(log.get("call_id") or f"call_{uuid.uuid4().hex}")
                 self.orchestrator.store.log_llm_cost(
                     call_id=call_id,
                     model=model_name,
@@ -54,7 +56,11 @@ class CostTracker:
                     output_tokens=completion_tokens,
                     input_cost=input_cost,
                     output_cost=output_cost,
-                    project_id=str(self.orchestrator.root_dir.name)
+                    project_id=str(self.orchestrator.root_dir.name),
+                    role=str(log.get("role") or ""),
+                    outcome=str(log.get("outcome") or "succeeded"),
+                    finish_reason=str(log.get("finish_reason") or ""),
+                    provider_request_id=str(log.get("provider_request_id") or ""),
                 )
 
             self.clear_call_logs()

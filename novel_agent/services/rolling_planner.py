@@ -233,6 +233,36 @@ async def ensure_initial_arcs(
     outline["macro_outline"] = macro
 
     written = 0
+    if scale not in ("short", "medium", "micro"):
+        # Long-form macro arcs commonly span 40-100+ chapters. Asking the LLM
+        # to emit an entire arc as one JSON object causes slow, empty, or
+        # truncated responses. Seed only the rolling planning window; later
+        # runs replenish the same queue as chapters are consumed.
+        planning_window = max(1, int(profile.get("planning_window") or 20))
+        first_arc = dict(macro[0])
+        start, arc_end = _parse_chapter_range(first_arc.get("chapters", "1-1"))
+        end = min(arc_end, target, start + planning_window - 1)
+        first_arc["chapters"] = f"{start}-{end}"
+        window_outline = copy.deepcopy(outline)
+        window_outline["macro_outline"] = [first_arc]
+        await _raise_if_cancelled(cancel_check)
+        if status_callback:
+            status_callback(f"主编规划首个滚动窗口（{start}-{end}）…")
+        if hasattr(orchestrator.managing_editor, "asplit_chapters"):
+            arc_result = await orchestrator.managing_editor.asplit_chapters(
+                window_outline, arc_index=0
+            )
+        else:
+            arc_result = orchestrator.managing_editor.split_chapters(
+                window_outline, arc_index=0
+            )
+        arc_result.setdefault("arc_id", first_arc.get("arc_id", "A01"))
+        arc_result["chapters"] = list(arc_result.get("chapters") or [])[
+            : end - start + 1
+        ]
+        _write_arc(root, arc_result)
+        return 1
+
     limit = len(macro) if scale in ("short", "medium", "micro") else min(max_macro_arcs, len(macro))
     for i in range(limit):
         await _raise_if_cancelled(cancel_check)

@@ -6,14 +6,17 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 const analyze = process.env.ANALYZE === '1' || process.env.ANALYZE === 'true'
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ command }) => {
+  const isBuild = command === 'build'
   const plugins = [
     vue(),
     AutoImport({
       resolvers: [ElementPlusResolver()],
+      dts: isBuild ? false : true,
     }),
     Components({
       resolvers: [ElementPlusResolver()],
+      dts: isBuild ? false : true,
     }),
   ]
 

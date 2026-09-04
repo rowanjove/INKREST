@@ -253,7 +253,10 @@ class SQLiteEmbeddingVectorStore(VectorStore):
         self, base_url: str, api_key: str, model: str, texts: List[str]
     ) -> np.ndarray:
         import time
-        url = f"{base_url.rstrip('/')}/embeddings"
+        from web.security import validate_outbound_model_base_url
+
+        safe_base = validate_outbound_model_base_url(str(base_url or "").strip())
+        url = f"{safe_base}/embeddings"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}"

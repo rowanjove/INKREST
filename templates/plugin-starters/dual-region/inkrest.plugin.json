@@ -1,0 +1,34 @@
+{
+  "manifest_version": "0.2.0",
+  "id": "dual-region-starter",
+  "version": "1.0.0",
+  "name": "双区域套件模版",
+  "display_name": "双区域套件模版",
+  "description": "同时为书库管理与作品创作提供辅助面板的插件套件",
+  "author": "Inkrest Community",
+  "plugin_type": "web_extension",
+  "entry": "plugin:DualRegionPlugin",
+  "capabilities": ["project_catalog_read", "project_read", "ui_embed"],
+  "contributes": {
+    "navigation": [
+      {
+        "id": "global-preset-hub",
+        "title": "公共预设仓库",
+        "surface": "library_sidebar",
+        "view": "hub-view",
+        "icon": "collection",
+        "order": 120,
+        "requires": ["project_catalog_read"]
+      },
+      {
+        "id": "project-preset-binder",
+        "title": "作品预设绑定",
+        "surface": "project_sidebar",
+        "view": "binder-view",
+        "icon": "tools",
+        "order": 120,
+        "requires": ["project_read"]
+      }
+    ]
+  }
+}

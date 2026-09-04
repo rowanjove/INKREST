@@ -44,7 +44,7 @@ class ModelLibrary:
             "base_url": "https://api.deepseek.com/v1",
             "api_key": "",
             "model": "deepseek-v4-flash",
-            "max_tokens": 8192,
+            "max_tokens": 16384,
             "temperature": 0.7,
             "timeout": 120,
             "proxy": "",
@@ -55,7 +55,7 @@ class ModelLibrary:
             "base_url": "https://api.deepseek.com/v1",
             "api_key": "",
             "model": "deepseek-v4-pro",
-            "max_tokens": 8192,
+            "max_tokens": 16384,
             "temperature": 0.6,
             "timeout": 180,
             "proxy": "",
@@ -82,12 +82,18 @@ class ModelLibrary:
     }
 
     def __init__(self, root_dir: Path):
-        self.root_dir = root_dir
-        grandparent = Path(root_dir).parent.parent
-        if (grandparent / "projects.json").exists():
-            global_config = grandparent / "config"
+        self.root_dir = Path(root_dir)
+        global_dir = resolve_global_config_dir(self.root_dir)
+        if global_dir:
+            global_config = global_dir
+        elif (self.root_dir / "projects.json").exists():
+            global_config = self.root_dir / "config"
         else:
-            global_config = Path(root_dir) / "config"
+            grandparent = self.root_dir.parent.parent
+            if (grandparent / "projects.json").exists():
+                global_config = grandparent / "config"
+            else:
+                global_config = self.root_dir / "config"
         self.config_path = global_config / "models.json"
 
     def _load(self) -> Dict[str, Any]:
@@ -116,6 +122,21 @@ class ModelLibrary:
         data.setdefault("slots", _default_slots())
         models = data.setdefault("models", {})
         changed = False
+        project_config = self.root_dir / "config" / "models.json"
+        if project_config.is_file() and project_config.resolve() != self.config_path.resolve():
+            try:
+                p_data = json.loads(project_config.read_text(encoding="utf-8"))
+                if isinstance(p_data, dict):
+                    p_models = p_data.get("models") or {}
+                    if isinstance(p_models, dict):
+                        models.update(p_models)
+                    p_slots = p_data.get("slots")
+                    if isinstance(p_slots, dict):
+                        for k, v in p_slots.items():
+                            if v:
+                                slots[k] = v
+            except (json.JSONDecodeError, OSError):
+                pass
         for model_id, default in self.DEFAULT_MODELS.items():
             if model_id not in models:
                 models[model_id] = copy.deepcopy(default)
@@ -290,6 +311,8 @@ class ModelLibrary:
                 entry["api_key"] = existing["api_key"]
             else:
                 entry.pop("api_key", None)
+        if entry.get("base_url"):
+            entry["base_url"] = _validated_model_base_url(str(entry.get("base_url")))
         data["models"][model_id] = entry
         self._save(data)
         saved = {"id": model_id, **entry}

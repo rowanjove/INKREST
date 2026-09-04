@@ -262,6 +262,60 @@ class OrchestratorTests(unittest.TestCase):
         gate = ApprovalGate(interactive=False)
         self.assertTrue(gate.request_approval("001", self.tmpdir))
 
+    def test_approval_gate_strict_mode_rejects_high_risk_and_empty(self):
+        (self.tmpdir / "config").mkdir(parents=True, exist_ok=True)
+        (self.tmpdir / "config" / "project_meta.json").write_text(
+            json.dumps({"factory_mode": "newbie_auto"}),
+            encoding="utf-8",
+        )
+        chapter = self.tmpdir / "workspace" / "chapters" / "chapter_001"
+        reports = chapter / "reports"
+        reports.mkdir(parents=True)
+        gate = ApprovalGate(interactive=False, root_dir=self.tmpdir)
+
+        self.assertFalse(gate.request_approval("001", chapter))
+
+        (chapter / "chapter_final.txt").write_text("林澈推开门走了进去。", encoding="utf-8")
+        (reports / "audit.json").write_text(
+            json.dumps({"status": "ok", "risk_level": "高"}),
+            encoding="utf-8",
+        )
+        self.assertFalse(gate.request_approval("001", chapter))
+
+        (reports / "audit.json").write_text(
+            json.dumps({"status": "ok", "risk_level": "低"}),
+            encoding="utf-8",
+        )
+        self.assertTrue(gate.request_approval("001", chapter))
+
+    def test_approval_gate_strict_mode_reads_sqlite_when_disk_empty(self):
+        from novel_agent.services.manuscript_documents import plain_text_to_tiptap
+        from novel_agent.state.sqlite_store import SQLiteStateStore
+
+        (self.tmpdir / "config").mkdir(parents=True, exist_ok=True)
+        (self.tmpdir / "config" / "project_meta.json").write_text(
+            json.dumps({"factory_mode": "newbie_auto"}),
+            encoding="utf-8",
+        )
+        chapter = self.tmpdir / "workspace" / "chapters" / "chapter_002"
+        reports = chapter / "reports"
+        reports.mkdir(parents=True)
+        (reports / "audit.json").write_text(
+            json.dumps({"status": "ok", "risk_level": "低"}),
+            encoding="utf-8",
+        )
+        store = SQLiteStateStore(self.tmpdir)
+        store.create_manuscript_document(
+            chapter_id="002",
+            title="第二章",
+            content_json=plain_text_to_tiptap("林澈推开门走了进去。"),
+            plain_text="林澈推开门走了进去。",
+            markdown_text="林澈推开门走了进去。",
+            source="test",
+        )
+        gate = ApprovalGate(interactive=False, root_dir=self.tmpdir)
+        self.assertTrue(gate.request_approval("002", chapter))
+
     def test_approval_gate_creates_instance_with_interactive_flag(self):
         gate = ApprovalGate(interactive=True)
         self.assertTrue(gate.interactive)
@@ -353,13 +407,13 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(outline["protagonist"]["name"], "林澈")
         self.assertEqual(outline["title_options"][0], "《测试小说》")
 
-    def test_chief_editor_fallback_on_parse_error(self):
+    def test_chief_editor_raises_on_parse_error(self):
         from novel_agent.agents.chief_editor import ChiefEditorAgent
+        from novel_agent.exceptions import LLMResponseError
         llm = StaticLLM({"chief_editor": "这不是JSON"})
         agent = ChiefEditorAgent(llm)
-        outline = agent.plan_novel("测试", "玄幻", 5)
-        self.assertIn("macro_outline", outline)
-        self.assertIn("protagonist", outline)
+        with self.assertRaises(LLMResponseError):
+            agent.plan_novel("测试", "玄幻", 5)
 
     def test_managing_editor_splits_chapters(self):
         from novel_agent.agents.managing_editor import ManagingEditorAgent
@@ -384,6 +438,30 @@ class OrchestratorTests(unittest.TestCase):
         }
         result = agent.split_chapters(outline)
         self.assertEqual(len(result["chapters"]), 2)
+        self.assertEqual(result["chapters"][0]["chapter_id"], "001")
+
+    def test_managing_editor_retries_malformed_output(self):
+        from novel_agent.agents.managing_editor import ManagingEditorAgent
+
+        valid = json.dumps({
+            "arc_id": "A01",
+            "chapters": [{"chapter_id": "001", "chapter_goal": "开局"}],
+        }, ensure_ascii=False)
+
+        class FlakyLLM:
+            def __init__(self):
+                self.calls = 0
+
+            def generate(self, role, prompt):
+                self.calls += 1
+                return '{"chapters": [' if self.calls == 1 else valid
+
+        llm = FlakyLLM()
+        agent = ManagingEditorAgent(llm)
+        result = agent.split_chapters({
+            "macro_outline": [{"arc_id": "A01", "name": "开局", "goal": "立住主线"}],
+        })
+        self.assertEqual(llm.calls, 2)
         self.assertEqual(result["chapters"][0]["chapter_id"], "001")
 
     def test_chapter_planner_expands_brief(self):
@@ -504,6 +582,33 @@ class OrchestratorTests(unittest.TestCase):
 
         self.assertEqual(report["status"], "failed")
         self.assertIn("embedding down", report["error"])
+
+    def test_vector_index_replaces_previous_chapter_chunks(self):
+        class RecordingVectorStore:
+            def __init__(self):
+                self.deleted = []
+
+            def delete_chapter_vectors(self, chapter_id):
+                self.deleted.append(chapter_id)
+
+            def upsert(self, chunks):
+                return len(chunks)
+
+        config = PipelineConfig(root_dir=self.tmpdir, llm=StaticLLM({}))
+        orchestrator = NovelOrchestrator(config)
+        store = RecordingVectorStore()
+        orchestrator.vector_store = store
+        chapter_dir = self.tmpdir / "workspace" / "chapters" / "chapter_001" / "reports"
+        chapter_dir.mkdir(parents=True)
+
+        orchestrator.chapter_post._index_to_vector_store(
+            "001",
+            {},
+            "第一段正文",
+            "章节总结",
+            {"events": [{"id": "E-old", "summary": "旧事件"}]},
+        )
+        self.assertEqual(store.deleted, ["001"])
 
     def test_chief_editor_outline_contains_genre_genes(self):
         from novel_agent.agents.chief_editor import ChiefEditorAgent

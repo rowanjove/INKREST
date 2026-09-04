@@ -197,6 +197,29 @@ def test_generated_text_updates_authoritative_document(tmp_path):
     assert SQLiteStateStore(tmp_path).get_manuscript_document("001")["plain_text"] == "生成后的正文"
 
 
+def test_generated_plain_text_argument_wins_over_stale_disk(tmp_path):
+    chapter_dir = tmp_path / "workspace" / "chapters" / "chapter_001"
+    chapter_dir.mkdir(parents=True)
+    final_path = chapter_dir / "chapter_final.txt"
+    final_path.write_text("磁盘旧稿", encoding="utf-8")
+    (chapter_dir / "plan.json").write_text(
+        json.dumps({"chapter_title": "第一章"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    current = ensure_manuscript_document(tmp_path, "001")
+
+    updated = sync_generated_manuscript_document(
+        tmp_path,
+        chapter_id="001",
+        final_path=final_path,
+        expected_revision=current["revision"],
+        plain_text="门禁改写后的正文",
+    )
+
+    assert updated["plain_text"] == "门禁改写后的正文"
+    assert final_path.read_text(encoding="utf-8") == "门禁改写后的正文"
+
+
 def test_generated_text_does_not_overwrite_a_concurrent_manual_edit(tmp_path):
     chapter_dir = tmp_path / "workspace" / "chapters" / "chapter_001"
     chapter_dir.mkdir(parents=True)
@@ -252,6 +275,29 @@ def test_apply_plain_text_updates_authoritative_document(tmp_path):
     assert document["plain_text"] == "回滚稿"
     assert document["title"] == "第三章·回滚"
     assert (chapter_dir / "chapter_final.txt").read_text(encoding="utf-8") == "回滚稿"
+
+
+def test_apply_plain_text_same_content_does_not_create_revision(tmp_path):
+    from novel_agent.services.manuscript_workspace import apply_plain_text_to_manuscript
+
+    chapter_dir = tmp_path / "workspace" / "chapters" / "chapter_004"
+    chapter_dir.mkdir(parents=True)
+    (chapter_dir / "chapter_final.txt").write_text("同一段", encoding="utf-8")
+    first = apply_plain_text_to_manuscript(
+        tmp_path,
+        chapter_id="004",
+        plain_text="同一段",
+        title="第四章",
+        source="version",
+    )
+    second = apply_plain_text_to_manuscript(
+        tmp_path,
+        chapter_id="004",
+        plain_text="同一段",
+        title="第四章",
+        source="version",
+    )
+    assert first["revision"] == second["revision"]
 
 
 def test_task_manager_sync_reports_conflict_without_raising(tmp_path):

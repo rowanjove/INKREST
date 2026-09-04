@@ -27,6 +27,7 @@ ALLOW_REMOTE_ENV = "NOVEL_AGENT_ALLOW_REMOTE"
 DISABLE_LOCAL_TOKEN_ENV = "NOVEL_AGENT_DISABLE_LOCAL_TOKEN"
 LOCAL_TOKEN_FILENAME = ".local_access_token"
 PUBLIC_API_PATHS = frozenset({"/api/health", "/api/auth/local-setup"})
+PROTECTED_DOC_PATHS = frozenset({"/docs", "/redoc", "/openapi.json"})
 ALLOW_RUNTIME_INSTALL_ENV = "NOVEL_AGENT_ALLOW_RUNTIME_INSTALL"
 ALLOW_PRIVATE_MODEL_ENDPOINTS_ENV = "NOVEL_AGENT_ALLOW_PRIVATE_MODEL_ENDPOINTS"
 
@@ -40,6 +41,19 @@ def _tokens_match(supplied: str, expected: str) -> bool:
     return hmac.compare_digest(supplied, expected)
 
 
+def is_allowed_local_setup_host(host: str) -> bool:
+    """True for loopback Host/Origin names used by the desktop client and tests."""
+    normalized = (host or "").strip().lower()
+    if normalized.startswith("[") and normalized.endswith("]"):
+        normalized = normalized[1:-1]
+    if normalized in {"127.0.0.1", "localhost", "::1", "testserver", "testclient"}:
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
 def is_trusted_local_setup_request(request: Request) -> bool:
     """Reject cross-site fetches that try to steal the loopback access token."""
     if request.headers.get(LOCAL_SETUP_HEADER) != LOCAL_SETUP_HEADER_VALUE:
@@ -47,6 +61,21 @@ def is_trusted_local_setup_request(request: Request) -> bool:
     sec_fetch_site = request.headers.get("sec-fetch-site", "").strip().lower()
     if sec_fetch_site and sec_fetch_site not in ("same-origin", "same-site", "none"):
         return False
+    host_header = (request.headers.get("host") or "").split("/")[0].strip()
+    if host_header.startswith("["):
+        end = host_header.find("]")
+        hostname = host_header[1:end] if end != -1 else host_header
+    elif host_header.count(":") == 1:
+        hostname = host_header.rsplit(":", 1)[0]
+    else:
+        hostname = host_header
+    if not is_allowed_local_setup_host(hostname):
+        return False
+    origin = (request.headers.get("origin") or "").strip()
+    if origin:
+        parsed = urlparse(origin)
+        if parsed.hostname and not is_allowed_local_setup_host(parsed.hostname):
+            return False
     return True
 
 
@@ -111,7 +140,7 @@ def is_dev_model_host(host: str) -> bool:
         return False
     if normalized in ("test", "testserver", "invalid", "localhost"):
         return True
-    return normalized.endswith((".test", ".invalid", ".localhost"))
+    return normalized.endswith((".test", ".invalid", ".localhost", ".example"))
 
 
 def is_loopback_host(host: str) -> bool:
@@ -147,6 +176,8 @@ def validate_outbound_model_base_url(raw_url: str) -> str:
     try:
         addr_infos = socket.getaddrinfo(host, None)
     except socket.gaierror as exc:
+        if is_dev_model_host(host):
+            return url.rstrip("/")
         raise ValueError(f"Model endpoint host cannot be resolved: {host}") from exc
     resolved_ips = [ipaddress.ip_address(info[4][0]) for info in addr_infos]
     is_loopback = bool(resolved_ips) and all(ip.is_loopback for ip in resolved_ips)
@@ -175,20 +206,66 @@ def enforce_remote_auth_at_startup() -> None:
         )
 
 
+def _path_requires_access_token(path: str) -> bool:
+    if path in PUBLIC_API_PATHS:
+        return False
+    if path.startswith("/api/"):
+        return True
+    if path in PROTECTED_DOC_PATHS or path.startswith("/docs") or path.startswith("/redoc"):
+        return True
+    return False
+
+
 class AccessTokenMiddleware(BaseHTTPMiddleware):
-    """Require a token for API requests whenever remote access is configured."""
+    """Require a token for API and docs whenever an access token is configured."""
 
     async def dispatch(self, request: Request, call_next):
         expected = os.environ.get(ACCESS_TOKEN_ENV, "")
-        if (
-            expected
-            and request.url.path.startswith("/api/")
-            and request.url.path not in PUBLIC_API_PATHS
-        ):
+        if expected and _path_requires_access_token(request.url.path):
             supplied = request.headers.get(ACCESS_TOKEN_HEADER, "")
             if not _tokens_match(supplied, expected):
                 return JSONResponse({"detail": "Invalid or missing access token"}, status_code=401)
         return await call_next(request)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Attach conservative browser isolation headers to local HTTP responses."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        path = request.url.path
+        if path.startswith("/api/") or path == "/openapi.json":
+            response.headers.setdefault("X-Frame-Options", "DENY")
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'none'; frame-ancestors 'none'",
+            )
+        elif path in PROTECTED_DOC_PATHS or path.startswith("/docs") or path.startswith("/redoc"):
+            response.headers.setdefault("X-Frame-Options", "DENY")
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "img-src 'self' data: https://cdn.jsdelivr.net; "
+                "connect-src 'self'; "
+                "frame-ancestors 'none'",
+            )
+        else:
+            response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: blob:; "
+                "font-src 'self' data:; "
+                "connect-src 'self' ws: wss:; "
+                "frame-src 'self' blob:;",
+            )
+        return response
 
 
 def websocket_has_access_token(ws: WebSocket) -> bool:
@@ -216,7 +293,7 @@ async def authorize_websocket(ws: WebSocket) -> bool:
         return True
     await ws.accept()
     try:
-        raw = await asyncio.wait_for(ws.receive_text(), timeout=15.0)
+        raw = await asyncio.wait_for(ws.receive_text(), timeout=2.0)
         data = json.loads(raw)
         if data.get("type") == "auth" and _tokens_match(str(data.get("token") or ""), expected):
             return True

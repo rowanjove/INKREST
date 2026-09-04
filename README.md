@@ -2,6 +2,8 @@
 
 **多 Agent 长篇小说创作与生产工作台。**
 
+开发与架构的现行入口是 [PROJECT.md](PROJECT.md)。历史路线图已归档，不以打勾清单当待办。
+
 栖墨不是一个“输入一句话、返回一段正文”的聊天壳。它把开书策划、章节生产、长篇记忆、去 AI 味、连续性检查、质量门禁、自动修章和多格式发布组织成一条可观察、可暂停、可人工介入的生产流水线。
 
 > 从灵感到长篇：自动规划、辅助续写、审校修复，作者始终保留最终决定权。
@@ -135,6 +137,7 @@ Copy-Item config\pipeline.yaml.example config\pipeline.yaml
 ```
 
 在 `config/pipeline.yaml` 或 `config/models.json` 中填写模型地址、模型名与密钥。这两个文件以及 `.env` 已被忽略，不应提交。
+工作台会在提交真实生成前检查远程模型凭据；仅填写 provider 不会被当作“可生成”。本机 Ollama/vLLM 等 loopback 服务可不填写 API Key。
 
 ### 启动网页工作台
 

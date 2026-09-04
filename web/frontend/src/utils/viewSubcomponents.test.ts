@@ -154,10 +154,11 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('onFactoryRepair')
   })
 
-  it('usePetBubbleView jumps to pipeline after factory repair', () => {
+  it('usePetBubbleView sends factory repair through production confirmation', () => {
     const source = read('composables/usePetBubbleView.ts')
-    expect(source).toContain("navigate('/workspace?focus=pipeline')")
-    expect(source).toContain('auto_repair_chapter')
+    expect(source).toContain('sanitizePetAction')
+    expect(source).toContain('/production?tab=reviews&chapter=')
+    expect(source).not.toContain("navigate('/workspace?focus=pipeline')")
   })
 
   it('PetBubbleChatTab keeps welcome card modifier', () => {
@@ -199,6 +200,8 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('内容摘要 SHA-256')
     expect(source).toContain('capability_details')
     expect(source).toContain('trustAcknowledged')
+    expect(source).toContain('localCodeAcknowledged')
+    expect(source).toContain('local_code')
     expect(source).toContain('仅建立信任')
     expect(source).toContain('install-dropzone')
     expect(source).toContain('inkrest.plugin.json')
@@ -209,6 +212,36 @@ describe('refactored view subcomponents', () => {
     const source = read('router.ts')
     expect(source).toContain("redirect: '/create?welcome=1'")
     expect(source).toContain("redirect: '/create?source=template'")
+  })
+
+  it('CommandPalette searches plugin navigation contributions', () => {
+    const source = read('app/commands/CommandPalette.vue')
+    expect(source).toContain('commandsFromPluginNavigation')
+    expect(source).toContain('pluginNav.fetchNavigation')
+  })
+
+  it('plugin manager refreshes sidebar navigation after install', () => {
+    const source = read('composables/usePluginManager.ts')
+    expect(source).toContain('pluginNav.fetchNavigation()')
+    expect(source.split('pluginNav.fetchNavigation()').length).toBeGreaterThan(3)
+  })
+
+  it('OutlineView consumes the post-create welcome query', () => {
+    const source = read('views/OutlineView.vue')
+    expect(source).toContain("route.query.welcome")
+    expect(source).toContain('作品骨架已建好')
+  })
+
+  it('QualityCenter uses V2 PageShell and ErrorState', () => {
+    const source = read('views/QualityCenter.vue')
+    expect(source).toContain('PageShell')
+    expect(source).toContain('ErrorState')
+    expect(source).toContain('ElMessageBox')
+    expect(source).not.toContain('window.confirm')
+    expect(source).toContain('</PageShell>')
+    expect(source).not.toContain('</main>')
+    expect(source).not.toContain('低于 6 分不进入终稿')
+    expect(source).toContain('自动化生产仅在 L0 硬门未过时阻断')
   })
 
   it('PublishingCenter unifies preview, platform feedback, and export', () => {
@@ -333,4 +366,30 @@ describe('refactored view subcomponents', () => {
     const router = read('router.ts')
     expect(router.replace(/\s/g, '')).toContain("path:'/logs',redirect:{path:'/production',query:{tab:'logs'}}")
   })
+
+  it('Dashboard wires DashboardPipelineBar for quick generation control', () => {
+    const dashboard = read('views/Dashboard.vue')
+    expect(dashboard).toContain('DashboardPipelineBar')
+    expect(dashboard).toContain('tasksStore.startPolling()')
+
+    const bar = read('components/dashboard/DashboardPipelineBar.vue')
+    expect(bar).toContain('生产流水线')
+    expect(bar).toContain('开始生产')
+    expect(bar).toContain('暂停')
+    expect(bar).toContain('取消')
+    expect(bar).toContain('is-loading')
+    expect(bar).toContain('CircleCheckFilled')
+  })
+
+  it('PluginMetricsCards uses compact pill badge format', () => {
+    const pluginManager = read('views/PluginManager.vue')
+    expect(pluginManager).toContain('title-with-metrics')
+    expect(pluginManager).toContain('PluginMetricsCards')
+
+    const cards = read('components/plugin/PluginMetricsCards.vue')
+    expect(cards).toContain('metric-pill')
+    expect(cards).toContain('已装插件')
+    expect(cards).toContain('启用运行中')
+  })
 })
+

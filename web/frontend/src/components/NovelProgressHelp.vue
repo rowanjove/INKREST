@@ -10,7 +10,8 @@ const progress = computed(() => snapshot.value)
 
 <template>
   <details class="progress-help panel">
-    <summary>
+    <summary tabindex="0" role="button" aria-label="切换进度数字解释折叠状态">
+      <span class="chevron">▶</span>
       <span>进度数字怎么理解？</span>
       <el-tag v-if="(progress?.pending_total ?? 0) > 0" type="danger" size="small" effect="plain">
         待处理 {{ progress?.pending_total }}
@@ -88,6 +89,15 @@ const progress = computed(() => snapshot.value)
 
 .progress-help summary::-webkit-details-marker {
   display: none;
+}
+.chevron {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+details[open] .chevron {
+  transform: rotate(90deg);
 }
 
 .body {

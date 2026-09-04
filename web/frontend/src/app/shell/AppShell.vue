@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { useProjectStore } from '../../stores/project'
 import { useProjectSnapshotStore } from '../../stores/projectSnapshot'
@@ -20,6 +20,7 @@ const props = defineProps<{
 }>()
 
 const route = useRoute()
+const router = useRouter()
 const projectStore = useProjectStore()
 const snapshotStore = useProjectSnapshotStore()
 const diagnosticsRequested = ref(false)
@@ -35,9 +36,14 @@ const refreshSnapshot = () => {
 
 watch(
   () => projectStore.currentProject?.id,
-  (projectId) => {
+  (projectId, previousId) => {
     snapshotStore.invalidate(projectId || null)
     if (projectId) void snapshotStore.refresh(projectId)
+    if (previousId && previousId !== projectId && 'chapter' in route.query) {
+      const query = { ...route.query }
+      delete query.chapter
+      void router.replace({ query })
+    }
   },
   { immediate: true },
 )
@@ -74,7 +80,9 @@ onBeforeUnmount(() => {
     <section class="app-content">
       <AppTopbar @open-command="openCommand" />
       <main class="app-workspace" :class="{ 'app-workspace--full': route.meta.fullBleed }">
-        <router-view />
+        <router-view
+          :key="route.meta.scope === 'project' ? (projectStore.currentProject?.id || route.path) : route.path"
+        />
       </main>
     </section>
     <CommandPalette v-if="commandOpen" v-model="commandOpen" />

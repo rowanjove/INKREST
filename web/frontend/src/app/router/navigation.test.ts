@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  ADVANCED_PROJECT_NAV_ITEMS,
   GLOBAL_NAV_ITEMS,
   PROJECT_NAV_ITEMS,
   routeFallback,
@@ -17,7 +18,7 @@ describe('V2 navigation contract', () => {
     ])
   })
 
-  it('keeps the project shell fixed to six product centers', () => {
+  it('keeps six core centers in project navigation with quality directly accessible', () => {
     expect(PROJECT_NAV_ITEMS.map((item) => item.label)).toEqual([
       '概览',
       '策划',
@@ -27,6 +28,7 @@ describe('V2 navigation contract', () => {
       '发布',
     ])
     expect(new Set(PROJECT_NAV_ITEMS.map((item) => item.path)).size).toBe(6)
+    expect(ADVANCED_PROJECT_NAV_ITEMS).toEqual([])
   })
 
   it('only redirects project-scoped routes when no project is hydrated', () => {

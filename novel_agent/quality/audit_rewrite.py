@@ -30,6 +30,9 @@ def audit_requires_rewrite(
     """True when chapter text should enter the adaptive rewrite loop."""
     if not isinstance(audit, dict):
         return False
+    status = str(audit.get("status") or "ok").strip().lower()
+    if status in {"error", "incomplete", "unknown"}:
+        return False
 
     strict_gate = False
     if quality_mode:

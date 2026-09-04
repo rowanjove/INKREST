@@ -49,11 +49,41 @@ class LengthFixAgent(PromptAgent):
         ).strip()
         return prompt, role, False, ""
 
+    def _guard_output(self, original: str, candidate: str, *, expanding: bool) -> str:
+        from novel_agent.quality.render_contract import (
+            build_render_contract,
+            validate_render_candidate,
+        )
+
+        cleaned = str(candidate or "").strip()
+        if not cleaned:
+            return original
+        if expanding:
+            contract = build_render_contract(
+                original,
+                min_length_ratio=0.8,
+                max_length_ratio=20.0,
+            )
+        else:
+            contract = build_render_contract(
+                original,
+                min_length_ratio=0.05,
+                max_length_ratio=1.2,
+            )
+        validation = validate_render_candidate(original, cleaned, contract)
+        if validation.get("blocking"):
+            logger.warning(
+                "length_fix output rejected (%s); keeping original text",
+                ", ".join(validation.get("reasons") or []),
+            )
+            return original
+        return cleaned
+
     def adjust(self, text: str, target_range) -> str:
         prompt, role, should_skip, text_if_skipped = self._build_prompt_and_role(text, target_range)
         if should_skip:
             return text_if_skipped
-        return self.llm.generate(role, prompt).strip()
+        return self._guard_output(text, self.llm.generate(role, prompt), expanding=(role == "expander"))
 
     async def aadjust(self, text: str, target_range) -> str:
         prompt, role, should_skip, text_if_skipped = self._build_prompt_and_role(text, target_range)
@@ -63,4 +93,4 @@ class LengthFixAgent(PromptAgent):
             res = await self.llm.agenerate(role, prompt)
         else:
             res = self.llm.generate(role, prompt)
-        return res.strip()
+        return self._guard_output(text, res, expanding=(role == "expander"))

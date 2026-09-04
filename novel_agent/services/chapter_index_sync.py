@@ -176,6 +176,27 @@ def _index_one_chapter(
             gate_status=gate_status,
             indexed_at=indexed_at,
         )
+        if final_text.strip():
+            try:
+                if store.get_manuscript_document(chapter_id) is None:
+                    from novel_agent.services.manuscript_workspace import (
+                        sync_chapter_manuscript_document,
+                    )
+
+                    sync_chapter_manuscript_document(
+                        chapter_dir.parents[2],
+                        chapter_id,
+                        text=final_text,
+                        title=title,
+                        store=store,
+                        source="import",
+                    )
+            except Exception as exc:
+                logger.debug(
+                    "Failed to sync manuscript document for chapter %s: %s",
+                    chapter_id,
+                    exc,
+                )
         return True
     except Exception as exc:
         logger.error("Failed to index chapter %s: %s", chapter_id, exc)

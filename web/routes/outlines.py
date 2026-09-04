@@ -715,66 +715,20 @@ def get_arc_progress(session: ProjectSession = Depends(get_project_session)) -> 
     }
 
 
-@router.post("/api/novel/ensure-queue")
+@router.post("/api/novel/ensure-queue", status_code=202)
 async def ensure_novel_queue(request: Request, session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
     session = coerce_project_session(session)
-    """Build or replenish arc chapter queue without rewriting the macro outline."""
-    import logging
-
-    from novel_agent.pipeline import PipelineConfig
-    from novel_agent.orchestrator import NovelOrchestrator
-    from novel_agent.services.rolling_planner import prepare_queue_for_run
-
+    """Build or replenish arc chapter queue asynchronously via TaskManager."""
     root = session.root_dir
     outline_path = root / "workspace" / "outline.json"
     if not outline_path.exists():
         raise HTTPException(400, "未找到作品大纲，请先生成大纲。")
-    log = logging.getLogger("web.outlines")
 
-    async def _client_cancelled() -> bool:
-        return await request.is_disconnected()
-
-    from web.runtime_log_buffer import append_runtime_log
-
-    def _push_status(message: str) -> None:
-        append_runtime_log(
-            {"message": message, "step": "ensure_queue", "level": "info", "source": "web"}
-        )
-
-    try:
-        log.info("ensure-queue: start (may call managing_editor LLM for arc split)")
-        _push_status("同步卷队列开始（首次可能调用主编拆章，请稍候）…")
-        config = PipelineConfig.from_config(root)
-        orchestrator = NovelOrchestrator(config)
-        stats = await prepare_queue_for_run(
-            orchestrator,
-            cancel_check=_client_cancelled,
-            status_callback=_push_status,
-        )
-        _push_status(
-            "同步卷队列完成"
-            f"（新建卷 {stats.get('arcs_created', 0)}，补章 {stats.get('briefs_added', 0)}，"
-            f"待写 {stats.get('pending_briefs', 0)}）"
-        )
-        log.info("ensure-queue: done %s", stats)
-    except InterruptedError as exc:
-        log.info("ensure-queue: cancelled (%s)", exc)
-        _push_status("同步卷队列已取消")
-        raise HTTPException(499, "同步卷队列已取消。") from exc
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logging.getLogger("web.outlines").exception("ensure-queue failed")
-        raise HTTPException(
-            500,
-            f"同步卷队列失败：{exc}。请检查设置中的模型配置，或查看日志中心任务流水。",
-        ) from exc
-    from novel_agent.services.outline_sync import mark_arcs_synced_with_outline
-
-    sync_meta = mark_arcs_synced_with_outline(root)
-    return {"status": "ok", "arc_sync": sync_meta, **stats}
+    task_id = await task_manager_for(session).submit_arc_queue_sync()
+    return {
+        "task_id": task_id,
+        "status": "accepted",
+    }
 
 
 @router.post("/api/novel/run-arc")
@@ -834,7 +788,11 @@ async def continue_novel(req: NovelContinueRequest, session: ProjectSession = Re
     from novel_agent.services.novel_run_guard import validate_novel_continue
 
     root = session.root_dir
-    ok, detail = validate_novel_continue(root, force_resume=req.force_resume)
+    ok, detail = validate_novel_continue(
+        root,
+        force_resume=req.force_resume,
+        dry_run=req.dry_run,
+    )
     if not ok:
         raise HTTPException(400, detail)
 
@@ -861,6 +819,25 @@ async def continue_novel(req: NovelContinueRequest, session: ProjectSession = Re
         "task_id": task_id,
         "status": "pending",
         "autopilot": req.autopilot,
+    }
+
+
+@router.post("/api/novel/pause")
+async def pause_novel(session: ProjectSession = RequireProjectDep) -> Dict[str, Any]:
+    session = coerce_project_session(session)
+    """Pause novel batch autopilot / continuous generation."""
+    from web.tasks_autopilot import active_novel_batch_task_id_helper
+
+    manager = task_manager_for(session)
+    task_id = active_novel_batch_task_id_helper(manager)
+    if not task_id:
+        return {"status": "ignored", "message": "当前没有可暂停的全书任务。"}
+    task = await manager.pause_task(task_id)
+    return {
+        "task_id": task_id,
+        "status": (task or {}).get("status", "running"),
+        "control_action": (task or {}).get("control_action", "pause_requested"),
+        "pause_reason": "user_paused",
     }
 
 

@@ -14,6 +14,14 @@ import webbrowser
 import secrets
 from pathlib import Path
 
+if sys.version_info < (3, 11):
+    print(
+        f"错误：当前 Python 版本为 {sys.version.split()[0]}，本项目需要 Python 3.11 或 3.12。\n"
+        "请使用 `py -3.12 main.py` 启动，或配置 Python 3.11+ 运行环境。",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
 # Add dynamic dependencies directory to sys.path
 if os.environ.get("NOVEL_AGENT_ROOT"):
     base_dir = Path(os.environ["NOVEL_AGENT_ROOT"]).resolve()
@@ -112,8 +120,19 @@ def _prepare_remote_access(host: str, allow_remote: bool) -> None:
                 "fetch via GET /api/auth/local-setup from loopback clients."
             )
     elif allow_remote and not os.environ.get(ACCESS_TOKEN_ENV):
-        os.environ[ACCESS_TOKEN_ENV] = secrets.token_urlsafe(32)
-        print(f"Remote access token ({ACCESS_TOKEN_ENV}): {os.environ[ACCESS_TOKEN_ENV]}")
+        token = secrets.token_urlsafe(32)
+        os.environ[ACCESS_TOKEN_ENV] = token
+        token_path = Path(root) / "data" / LOCAL_TOKEN_FILENAME
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(token + "\n", encoding="utf-8")
+        try:
+            os.chmod(token_path, 0o600)
+        except OSError:
+            pass
+        print(
+            f"Remote access token ({ACCESS_TOKEN_ENV}) written to data/{LOCAL_TOKEN_FILENAME}; "
+            "it will not be printed."
+        )
     require_remote_token(host, allow_remote, os.environ.get(ACCESS_TOKEN_ENV, ""))
 
 

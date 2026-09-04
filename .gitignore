@@ -31,6 +31,7 @@ node_modules/
 build/
 dist/
 dist-portable/
+web/frontend/dist-portable-*/
 web/frontend/dist/
 web/frontend/dist-electron/
 web/frontend/dist-desktop/

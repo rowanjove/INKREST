@@ -232,6 +232,7 @@ class TaskStatus(BaseModel):
     last_heartbeat: Optional[str] = None
     resumable_from: Optional[str] = None
     status_reason: Optional[str] = None
+    control_action: Optional[str] = None
 
 
 class StateView(BaseModel):
@@ -277,6 +278,7 @@ class ProjectCreateRequest(BaseModel):
     preset_mechanisms: List[str] = []
     preset_cool_points: List[str] = []
     platform: Optional[str] = "qidian"
+    factory_mode: Optional[str] = None
 
 
 class ProjectMaintenanceRequest(BaseModel):
@@ -308,6 +310,8 @@ class ModelSaveRequest(BaseModel):
     timeout: float = 120
     proxy: str = ""
     type: str = "text"  # 'text' or 'image'
+    thinking: Optional[bool] = None
+    reasoning_effort: Optional[str] = None
 
 
 class ModelSlotRequest(BaseModel):

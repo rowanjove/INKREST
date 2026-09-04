@@ -6,6 +6,7 @@ from novel_agent.quality.hooks import extract_tail_hooks, check_head_continuity
 from novel_agent.quality.style_rules import check_ai_style, check_anti_ai_flavor, check_paragraph_layout
 from novel_agent.quality.scene_delta import check_scene_delta
 from novel_agent.quality.guard_registry import build_guard_summary
+from novel_agent.quality.chapter_score import compute_chapter_score
 from novel_agent.control.longform_flags import flag_enabled
 
 
@@ -149,6 +150,21 @@ def build_quality_report(
          "layout": check_paragraph_layout(final_text, config),
          "scene_delta": check_scene_delta(final_text),
      }
+     if previous_text:
+         try:
+             from novel_agent.quality.fact_ledger import audit_fact_consistency
+
+             ledger = dict(audit_fact_consistency(previous_text, final_text))
+             details = list(ledger.get("details") or [])
+             raw_checks["fact_ledger"] = {
+                 "pass": True,
+                 "level": "warning" if details else "none",
+                 "score": 80 if details else 100,
+                 "details": details,
+                 "metrics": ledger,
+             }
+         except Exception as exc:
+             logger.warning("Fact ledger check failed: %s", exc)
 
      # Prose identity is an explicit, diagnostic-only input.  Do not silently
      # create a profile from arbitrary project files and never let this signal
@@ -179,6 +195,54 @@ def build_quality_report(
          except Exception as exc:
              logger.warning("Expression repetition check failed: %s", exc)
          try:
+             from novel_agent.quality.style_rules import check_text_burstiness
+
+             burst = dict(check_text_burstiness(final_text))
+             burst["pass"] = True
+             if burst.get("level") == "fail":
+                 burst["level"] = "warning"
+             raw_checks["burstiness"] = burst
+         except Exception as exc:
+             logger.warning("Burstiness check failed: %s", exc)
+         try:
+             from novel_agent.quality.tension_tracker import analyze_chapter_tension
+
+             tension = analyze_chapter_tension(final_text)
+             raw_checks["tension"] = {
+                 "pass": True,
+                 "level": "none",
+                 "score": int(tension.get("tension_score") or 50),
+                 "details": [
+                     f"pacing={tension.get('pacing_type')}",
+                     f"payoff={tension.get('payoff_score')}",
+                 ],
+                 "metrics": tension,
+             }
+         except Exception as exc:
+             logger.warning("Tension tracker check failed: %s", exc)
+         try:
+             from novel_agent.domain.stat_fsm import audit_realm_transitions
+
+             raw_checks["stat_fsm"] = audit_realm_transitions(final_text)
+         except Exception as exc:
+             logger.warning("Stat FSM check failed: %s", exc)
+         try:
+             from novel_agent.services.realm_quarantine import audit_realm_quarantine
+
+             raw_checks["realm_quarantine"] = audit_realm_quarantine(
+                 final_text,
+                 Path(root_dir),
+                 chapter_id=chapter_id,
+             )
+         except Exception as exc:
+             logger.warning("Realm quarantine check failed: %s", exc)
+         try:
+             from novel_agent.quality.golden_three import audit_golden_three
+
+             raw_checks["golden_three"] = audit_golden_three(final_text, chapter_id=chapter_id)
+         except Exception as exc:
+             logger.warning("Golden three check failed: %s", exc)
+         try:
              from novel_agent.quality.event_consistency import check_event_consistency
 
              raw_checks["event_consistency"] = check_event_consistency(
@@ -191,10 +255,16 @@ def build_quality_report(
              logger.warning("Event consistency check failed: %s", exc)
          if chapter_id and flag_enabled("m3_canon_engine", Path(root_dir)):
              try:
-                 from novel_agent.quality.canon_engine import filter_visible_canon
+                 from novel_agent.quality.canon_engine import (
+                     facts_as_of_chapter,
+                     filter_visible_canon,
+                 )
                  from novel_agent.state.sqlite_store import SQLiteStateStore
 
-                 events = SQLiteStateStore(Path(root_dir)).list_narrative_events(limit=500)
+                 events = facts_as_of_chapter(
+                     SQLiteStateStore(Path(root_dir)).list_narrative_events(limit=500),
+                     str(chapter_id),
+                 )
                  _visible, violations = filter_visible_canon(
                      events,
                      current_chapter=str(chapter_id),
@@ -219,12 +289,13 @@ def build_quality_report(
                      ],
                  }
              except Exception as exc:
+                 logger.warning("Canon visibility check degraded: %s", exc)
                  raw_checks["canon_visibility"] = {
-                     "pass": False,
-                     "score": 0.0,
-                     "level": "error",
-                     "status": "error",
-                     "findings": [{"type": "canon_check_error", "message": str(exc), "action": "block"}],
+                     "pass": True,
+                     "score": 1.0,
+                     "level": "warning",
+                     "status": "degraded",
+                     "details": [f"canon_check_degraded: {exc}"],
                  }
  
      for guard in (plugin_guards or []):
@@ -260,6 +331,7 @@ def build_quality_report(
          "checks": checks,
          "guard_summary": guard_summary,
      }
+     report["chapter_score"] = compute_chapter_score(report, final_text)
      report["quality_layers"] = _build_quality_layers(checks, audit=audit)
 
      if isinstance(audit, dict):

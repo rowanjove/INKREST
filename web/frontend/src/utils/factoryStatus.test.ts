@@ -83,6 +83,8 @@ describe('factoryStatus', () => {
   it('formats factory modes', () => {
     expect(formatFactoryMode('newbie_auto')).toBe('新手全自动')
     expect(formatFactoryMode('author_copilot')).toBe('作者协作')
+    expect(formatFactoryMode('unset')).toBe('未设置（只报告）')
+    expect(formatFactoryMode('')).toBe('未设置（只报告）')
   })
 
   it('formats factory states', () => {

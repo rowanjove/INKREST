@@ -25,6 +25,10 @@ class FactoryDashboardTests(ApiTestBase):
             self.assertIn(key, body)
         self.assertEqual(body["stability_report"]["status"], "missing")
         self.assertEqual(body["naturalness_report"]["status"], "missing")
+        self.assertEqual(body["project"]["mode"], "unset")
+        self.assertEqual(body["mode_profile"]["mode"], "unset")
+        self.assertEqual(body["mode_profile"]["label"], "未设置（只报告）")
+        self.assertFalse(body["mode_profile"].get("explicit", True))
         step_ids = [item["id"] for item in body["production_plan"]["next_steps"]]
         self.assertIn("trope_workshop", step_ids)
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CREATE_STEPS,
   canEnterDetails,
+  factoryModeFromApproach,
   nextCreateStep,
   sourceMode,
   sourceRequiresModel,
@@ -27,5 +28,10 @@ describe('four-step creation flow', () => {
   it('does not enter confirmation until a valid draft exists', () => {
     expect(nextCreateStep(2, { source: 'quick', modelReady: true, hasDraft: false })).toBe(2)
     expect(nextCreateStep(2, { source: 'quick', modelReady: true, hasDraft: true })).toBe(3)
+  })
+
+  it('maps work approach onto a persisted factory mode', () => {
+    expect(factoryModeFromApproach('auto')).toBe('newbie_auto')
+    expect(factoryModeFromApproach('professional')).toBe('author_copilot')
   })
 })

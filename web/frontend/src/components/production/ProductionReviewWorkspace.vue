@@ -10,6 +10,8 @@ import type {
 import {
   filterProductionReviews,
   productionStepLabel,
+  qualityBlockedByLabels,
+  qualityRecoverySteps,
   resolveReviewActionTargets,
 } from '../../entities/production/production'
 import StatusBadge from '../../shared/ui/StatusBadge.vue'
@@ -26,6 +28,7 @@ const emit = defineEmits<{
     chapterIds: string[],
   ]
   openChapter: [chapterId: string]
+  openQuality: [chapterId: string]
 }>()
 
 const query = ref('')
@@ -43,6 +46,12 @@ const selected = computed(
 )
 const selectedItems = computed(() =>
   props.items.filter((item) => selectedIds.value.includes(item.chapter_id)),
+)
+const recoverySteps = computed(() =>
+  selected.value ? qualityRecoverySteps(selected.value) : [],
+)
+const blockedLabels = computed(() =>
+  selected.value ? qualityBlockedByLabels(selected.value) : [],
 )
 const virtualizer = useVirtualizer(
   computed(() => ({
@@ -183,9 +192,29 @@ function emitBulk(kind: Exclude<ProductionActionKind, 'cancel_task'>) {
               :tone="selected.severity === 'error' ? 'danger' : 'warning'"
               dot
             />
-            <strong v-if="selected.overall_score != null">{{ selected.overall_score }}<small> / 100</small></strong>
+            <strong v-if="selected.chapter_score != null">{{ selected.chapter_score }}<small> / 10</small></strong>
+            <strong v-else-if="selected.overall_score != null">{{ selected.overall_score }}<small> / 100</small></strong>
           </div>
         </header>
+
+        <section v-if="recoverySteps.length" class="recovery-section">
+          <div class="section-head"><h3>恢复三步</h3></div>
+          <p v-if="blockedLabels.length" class="blocked-copy">拦截项：{{ blockedLabels.join('、') }}</p>
+          <ol class="recovery-steps">
+            <li v-for="step in recoverySteps" :key="step.id">
+              <strong>{{ step.label }}</strong>
+              <p>{{ step.description }}</p>
+            </li>
+          </ol>
+          <div class="recovery-actions">
+            <el-button type="primary" plain @click="emit('openQuality', selected.chapter_id)">
+              去质量中心
+            </el-button>
+            <el-button type="warning" @click="emit('action', 'rerun_gate', [selected.chapter_id])">
+              重跑门禁
+            </el-button>
+          </div>
+        </section>
 
         <section class="issue-section">
           <div class="section-head"><h3>发现的问题</h3><span>{{ selected.issues.length }}</span></div>
@@ -263,47 +292,51 @@ function emitBulk(kind: Exclude<ProductionActionKind, 'cancel_task'>) {
 .review-list-pane { display: flex; min-width: 0; min-height: 0; flex-direction: column; border-right: 1px solid var(--color-border); background: var(--color-bg-surface); }
 .review-list-pane > header { display: grid; gap: 9px; padding: 13px; border-bottom: 1px solid var(--color-border-subtle); }
 .review-list-pane > header > div { display: flex; justify-content: space-between; color: var(--color-text-strong); font-size: 13px; }
-.review-list-pane > header small { color: var(--color-text-muted); font-size: 10px; }
+.review-list-pane > header small { color: var(--color-text-muted); font-size: 12px; }
 .review-list-pane :deep(.el-segmented) { width: 100%; }
-.bulk-actions { display: grid; gap: 7px; padding: 9px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-primary-soft); color: var(--color-text-strong); font-size: 10px; }
-.bulk-actions > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.bulk-actions { display: grid; gap: 7px; padding: 9px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-primary-soft); color: var(--color-text-strong); font-size: 12px; }
+.bulk-actions > div { display: flex; flex-wrap: wrap; gap: 6px; }
 .virtual-scroll { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 7px; }
 .virtual-list { position: relative; width: 100%; }
 .review-row {
   position: absolute; inset-inline: 0; top: 0; display: grid; width: 100%;
-  grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 8px 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 9px 10px;
   border: 0; border-left: 3px solid transparent; border-radius: 8px; background: transparent;
   color: var(--color-text); text-align: left; cursor: pointer;
 }
 .review-row:hover { background: var(--color-bg-hover); }
 .review-row.active { border-left-color: var(--color-primary); background: var(--color-primary-soft); }
 .review-copy { display: grid; min-width: 0; gap: 4px; }
-.review-copy strong { overflow: hidden; color: var(--color-text-strong); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.review-copy small { display: -webkit-box; overflow: hidden; color: var(--color-text-muted); font-size: 10px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.review-copy strong { overflow: hidden; color: var(--color-text-strong); font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.review-copy small { display: -webkit-box; overflow: hidden; color: var(--color-text-muted); font-size: 12px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .review-status { display: grid; justify-items: end; gap: 4px; }
-.review-status > small { color: var(--color-text-muted); font-size: 9px; }
+.review-status > small { color: var(--color-text-muted); font-size: 11.5px; }
 .review-detail { min-width: 0; min-height: 0; overflow: auto; padding: 20px 22px 28px; background: var(--color-bg-page); }
 .detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.detail-head > div:first-child > small { color: var(--color-text-muted); font-size: 10px; }
-.detail-head h2 { margin: 3px 0; color: var(--color-text-strong); font-size: 19px; }
-.detail-head p { margin: 0; color: var(--color-text-muted); font-size: 11px; line-height: 1.6; }
+.detail-head > div:first-child > small { color: var(--color-text-muted); font-size: 12px; }
+.detail-head h2 { margin: 3px 0; color: var(--color-text-strong); font-size: 20px; font-weight: 750; }
+.detail-head p { margin: 0; color: var(--color-text-muted); font-size: 13px; line-height: 1.6; }
 .score-block { display: grid; justify-items: end; gap: 8px; }
-.score-block > strong { color: var(--color-text-strong); font-size: 23px; }
-.score-block > strong small { color: var(--color-text-muted); font-size: 10px; }
-.issue-section, .completed-section { margin-top: 22px; }
+.score-block > strong { color: var(--color-text-strong); font-size: 24px; }
+.score-block > strong small { color: var(--color-text-muted); font-size: 12px; }
+.issue-section, .completed-section, .recovery-section { margin-top: 22px; }
+.blocked-copy { margin: 0 0 10px; color: var(--color-danger, #b42318); font-size: 13px; }
+.recovery-steps { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
+.recovery-steps p { margin: 4px 0 0; color: var(--color-text-muted); font-size: 13px; line-height: 1.6; }
+.recovery-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.section-head h3 { margin: 0; color: var(--color-text-strong); font-size: 13px; }
-.section-head span { color: var(--color-text-muted); font-size: 10px; }
+.section-head h3 { margin: 0; color: var(--color-text-strong); font-size: 14px; }
+.section-head span { color: var(--color-text-muted); font-size: 12px; }
 .issue-list { display: grid; gap: 8px; }
-.issue-card { padding: 12px; border: 1px solid var(--color-border); border-radius: 9px; background: var(--color-bg-surface); }
+.issue-card { padding: 14px; border: 1px solid var(--color-border); border-radius: 9px; background: var(--color-bg-surface); }
 .issue-card header { display: flex; justify-content: space-between; gap: 8px; }
-.issue-card strong { color: var(--color-text-strong); font-size: 12px; }
-.issue-card header span { color: var(--color-danger); font-size: 10px; }
-.issue-card ul { display: grid; gap: 5px; margin: 9px 0 0; padding-left: 17px; color: var(--color-text); font-size: 11px; line-height: 1.55; }
-.issue-card p, .empty-copy { margin: 9px 0 0; color: var(--color-text-muted); font-size: 11px; line-height: 1.6; }
+.issue-card strong { color: var(--color-text-strong); font-size: 13.5px; }
+.issue-card header span { color: var(--color-danger); font-size: 12px; font-weight: 650; }
+.issue-card ul { display: grid; gap: 5px; margin: 9px 0 0; padding-left: 17px; color: var(--color-text); font-size: 12.5px; line-height: 1.55; }
+.issue-card p, .empty-copy { margin: 9px 0 0; color: var(--color-text-muted); font-size: 12.5px; line-height: 1.6; }
 .stage-list { display: flex; flex-wrap: wrap; gap: 6px; }
-.stage-list > span { padding: 5px 8px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-bg-surface); color: var(--color-text-muted); font-size: 9px; }
+.stage-list > span { padding: 5px 9px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-bg-surface); color: var(--color-text-muted); font-size: 11.5px; }
 .stage-list > .muted { border-style: dashed; }
-.review-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--color-border); }
+.review-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--color-border); }
 @media (max-width: 900px) { .review-workspace { grid-template-columns: minmax(260px, 42%) minmax(0, 1fr); } .review-detail { padding: 16px; } }
 </style>

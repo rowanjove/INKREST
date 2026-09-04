@@ -91,6 +91,6 @@ describe('diagnostics summary', () => {
       kind: 'intent',
       target: 'continue-novel',
       enabled: true,
-    })).toBe('/workspace?intent=continue-novel')
+    })).toBe('/production?intent=continue-novel&confirm=1')
   })
 })

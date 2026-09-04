@@ -90,6 +90,7 @@ class ChapterPipelineRunner:
             final_path=chapter_dir / "chapter_final.txt",
             audit=ctx.audit or {},
             warnings=list(ctx.warnings),
+            final_text=ctx.final_text or "",
         )
         self._o._emit_chapter_complete_hooks(chapter_id, ctx, result, wc_count)
 

@@ -50,34 +50,148 @@ def _load_outline(root: Path) -> Dict[str, Any]:
         return {}
 
 
+def outline_planning_ready(outline: Dict[str, Any]) -> bool:
+    """Reject quick-create placeholders while accepting existing real outlines."""
+    macro = outline.get("macro_outline") or []
+    if not isinstance(macro, list) or not macro:
+        return False
+    if str(outline.get("planning_status") or "").strip().lower() == "draft":
+        return False
+    if len(macro) != 1 or not isinstance(macro[0], dict):
+        return True
+    arc = macro[0]
+    placeholder = (
+        str(arc.get("name") or "") == "起始卷"
+        and str(arc.get("goal") or "") == "确立主线与读者抓手"
+        and str(arc.get("turning_point") or "") == "待定"
+        and str(arc.get("payoff") or "") == "待定"
+    )
+    return not placeholder
+
+
 def _model_provider_usable(root: Path, model_id: str) -> bool:
     from novel_agent.pipeline import _load_models_library
 
     entry = (_load_models_library(root) or {}).get(model_id) or {}
+    return _model_config_usable(entry)
+
+
+def _model_config_usable(entry: Any) -> bool:
+    """Return whether a model can make a real request, not just be named.
+
+    Local OpenAI-compatible servers intentionally do not require an API key.
+    Every other endpoint defaults to a remote OpenAI-compatible service and
+    must have a non-empty credential before a paid generation task is queued.
+    """
     if not isinstance(entry, dict):
         return False
     provider = str(entry.get("provider") or "").strip().lower()
-    return bool(provider and provider != "static")
+    if not provider or provider == "static":
+        return False
+
+    local_providers = {"ollama", "vllm", "lmstudio", "llama.cpp", "llamacpp", "local"}
+    base_url = str(entry.get("base_url") or "").strip()
+    if provider in local_providers and not base_url:
+        return True
+
+    from urllib.parse import urlparse
+
+    from web.security import is_dev_model_host, is_loopback_host
+
+    parsed = urlparse(base_url or "https://api.openai.com/v1")
+    host = str(parsed.hostname or "").strip()
+    if is_loopback_host(host) or is_dev_model_host(host):
+        return True
+
+    api_key = str(entry.get("api_key") or entry.get("api_token") or "").strip()
+    if api_key in {"", "********", "***", "******"}:
+        return False
+    return True
 
 
 def _engine_ready(root: Path) -> bool:
+    return bool(build_model_readiness(root).get("ok"))
+
+
+def build_model_readiness(root: Path) -> Dict[str, Any]:
+    """Resolve every role/fallback that production can actually select."""
     try:
-        from novel_agent.pipeline import load_pipeline_settings
+        from novel_agent.agents.base import _resolve_model_ref
+        from novel_agent.pipeline import (
+            _apply_global_fallback_ids,
+            _daily_model_id,
+            _load_models_library,
+            _resolve_llm_config,
+            _resolve_tiered_overrides,
+            _should_use_library_default,
+            _first_model_id,
+            load_pipeline_settings,
+        )
 
         llm = load_pipeline_settings(root).get("llm") or {}
         if not isinstance(llm, dict):
-            return False
-        daily = str(llm.get("daily_model_id") or llm.get("default_model_id") or "").strip()
-        if daily:
-            return _model_provider_usable(root, daily)
-        nested_ref = str((llm.get("default") or {}).get("model_ref") or "").strip()
-        if nested_ref:
-            return _model_provider_usable(root, nested_ref)
-        default = llm.get("default") if isinstance(llm.get("default"), dict) else {}
-        provider = str(llm.get("provider") or default.get("provider") or "").strip()
-        return bool(provider and provider != "static")
-    except Exception:
-        return False
+            return {"ok": False, "routes": [], "missing": ["llm"]}
+        llm_copy = dict(llm)
+        default_config, explicit_overrides = _resolve_llm_config(dict(llm_copy))
+        library = _load_models_library(root)
+        default_model_id = _daily_model_id(llm_copy)
+        if not default_model_id and _should_use_library_default(llm_copy):
+            default_model_id = _first_model_id(library)
+        if default_model_id and default_model_id in library:
+            default_config = {"model_ref": default_model_id}
+        default_config = _apply_global_fallback_ids(default_config, llm_copy)
+        routed = _resolve_tiered_overrides(llm_copy, explicit_overrides)
+
+        routes: List[Dict[str, Any]] = []
+        for role, override in sorted(routed.items()):
+            config = {**default_config, **override}
+            model_ref = str(config.get("model_ref") or "")
+            resolved = _resolve_model_ref(config, library)
+            ready = _model_config_usable(resolved)
+            routes.append(
+                {
+                    "role": role,
+                    "model_id": model_ref,
+                    "model": str(resolved.get("model") or model_ref),
+                    "provider": str(resolved.get("provider") or ""),
+                    "ready": ready,
+                    "reason": "" if ready else "模型不存在、仍为 Static 或缺少凭据",
+                }
+            )
+
+        # A flat/default-only configuration still needs one explicit readiness row.
+        if not routes:
+            resolved = _resolve_model_ref(default_config, library)
+            ready = _model_config_usable(resolved)
+            routes.append(
+                {
+                    "role": "default",
+                    "model_id": str(default_config.get("model_ref") or ""),
+                    "model": str(resolved.get("model") or ""),
+                    "provider": str(resolved.get("provider") or ""),
+                    "ready": ready,
+                    "reason": "" if ready else "模型不存在、仍为 Static 或缺少凭据",
+                }
+            )
+
+        fallback_ids = [str(item) for item in llm_copy.get("fallback_model_ids") or [] if item]
+        for model_id in fallback_ids:
+            ready = _model_provider_usable(root, model_id)
+            routes.append(
+                {
+                    "role": "fallback",
+                    "model_id": model_id,
+                    "model": str((library.get(model_id) or {}).get("model") or model_id),
+                    "provider": str((library.get(model_id) or {}).get("provider") or ""),
+                    "ready": ready,
+                    "reason": "" if ready else "备用模型不存在、仍为 Static 或缺少凭据",
+                }
+            )
+        missing = sorted({str(row["role"]) for row in routes if not row["ready"]})
+        return {"ok": not missing, "routes": routes, "missing": missing}
+    except Exception as exc:
+        _logger.warning("Failed to resolve model readiness for %s: %s", root, exc)
+        return {"ok": False, "routes": [], "missing": ["configuration"]}
 
 
 def _asset_group_ready(assets_dir: Path, filenames: tuple) -> bool:
@@ -113,7 +227,7 @@ def _max_available_chapters(root: Path, outline: Dict[str, Any]) -> int:
     return max(0, cap - done)
 
 
-def build_readiness_report(root: Path) -> Dict[str, Any]:
+def build_readiness_report(root: Path, *, dry_run: bool = False) -> Dict[str, Any]:
     """Return { ok, pending: [{id, label}], warnings: [...] }."""
     outline_err = _outline_read_error(root)
     outline = _load_outline(root)
@@ -123,9 +237,12 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
     if outline_err:
         pending.append({"id": "outline_corrupt", "label": "outline.json 可正常解析"})
 
-    if not _engine_ready(root):
-        pending.append({"id": "engine", "label": "日常模型可用（非 Static 占位）"})
-    if not macro:
+    model_readiness = build_model_readiness(root)
+    if not dry_run and not model_readiness.get("ok"):
+        missing = "、".join(model_readiness.get("missing") or [])
+        suffix = f"：{missing}" if missing else ""
+        pending.append({"id": "engine", "label": f"生产模型路由全部可用{suffix}"})
+    if not outline_planning_ready(outline):
         pending.append({"id": "outline", "label": "已生成并保存大纲（含卷纲）"})
     if not outline.get("chosen_title"):
         pending.append({"id": "title", "label": "已确定最终书名"})
@@ -136,12 +253,14 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
         pending.append({"id": "quota", "label": "未达大纲章节上限"})
 
     stale = check_arc_queue_stale(root)
-    queue_ok = bool(load_workspace_arcs(root)) or not macro
+    has_arcs = bool(load_workspace_arcs(root))
 
     warnings: List[str] = []
     vector_readiness_level = "auto"
+    if macro and not has_arcs:
+        warnings.append("卷级队列尚未建立，确认连写时会自动同步（首次可能需要 1～5 分钟）。")
     if stale.get("stale"):
-        warnings.append(str(stale.get("message") or "卷队列与大纲不一致"))
+        warnings.append(str(stale.get("message") or "卷队列与大纲不一致，确认连写时会自动同步。"))
 
     try:
         from novel_agent.control.runtime_policy import is_semantic_search_effective
@@ -220,12 +339,12 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
         pass
 
     return {
-        "ok": len(pending) == 0 and queue_ok and not stale.get("stale"),
+        "ok": len(pending) == 0,
         "pending": pending,
         "warnings": warnings,
         "remaining_chapters": remaining,
         "arc_queue_stale": stale,
-        "has_arcs": bool(load_workspace_arcs(root)),
+        "has_arcs": has_arcs,
         "factory_mode": factory_mode,
         "yaml_mirror_warnings": yaml_mirror_warnings,
         "vector_readiness_level": vector_readiness_level,
@@ -233,10 +352,16 @@ def build_readiness_report(root: Path) -> Dict[str, Any]:
         "embedding_backend": embedding_backend,
         "chromadb_available": chromadb_available,
         "embedding_backend_hint": embedding_backend_hint,
+        "model_readiness": model_readiness,
     }
 
 
-def validate_novel_continue(root: Path, *, force_resume: bool = False) -> Tuple[bool, str]:
+def validate_novel_continue(
+    root: Path,
+    *,
+    force_resume: bool = False,
+    dry_run: bool = False,
+) -> Tuple[bool, str]:
     """
     Validate before starting novel continue/autopilot.
     Returns (ok, detail_message).
@@ -245,7 +370,7 @@ def validate_novel_continue(root: Path, *, force_resume: bool = False) -> Tuple[
     if outline_err:
         return False, outline_err
 
-    report = build_readiness_report(root)
+    report = build_readiness_report(root, dry_run=dry_run)
 
     pending = report.get("pending") or []
     if pending:

@@ -48,6 +48,17 @@ def _is_sensitive_file(rel: Path) -> bool:
     return rel.suffix.casefold() in RUNTIME_FILE_SUFFIXES
 
 
+def _is_packaged_demo_asset(rel: Path) -> bool:
+    parts = rel.parts
+    return (
+        len(parts) >= 4
+        and parts[0] == "resources"
+        and parts[1] == "templates"
+        and parts[2] == "assets"
+        and parts[3] == "demo_projects"
+    )
+
+
 def check_tree(root: Path) -> list[str]:
     issues: list[str] = []
     if not root.is_dir():
@@ -59,6 +70,13 @@ def check_tree(root: Path) -> list[str]:
                 issues.append(str(rel))
                 break
         else:
+            if _is_packaged_demo_asset(rel):
+                name = rel.name.casefold()
+                if path.is_file() and (
+                    name in {".env", "models.json"} or name.startswith(".env.")
+                ):
+                    issues.append(str(rel))
+                continue
             if _is_runtime_root(rel) or (path.is_file() and _is_sensitive_file(rel)):
                 issues.append(str(rel))
     return issues

@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from novel_agent.agents.base import PromptAgent
 from novel_agent.control.chapter_window import normalize_chapter_window
+from novel_agent.exceptions import LLMResponseError
 from novel_agent.json_utils import loads_json_object
 from novel_agent.logging_config import get_logger
 
@@ -46,7 +47,8 @@ class ManagingEditorAgent(PromptAgent):
             "logline": outline.get("logline", ""),
         }
         input_json = json.dumps(context, ensure_ascii=False, indent=2)
-        parts = [template, f"\n\n## 输入\n{input_json}"]
+        concise_hint = "直接输出标准 JSON 格式的章节规划。保持思考精炼聚焦，不要在思维链中展开冗长复杂的自我审查或重复推演，确保正文 JSON 完整输出。\n\n"
+        parts = [concise_hint, template, f"\n\n## 输入\n{input_json}"]
         if writing_context.strip():
             parts.append(f"\n\n{writing_context.strip()}")
         prompt = "".join(parts).strip()
@@ -59,7 +61,7 @@ class ManagingEditorAgent(PromptAgent):
             return result
         except Exception as exc:
             logger.error("Failed to parse managing editor output: %s", exc)
-            return self._fallback_arc(arc)
+            raise LLMResponseError(f"拆章结果无法解析，已中止规划: {exc}") from exc
 
     def split_chapters(
         self,
@@ -70,8 +72,24 @@ class ManagingEditorAgent(PromptAgent):
     ) -> Dict[str, Any]:
         """Split a macro outline arc into a chapter queue."""
         prompt, arc = self._build_prompt(outline, arc_index, writing_context=writing_context)
-        raw = self.run(prompt)
-        return self._parse_and_validate_arc(raw, arc)
+        last_error: Exception | None = None
+        for attempt in range(3):
+            retry_prompt = prompt
+            if attempt:
+                retry_prompt += (
+                    "\n\n上次输出为空或 JSON 截断。请保持思考精简，立即直接输出标准 JSON 对象，"
+                    "不要在思维链中做复杂推演，不要使用 Markdown 代码块，输出完整的 chapters 数组。"
+                )
+            try:
+                raw = self.run(retry_prompt)
+                return self._parse_and_validate_arc(raw, arc)
+            except LLMResponseError as exc:
+                last_error = exc
+                logger.warning("Managing editor retry %d/3: %s", attempt + 1, exc)
+        logger.warning("Managing editor failed after 3 attempts (%s); not using a placeholder arc", last_error)
+        if last_error is not None:
+            raise last_error
+        raise LLMResponseError("拆章结果无法解析，已中止规划")
 
     async def asplit_chapters(
         self,
@@ -82,8 +100,24 @@ class ManagingEditorAgent(PromptAgent):
     ) -> Dict[str, Any]:
         """Split a macro outline arc into a chapter queue asynchronously."""
         prompt, arc = self._build_prompt(outline, arc_index, writing_context=writing_context)
-        raw = await self.arun(prompt)
-        return self._parse_and_validate_arc(raw, arc)
+        last_error: Exception | None = None
+        for attempt in range(3):
+            retry_prompt = prompt
+            if attempt:
+                retry_prompt += (
+                    "\n\n上次输出为空或 JSON 截断。请保持思考精简，立即直接输出标准 JSON 对象，"
+                    "不要在思维链中做复杂推演，不要使用 Markdown 代码块，输出完整的 chapters 数组。"
+                )
+            try:
+                raw = await self.arun(retry_prompt)
+                return self._parse_and_validate_arc(raw, arc)
+            except LLMResponseError as exc:
+                last_error = exc
+                logger.warning("Managing editor retry %d/3: %s", attempt + 1, exc)
+        logger.warning("Managing editor failed after 3 attempts (%s); not using a placeholder arc", last_error)
+        if last_error is not None:
+            raise last_error
+        raise LLMResponseError("拆章结果无法解析，已中止规划")
 
     def split_all_arcs(self, outline: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Split all arcs in the outline into chapter queues."""

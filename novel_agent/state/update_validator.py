@@ -173,6 +173,16 @@ def validate_state_update(
     if not isinstance(update, dict):
         raise StateUpdateValidationError("state_update must be a dict")
 
+    from jsonschema import Draft202012Validator
+    from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
+    from novel_agent.state.state_update_schema import STATE_UPDATE_SCHEMA
+
+    typed = {key: value for key, value in update.items() if key in ALLOWED_TOP_LEVEL}
+    try:
+        Draft202012Validator(STATE_UPDATE_SCHEMA).validate(typed)
+    except JsonSchemaValidationError as exc:
+        raise StateUpdateValidationError(f"state_update schema invalid: {exc.message}") from exc
+
     sanitized: Dict[str, Any] = {}
     for key, value in update.items():
         if key not in ALLOWED_TOP_LEVEL:

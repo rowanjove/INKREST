@@ -1,12 +1,9 @@
 import json
 import base64
 import httpx
-import ipaddress
-import socket
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Tuple
-from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
@@ -61,37 +58,32 @@ def _decode_cover_base64(cover_data: str) -> Tuple[bytes, str]:
 
 
 def _validate_remote_image_url(url: str) -> str:
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise HTTPException(400, "Image URL must use http or https")
+    from web.outbound import pin_public_image_url
+
     try:
-        addresses = {
-            item[4][0]
-            for item in socket.getaddrinfo(
-                parsed.hostname,
-                parsed.port or (443 if parsed.scheme == "https" else 80),
-                type=socket.SOCK_STREAM,
-            )
-        }
-    except socket.gaierror as exc:
-        raise HTTPException(400, f"Image URL host could not be resolved: {exc}")
-    for address in addresses:
-        ip = ipaddress.ip_address(address)
-        if not ip.is_global:
-            raise HTTPException(400, "Image URL resolves to a private or non-public address")
+        pin_public_image_url(url)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return url
 
 
 def _download_remote_image(client: httpx.Client, url: str) -> Tuple[bytes, str]:
-    safe_url = _validate_remote_image_url(url)
-    with client.stream("GET", safe_url) as response:
-        if response.status_code != 200:
-            raise HTTPException(400, f"下载图片失败 (HTTP {response.status_code})")
-        content = bytearray()
-        for chunk in response.iter_bytes():
-            content.extend(chunk)
-            if len(content) > MAX_COVER_BYTES:
-                raise HTTPException(413, "Cover image exceeds the size limit")
+    from web.outbound import PinnedIPTransport, pin_public_image_url
+
+    try:
+        pinned = pin_public_image_url(url)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    transport = PinnedIPTransport(pinned)
+    with httpx.Client(transport=transport, timeout=client.timeout) as pinned_client:
+        with pinned_client.stream("GET", url) as response:
+            if response.status_code != 200:
+                raise HTTPException(400, f"下载图片失败 (HTTP {response.status_code})")
+            content = bytearray()
+            for chunk in response.iter_bytes():
+                content.extend(chunk)
+                if len(content) > MAX_COVER_BYTES:
+                    raise HTTPException(413, "Cover image exceeds the size limit")
     _, mime = _image_type(bytes(content))
     return bytes(content), mime
 
@@ -179,7 +171,15 @@ def generate_cover(pid: str, req: GenerateCoverRequest) -> Dict[str, str]:
     except Exception:
         raise HTTPException(400, f"未找到指定的图像模型: {req.model_id}")
         
-    url = f"{cfg.get('base_url', 'https://api.openai.com/v1').rstrip('/')}/images/generations"
+    from web.security import validate_outbound_model_base_url
+
+    try:
+        safe_base = validate_outbound_model_base_url(
+            str(cfg.get("base_url") or "https://api.openai.com/v1")
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    url = f"{safe_base}/images/generations"
     headers = {
         "Authorization": f"Bearer {cfg.get('api_key', '')}",
         "Content-Type": "application/json"
@@ -191,7 +191,19 @@ def generate_cover(pid: str, req: GenerateCoverRequest) -> Dict[str, str]:
     }
     
     try:
-        with httpx.Client(proxy=cfg.get("proxy") or None, timeout=float(cfg.get("timeout", 120))) as client:
+        client_kwargs: Dict[str, Any] = {
+            "proxy": cfg.get("proxy") or None,
+            "timeout": float(cfg.get("timeout", 120)),
+        }
+        try:
+            from web.outbound import model_httpx_transport
+
+            transport = model_httpx_transport(safe_base, async_mode=False)
+        except Exception:
+            transport = None
+        if transport is not None:
+            client_kwargs["transport"] = transport
+        with httpx.Client(**client_kwargs) as client:
             resp = client.post(url, headers=headers, json=body)
             if resp.status_code != 200:
                 try:

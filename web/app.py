@@ -2,7 +2,9 @@
 
 import logging
 import os
+import sys
 from pathlib import Path
+from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,7 +28,9 @@ from web.routes.factory import router as factory_router
 from web.security import (
     ACCESS_TOKEN_ENV,
     ACCESS_TOKEN_HEADER,
+    ALLOW_REMOTE_ENV,
     AccessTokenMiddleware,
+    SecurityHeadersMiddleware,
     authorize_websocket,
     _tokens_match,
 )
@@ -39,7 +43,22 @@ from web.routes.production import router as production_router
 from web.routes.publishing import router as publishing_router
 from web.routes.search import router as search_router
 
-app = FastAPI(title="Novel Agent API", version="2.0.2", lifespan=lifespan)
+def _api_docs_enabled() -> bool:
+    if os.environ.get(ALLOW_REMOTE_ENV, "").lower() in ("1", "true", "yes"):
+        return os.environ.get("NOVEL_AGENT_DEBUG", "").lower() in ("1", "true", "yes")
+    return True
+
+
+_docs_enabled = _api_docs_enabled()
+app = FastAPI(
+    title="Novel Agent API",
+    version="2.0.2",
+    lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(AccessTokenMiddleware)
 
 _logger = logging.getLogger("web.app")
@@ -204,25 +223,74 @@ def mount_plugin_web_extensions(pm) -> None:
 
 # Include plugin web extension routers
 try:
-    from web.context import get_plugin_manager
-    mount_plugin_web_extensions(get_plugin_manager())
+    from web.context import get_global_plugin_manager
+    mount_plugin_web_extensions(get_global_plugin_manager())
 except Exception as exc:
     _logger.warning("Plugin web extensions were not mounted: %s", exc)
 
 # Serve Vue frontend
-DIST_DIR = Path(__file__).resolve().parent / "frontend" / "dist"
+def _resolve_dist_dir() -> Optional[Path]:
+    """Find valid frontend dist directory across source, PyInstaller, and Electron layouts."""
+    candidates = []
+    # 1. Direct source location (dev / normal run)
+    candidates.append(Path(__file__).resolve().parent / "frontend" / "dist")
+    # 2. PyInstaller _MEIPASS (single-file or unpacked)
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "web" / "frontend" / "dist")
+    # 3. Executable-relative _internal directory (PyInstaller onedir on Windows)
+    exe_dir = Path(sys.executable).resolve().parent
+    candidates.append(exe_dir / "_internal" / "web" / "frontend" / "dist")
+    candidates.append(exe_dir / "web" / "frontend" / "dist")
+    candidates.append(exe_dir / "frontend" / "dist")
+    # 4. Explicit NOVEL_AGENT_ROOT override
+    root_env = os.environ.get("NOVEL_AGENT_ROOT", "").strip()
+    if root_env:
+        candidates.append(Path(root_env) / "web" / "frontend" / "dist")
 
-if DIST_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="static-assets")
+    for candidate in candidates:
+        try:
+            if candidate.is_dir() and (candidate / "index.html").is_file():
+                return candidate
+        except (OSError, PermissionError):
+            continue
+    return None
+
+
+DIST_DIR = _resolve_dist_dir()
+
+if DIST_DIR is not None:
+    assets_dir = DIST_DIR / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="static-assets")
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         """Serve static files or fall back to index.html for SPA routing."""
+        # Never swallow unhandled API or WebSocket endpoints into index.html
+        if full_path.startswith("api/") or full_path.startswith("ws/"):
+            raise HTTPException(404, "API endpoint not found")
+
         file_path = (DIST_DIR / full_path).resolve()
         try:
             file_path.relative_to(DIST_DIR.resolve())
         except ValueError:
             raise HTTPException(400, "Invalid path")
+
         if file_path.is_file():
             return FileResponse(str(file_path))
-        return FileResponse(str(DIST_DIR / "index.html"))
+
+        index_file = DIST_DIR / "index.html"
+        if not index_file.is_file():
+            raise HTTPException(503, "Frontend bundle is missing index.html")
+        return FileResponse(str(index_file))
+else:
+    @app.get("/")
+    async def serve_missing_frontend():
+        return JSONResponse(
+            status_code=503,
+            content={
+                "code": "FRONTEND_NOT_BUILT",
+                "message": "前端静态资源尚未构建或 index.html 缺失。请在 web/frontend 目录执行 npm run build 后重试。",
+            },
+        )

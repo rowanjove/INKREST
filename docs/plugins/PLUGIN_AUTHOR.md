@@ -16,7 +16,7 @@ ZIP 根目录（或唯一顶层文件夹）须包含：
 
 ```json
 {
-  "id": "example.quality-guard",
+  "id": "example-quality-guard",
   "name": "示例质量检查",
   "version": "0.1.0",
   "plugin_type": "quality_guard",
@@ -42,8 +42,12 @@ ZIP 根目录（或唯一顶层文件夹）须包含：
 
 `capabilities` 只接受下列值，未知、重复或非字符串值会使安装失败：
 
-- `project_read` — 读取正文、设定、状态与项目配置
-- `project_write` — 修改项目内容或配置
+- `project_read` — 读取当前活动作品的正文、设定、状态与项目配置
+- `project_write` — 修改当前活动作品的内容或配置
+- `project_catalog_read` — 读取书库作品元数据目录（ID、标题、修改时间），低风险
+- `all_projects_read` — 跨项目读取所有作品正文与敏感设定（高风险）
+- `all_projects_write` — 跨项目批量修改所有作品（极高风险）
+- `ui_embed` — 挂载受控的 UI 交互视图到宿主界面
 - `model_access` — 参与模型路由、提示词或生成流水线
 - `network_access` — 连接第三方网络服务
 - `file_export` — 创建导出文件
@@ -54,6 +58,57 @@ ZIP 根目录（或唯一顶层文件夹）须包含：
 `local_code`。省略 `capabilities` 时进入兼容推导模式；旧式单 `.py`
 插件无法预判边界，会显示为 `legacy_full_access` 高风险。权限确认用于
 产品边界与审计，不是操作系统沙箱。
+
+受信任并启用后，插件与宿主同进程运行，可以读取进程环境变量和本机配置
+（含 `config/models.json` 中的 API Key）。`project_read` 等权限不能阻止这一点。
+流水线 hook 若走子进程，会剥离 `TOKEN` / `KEY` / `SECRET` 类环境变量，并仅保留
+PATH、TEMP、SystemRoot 等启动所需项；无法 pickle 的第三方 hook 不会回退到
+宿主进程内执行。这仍不是操作系统隔离，不要安装不可信插件。
+
+## 双区域侧栏贡献点规范 (`contributes.navigation`)
+
+在 `inkrest.plugin.json` 中声明 `contributes.navigation`，可将插件视图挂载到客户端侧栏：
+
+```json
+{
+  "contributes": {
+    "navigation": [
+      {
+        "id": "radar-view",
+        "title": "伏笔雷达",
+        "surface": "project_sidebar",
+        "view": "radar-panel",
+        "icon": "radar",
+        "order": 100,
+        "requires": ["project_read"]
+      }
+    ]
+  }
+}
+```
+
+### 挂载区域限制 (`surface`)
+- `library_sidebar`：**书库级侧栏**。适用于全局模板库、统计、预设市场等，严禁依赖当前作品上下文。
+- `project_sidebar`：**作品级侧栏**。适用于单书伏笔追踪、人物拓扑图等创作辅助工具。
+- ⚠️ **严格禁止 `both`**：如果一个插件需要同时在两个区域提供功能，必须声明两条独立的 entry。
+- 单个区域最多声明 2 个导航入口，避免过度挤占导航空间。
+
+### 视图沙箱与受控 RPC 协议
+插件 UI 运行在安全的 Sandboxed iframe 中，通过 `window.parent.postMessage` 与宿主进行受控通信：
+1. **初始化**：宿主发送 `inkrest:init`（携带当前会话 ID、主题配色 Token、当前作品 ID、上下文版本号）。
+2. **生命周期与切书**：当用户切换作品或离开时，宿主发送 `inkrest:dispose`（2 秒强制超时熔断）。插件应监听并及时响应 `inkrest:disposed`。
+3. **受控 RPC 请求**：插件发送 `inkrest:rpc_request`，宿主服务端根据会话授权的安全子集校验后执行，并返回 `inkrest:rpc_response`：
+   - `host.ping` — 握手心跳（无需特殊权限）
+   - `catalog.listProjects` — 读取书库作品列表（需要 `project_catalog_read`）
+   - `project.getInfo` — 读取当前作品摘要（需要 `project_read`）
+   - `project.getChapters` — 读取章节目录与字数（需要 `project_read`）
+   - `project.getCharacters` — 读取人物设定列表（需要 `project_read`）
+   - `project.getOutline` — 读取大纲与世界观（需要 `project_read`）
+
+### 推荐模版仓库
+- 书库工具模板：`templates/plugin-starters/library-tool/`
+- 作品辅助模板：`templates/plugin-starters/project-tool/`
+- 双区域复合套件模板：`templates/plugin-starters/dual-region/`
 
 ## 插件类型
 
@@ -116,7 +171,7 @@ PLUGIN_CLASS = ExampleGuard
 .\scripts\package-plugin.ps1 -PluginDir .\templates\plugin-starter
 ```
 
-模板目录：`templates/plugin-starter/`。
+最小模板：`templates/plugin-starter/`。带侧栏视图的模板见上文「推荐模版仓库」。
 
 打包前建议检查：
 

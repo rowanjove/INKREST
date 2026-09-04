@@ -11,6 +11,7 @@ import { Loading } from '@element-plus/icons-vue'
 const {
   dialogVisible,
   openError,
+  operationError,
   running,
   form,
   ctx,
@@ -32,6 +33,7 @@ const {
   busy,
   busyPhaseLabel,
   goMonitorAlerts,
+  goTaskLogs,
   goChapterRepair,
   retryDialogContext,
   workScale,
@@ -71,6 +73,17 @@ const showVectorAlert = computed(() =>
     </div>
     <div v-else class="batch-run-body">
       <el-alert
+        v-if="operationError"
+        type="error"
+        :closable="false"
+        show-icon
+        title="连写启动失败"
+        class="readiness-alert"
+      >
+        <p>{{ operationError }}</p>
+        <el-button size="small" type="danger" plain @click="goTaskLogs">查看任务与日志</el-button>
+      </el-alert>
+      <el-alert
         v-if="!canRun"
         type="error"
         :closable="false"
@@ -78,7 +91,13 @@ const showVectorAlert = computed(() =>
         title="开书清单未全绿"
         class="readiness-alert"
       >
-        <p>请先完成：{{ pendingReadiness.map((i) => i.label).join('、') }}</p>
+        <p>
+          请先完成：{{
+            pendingReadiness.length
+              ? pendingReadiness.map((i) => i.label).join('、')
+              : '查看下方清单；已生成的大纲会在确认连写时自动同步卷队列'
+          }}
+        </p>
       </el-alert>
       <p class="batch-run-lead">
         按已有卷级队列续跑，不会重新生成全书大纲。队列不足时会按「规划窗口」自动补章目标，再执行单章流水线。

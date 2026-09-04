@@ -12,7 +12,7 @@ from novel_agent.phases.base import ChapterContext
 from novel_agent.progress import emit_progress
 from novel_agent.quality.audit_rewrite import audit_requires_rewrite
 from novel_agent.quality.generation_policy import should_length_fix_after_audit_rewrite
-from novel_agent.quality.audit_schema import validate_audit_report
+from novel_agent.quality.audit_schema import build_audit_error, validate_audit_report
 from novel_agent.quality.render_contract import (
     build_render_contract,
     persist_render_candidate,
@@ -120,6 +120,12 @@ class AuditRewriteMixin:
             ctx.chapter_id, ctx.chapter_goal, must_fix=plan_issues
         )
         self.orchestrator._write_json(ctx.chapter_dir / "plan.json", new_plan)
+        checkpoint_path = ctx.chapter_dir / "checkpoint.json"
+        if checkpoint_path.exists():
+            try:
+                checkpoint_path.unlink()
+            except OSError as exc:
+                logger.warning("Failed to drop checkpoint before plan rewrite: %s", exc)
         temp_ctx = dataclasses.replace(ctx, plan=new_plan)
         temp_ctx = self.orchestrator.generation_phase.execute(temp_ctx)
         return temp_ctx.final_text, dataclasses.replace(ctx, warnings=temp_ctx.warnings)
@@ -285,9 +291,11 @@ class AuditRewriteMixin:
             validate_audit_report(new_audit)
         except Exception as exc:
             logger.error("Rewrite audit failed: %s", exc)
+            new_audit = build_audit_error(exc, stage=f"rewrite_attempt_{attempt + 1}")
             ctx = dataclasses.replace(
                 ctx,
-                warnings=ctx.warnings + (f"Rewrite audit failed (attempt {attempt+1}): {exc}.",),
+                warnings=ctx.warnings
+                + (f"Rewrite audit failed (attempt {attempt+1}): {exc}. Audit marked incomplete.",),
             )
 
         self._persist_audit_report(ctx, new_audit)

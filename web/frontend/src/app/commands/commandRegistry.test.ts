@@ -4,6 +4,7 @@ import type { SnapshotAction } from '../../entities/project/projectSnapshot'
 import {
   buildNavigationCommands,
   commandFromSnapshotAction,
+  commandsFromPluginNavigation,
   searchCommands,
 } from './commandRegistry'
 
@@ -19,11 +20,12 @@ describe('command registry', () => {
     ])
   })
 
-  it('adds all six project centers and keeps settings searchable', () => {
+  it('keeps core centers and makes the quality center searchable', () => {
     const commands = buildNavigationCommands(true)
 
     expect(commands.filter((command) => command.group === '项目').map((command) => command.label))
       .toEqual(['概览', '策划', '正文', '生产', '质量', '发布'])
+    expect(searchCommands(commands, '质量')[0]).toMatchObject({ path: '/quality' })
     expect(searchCommands(commands, '模型')).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ path: '/config#model-library', label: '模型与提供方' }),
@@ -48,8 +50,37 @@ describe('command registry', () => {
     }
 
     expect(commandFromSnapshotAction(action)).toMatchObject({
-      path: '/workspace?intent=novel_continue',
+      path: '/production?intent=novel_continue&confirm=1',
       executeMode: 'navigate',
     })
+  })
+
+  it('converts plugin navigation contributions into searchable commands', () => {
+    const pluginCommands = commandsFromPluginNavigation([
+      {
+        id: 'story-tools:radar',
+        plugin_id: 'story-tools',
+        plugin_name: '故事工具箱',
+        contribution_id: 'radar',
+        title: '伏笔雷达',
+        surface: 'project_sidebar',
+        icon: 'radar',
+        view: 'radar-view',
+        path: '/extensions/project/story-tools/radar-view',
+        order: 100,
+        default_visibility: 'visible',
+        requires: [],
+      },
+    ])
+
+    expect(pluginCommands).toHaveLength(1)
+    expect(pluginCommands[0]).toMatchObject({
+      id: 'plugin-nav-story-tools:radar',
+      label: '伏笔雷达',
+      group: '项目',
+      path: '/extensions/project/story-tools/radar-view',
+    })
+    const searchRes = searchCommands(pluginCommands, '伏笔')
+    expect(searchRes[0].path).toBe('/extensions/project/story-tools/radar-view')
   })
 })

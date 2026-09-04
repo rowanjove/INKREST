@@ -3,6 +3,9 @@ import {
   createProductionActionIntent,
   filterProductionReviews,
   filterProductionTasks,
+  qualityBlockedByLabels,
+  qualityHref,
+  qualityRecoverySteps,
   resolveReviewActionTargets,
   type ProductionReviewItem,
   type ProductionTask,
@@ -47,6 +50,8 @@ const review = (overrides: Partial<ProductionReviewItem>): ProductionReviewItem 
   completed_stages: [],
   updated_at: null,
   recommended_action: 'edit_then_gate',
+  blocked_by: [],
+  chapter_score: null,
   ...overrides,
 })
 
@@ -96,5 +101,16 @@ describe('production center contracts', () => {
     expect(intent.label).toBe('重新生产章节')
     expect(intent.description).toContain('修订历史')
     expect(intent.tone).toBe('danger')
+  })
+
+  it('builds a three-step recovery path for quality-blocked chapters', () => {
+    const item = review({
+      blocked_by: ['scene_delta', 'layout'],
+      chapter_score: 5.5,
+    })
+    const steps = qualityRecoverySteps(item)
+    expect(steps.map((step) => step.id)).toEqual(['inspect', 'quality', 'rerun'])
+    expect(qualityBlockedByLabels(item)).toEqual(['场景推进', '段落与排版'])
+    expect(qualityHref(item.chapter_id)).toEqual({ path: '/quality', query: { chapter: '003' } })
   })
 })

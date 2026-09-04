@@ -18,6 +18,8 @@ logger = get_logger("progress")
 _json_output_enabled = False
 ProgressCallback = Callable[[Dict[str, Any]], None]
 AbortCheck = Callable[[], bool]
+PauseCheck = Callable[[], bool]
+UsageCallback = Callable[[Dict[str, Any]], bool]
 
 _default_progress_callback: Optional[ProgressCallback] = None
 _default_abort_check: Optional[AbortCheck] = None
@@ -29,6 +31,14 @@ _abort_check_ctx: ContextVar[Optional[AbortCheck]] = ContextVar(
     "abort_check",
     default=None,
 )
+_pause_check_ctx: ContextVar[Optional[PauseCheck]] = ContextVar(
+    "pause_check",
+    default=None,
+)
+_usage_callback_ctx: ContextVar[Optional[UsageCallback]] = ContextVar(
+    "usage_callback",
+    default=None,
+)
 _project_id_ctx: ContextVar[str] = ContextVar("progress_project_id", default="")
 _task_id_ctx: ContextVar[str] = ContextVar("progress_task_id", default="")
 
@@ -38,12 +48,16 @@ def progress_handlers(
     progress_callback: Optional[ProgressCallback],
     abort_check: Optional[AbortCheck],
     *,
+    pause_check: Optional[PauseCheck] = None,
+    usage_callback: Optional[UsageCallback] = None,
     project_id: str = "",
     task_id: str = "",
 ) -> Iterator[None]:
     """Bind progress and abort handlers to the current execution context."""
     progress_token = _progress_callback_ctx.set(progress_callback)
     abort_token = _abort_check_ctx.set(abort_check)
+    pause_token = _pause_check_ctx.set(pause_check)
+    usage_token = _usage_callback_ctx.set(usage_callback)
     project_token = _project_id_ctx.set(project_id)
     task_token = _task_id_ctx.set(task_id)
     try:
@@ -52,6 +66,8 @@ def progress_handlers(
         _task_id_ctx.reset(task_token)
         _project_id_ctx.reset(project_token)
         _abort_check_ctx.reset(abort_token)
+        _pause_check_ctx.reset(pause_token)
+        _usage_callback_ctx.reset(usage_token)
         _progress_callback_ctx.reset(progress_token)
 
 
@@ -84,6 +100,34 @@ def check_aborted() -> None:
         raise TaskAbortedError("任务已被用户中止。")
 
 
+def check_paused() -> None:
+    """Raise only at cooperative checkpoints after a pause was requested."""
+    callback = _pause_check_ctx.get()
+    if callback and callback():
+        from novel_agent.exceptions import TaskPausedError
+
+        raise TaskPausedError("任务已在安全检查点暂停。")
+
+
+def check_control() -> None:
+    """Check terminal cancellation first, then cooperative pause."""
+    check_aborted()
+    check_paused()
+
+
+def record_llm_usage(event: Dict[str, Any]) -> bool:
+    """Persist one usage event through the active task context when available."""
+    callback = _usage_callback_ctx.get()
+    if callback is None:
+        return False
+    payload = {**event, **_event_identity()}
+    try:
+        return bool(callback(payload))
+    except Exception as exc:
+        logger.warning("Failed to persist LLM usage event: %s", exc)
+        return False
+
+
 def enable_json_output() -> None:
     """Enable JSON progress output to stdout."""
     global _json_output_enabled
@@ -114,7 +158,7 @@ def emit_progress(
         data: Optional payload (scene count, word count, etc).
         chapter_id: Current chapter being processed.
     """
-    check_aborted()
+    check_control()
     msg = {
         "type": "progress",
         "step": step,

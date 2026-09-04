@@ -62,3 +62,29 @@ def test_story_fts_before_chapter_filters_future_events(tmp_path: Path) -> None:
     assert results
     assert all(item["source_chapter"] in {"", "001"} for item in results)
     assert not any(item["memory_id"].startswith("event:future") for item in results)
+
+
+def test_story_fts_skips_legacy_events_when_narrative_exists(tmp_path: Path) -> None:
+    store = SQLiteStateStore(tmp_path)
+    store.sync_state_update(
+        "001",
+        {"events": [{"id": "E-legacy", "summary": "旧表里的青石门"}]},
+    )
+    store.upsert_narrative_events(
+        "001",
+        [
+            {
+                "id": "E-current",
+                "summary": "推开青石门",
+                "action": "推开青石门",
+                "outcome": "门后是空廊",
+                "objects": ["青石门"],
+            }
+        ],
+        source_revision_id="r2",
+    )
+    store.rebuild_story_search_index()
+    results = store.search_story("青石门")
+    event_ids = [item["memory_id"] for item in results if item["memory_id"].startswith("event:")]
+    assert any(item.startswith("event:E-current") for item in event_ids)
+    assert "event:E-legacy" not in event_ids

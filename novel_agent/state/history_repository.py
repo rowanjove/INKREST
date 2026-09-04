@@ -5,7 +5,7 @@ import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
 
-from novel_agent.state.sqlite_schema import db_write_lock, safe_connection
+from novel_agent.state.sqlite_schema import db_write_lock, safe_connection, safe_write_connection
 
 
 from novel_agent.state.history_repository_legacy import HistoryLegacySearchMixin
@@ -238,7 +238,7 @@ class HistoryRepositoryMixin(HistoryLegacySearchMixin):
         query: str = "",
         status: str = "all",
         has_content: Optional[bool] = None,
-    ) -> tuple[str, list[Any]]:
+    ) -> Tuple[str, List[Any]]:
         attention = (
             "(lower(coalesce(gate_status,'')) in ('failed','blocked','fail') "
             "or lower(coalesce(risk_level,'')) in ('high','critical','高','严重'))"
@@ -247,8 +247,8 @@ class HistoryRepositoryMixin(HistoryLegacySearchMixin):
             "(coalesce(has_final,0) = 1 or lower(coalesce(gate_status,'')) "
             "in ('passed','pass','ready'))"
         )
-        clauses: list[str] = []
-        params: list[Any] = []
+        clauses: List[str] = []
+        params: List[Any] = []
         needle = str(query or "").strip()
         if needle:
             clauses.append("(id LIKE ? OR title LIKE ?)")
@@ -334,17 +334,43 @@ class HistoryRepositoryMixin(HistoryLegacySearchMixin):
         output_tokens: int,
         input_cost: float,
         output_cost: float,
-        project_id: str = ""
-    ) -> None:
+        project_id: str = "",
+        *,
+        task_id: str = "",
+        chapter_id: str = "",
+        role: str = "",
+        outcome: str = "succeeded",
+        finish_reason: str = "",
+        provider_request_id: str = "",
+    ) -> bool:
         with safe_connection(self.db_path) as conn:
             with conn:
-                conn.execute(
+                if call_id:
+                    exists = conn.execute(
+                        "select 1 from llm_cost_log where call_id = ? limit 1",
+                        (call_id,),
+                    ).fetchone()
+                    if exists:
+                        return False
+                cursor = conn.execute(
                     """
-                    insert into llm_cost_log (call_id, model, input_tokens, output_tokens, input_cost_cny, output_cost_cny, project_id)
-                    values (?, ?, ?, ?, ?, ?, ?)
+                    insert or ignore into llm_cost_log (
+                      call_id, model, input_tokens, output_tokens,
+                      input_cost_cny, output_cost_cny, project_id,
+                      task_id, chapter_id, role, outcome, finish_reason,
+                      provider_request_id
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (call_id, model, input_tokens, output_tokens, input_cost, output_cost, project_id)
+                    (
+                        call_id, model, input_tokens, output_tokens,
+                        input_cost, output_cost, project_id,
+                        task_id, chapter_id, role, outcome, finish_reason,
+                        provider_request_id,
+                    )
                 )
+                if cursor.rowcount == 0 and call_id:
+                    return False
+        return True
 
     def get_llm_cost_summary(self, project_id: str = "") -> Dict[str, Any]:
         """Aggregate LLM cost rows for monitor UI (amounts stored in input/output_cost_cny columns)."""
@@ -474,8 +500,35 @@ class HistoryRepositoryMixin(HistoryLegacySearchMixin):
         dry_run: bool,
         status: str,
     ) -> None:
-        with safe_connection(self.db_path) as conn:
+        with safe_write_connection(self.db_path) as conn:
             with conn:
+                columns = {
+                    row[1] for row in conn.execute("pragma table_info(tasks)").fetchall()
+                }
+                if "payload_json" in columns:
+                    existing = conn.execute(
+                        "select status, claim_token from tasks where id = ?",
+                        (task_id,),
+                    ).fetchone()
+                    if existing:
+                        current_status = str(existing[0] or "")
+                        claim_token = existing[1]
+                        if claim_token or current_status in {
+                            "claimed",
+                            "running",
+                            "paused",
+                        }:
+                            conn.execute(
+                                """
+                                update tasks set
+                                  chapter_id = ?,
+                                  goal = ?,
+                                  dry_run = ?
+                                where id = ?
+                                """,
+                                (chapter_id, goal, 1 if dry_run else 0, task_id),
+                            )
+                            return
                 conn.execute(
                     """
                     insert into tasks (id, chapter_id, goal, dry_run, status)
@@ -751,6 +804,7 @@ class HistoryRepositoryMixin(HistoryLegacySearchMixin):
         note: str = "",
         version_id: Optional[str] = None
     ) -> str:
+        """Leftover named-branch table. Product writes go to document_revisions."""
         from novel_agent.scripts.count_chars import count_chinese_chars
         word_count = count_chinese_chars(content)
         v_id = version_id or str(uuid.uuid4())
@@ -778,7 +832,30 @@ class HistoryRepositoryMixin(HistoryLegacySearchMixin):
                 )
         return v_id
 
-    def list_chapter_versions(self, chapter_id: str) -> List[Dict[str, Any]]:
+    def _revision_as_legacy_version(
+        self,
+        revision: Dict[str, Any],
+        current_revision: Optional[int],
+    ) -> Dict[str, Any]:
+        from novel_agent.scripts.count_chars import count_chinese_chars
+
+        text = str(revision.get("plain_text") or "")
+        rev_no = int(revision.get("revision") or 0)
+        return {
+            "id": str(revision.get("revision_id") or ""),
+            "chapter_id": str(revision.get("chapter_id") or ""),
+            "version_name": f"r{rev_no}",
+            "content": text,
+            "plan": "",
+            "is_active": 1 if current_revision is not None and rev_no == int(current_revision) else 0,
+            "word_count": count_chinese_chars(text),
+            "note": str(revision.get("source") or ""),
+            "created_at": revision.get("created_at"),
+            "revision": rev_no,
+            "revision_id": str(revision.get("revision_id") or ""),
+        }
+
+    def _legacy_list_chapter_versions(self, chapter_id: str) -> List[Dict[str, Any]]:
         with safe_connection(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
@@ -792,7 +869,32 @@ class HistoryRepositoryMixin(HistoryLegacySearchMixin):
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def list_chapter_versions(self, chapter_id: str) -> List[Dict[str, Any]]:
+        """Prefer document_revisions; fall back to leftover chapter_versions rows."""
+        current = self.get_manuscript_document(chapter_id)
+        revisions = self.list_manuscript_revisions(chapter_id)
+        if revisions:
+            current_rev = int(current["revision"]) if current else None
+            return [self._revision_as_legacy_version(item, current_rev) for item in revisions]
+        return self._legacy_list_chapter_versions(chapter_id)
+
     def get_chapter_version(self, version_id: str) -> Optional[Dict[str, Any]]:
+        with safe_connection(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                select revision_id, document_id, chapter_id, revision, title,
+                       content_json, plain_text, markdown_text, source, created_at
+                from document_revisions
+                where revision_id = ?
+                """,
+                (version_id,),
+            ).fetchone()
+        if row is not None:
+            revision = self._revision_row(row)
+            current = self.get_manuscript_document(str(revision.get("chapter_id") or ""))
+            current_rev = int(current["revision"]) if current else None
+            return self._revision_as_legacy_version(revision, current_rev)
         with safe_connection(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(

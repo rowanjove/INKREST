@@ -68,6 +68,34 @@ class TestNarrativeEventStore(unittest.TestCase):
             self.assertEqual(row[0], "chapter:001")
             self.assertEqual(row[1], "rev-2")
 
+    def test_upsert_supersedes_dropped_event_ids(self):
+        with tempfile.TemporaryDirectory(prefix="narrative-event-drop-") as raw_root:
+            store = SQLiteStateStore(Path(raw_root))
+            store.upsert_narrative_events(
+                "001",
+                [
+                    {"id": "E-OLD", "summary": "林澈把信烧掉了。", "characters": ["林澈"]},
+                    {"id": "E-KEEP", "summary": "雨还在下。", "characters": ["林澈"]},
+                ],
+                source_revision_id="rev-1",
+            )
+            store.upsert_narrative_events(
+                "001",
+                [
+                    {"id": "E-KEEP", "summary": "雨停了。", "characters": ["林澈"]},
+                    {"id": "E-NEW", "summary": "林澈把信塞进大衣。", "characters": ["林澈"]},
+                ],
+                source_revision_id="rev-2",
+            )
+            current = store.list_narrative_events(chapter_id="001")
+            history = store.list_narrative_events(chapter_id="001", include_superseded=True)
+            ids = {item["event_id"] for item in current}
+            self.assertEqual(ids, {"E-KEEP", "E-NEW"})
+            old = next(item for item in history if item["event_id"] == "E-OLD")
+            self.assertTrue(old["superseded"])
+            self.assertTrue(old["superseded_by"])
+            self.assertFalse(any(item["event_id"] == "E-OLD" for item in current))
+
     def test_dual_story_time_and_knowledge_scope_round_trip(self):
         with tempfile.TemporaryDirectory(prefix="narrative-event-time-") as raw_root:
             store = SQLiteStateStore(Path(raw_root))

@@ -28,6 +28,7 @@ _SQL_TOTAL_ALL = """
       coalesce(sum(output_tokens), 0) as output_tokens,
       coalesce(sum(input_cost_cny), 0) as input_cost_cny,
       coalesce(sum(output_cost_cny), 0) as output_cost_cny
+      , max(created_at) as last_event_at
     from llm_cost_log
 """
 
@@ -38,6 +39,7 @@ _SQL_TOTAL_BY_PROJECT = """
       coalesce(sum(output_tokens), 0) as output_tokens,
       coalesce(sum(input_cost_cny), 0) as input_cost_cny,
       coalesce(sum(output_cost_cny), 0) as output_cost_cny
+      , max(created_at) as last_event_at
     from llm_cost_log
     where project_id = ?
 """
@@ -69,6 +71,7 @@ def _empty_persisted() -> Dict[str, Any]:
         "total_cost_cny": 0.0,
         "today_tokens": 0,
         "today_cost_cny": 0.0,
+        "last_event_at": None,
     }
 
 
@@ -86,6 +89,7 @@ def _row_to_persisted(row: tuple, today_row: Optional[tuple]) -> Dict[str, Any]:
         "total_cost_cny": round(total_cost, 6),
         "today_tokens": today_tokens,
         "today_cost_cny": round(today_cost, 6),
+        "last_event_at": row[5] if len(row) > 5 else None,
     }
 
 
@@ -147,5 +151,6 @@ def build_cost_summary(root: Path) -> Dict[str, Any]:
         "persisted": persisted,
         "persisted_error": persisted_error,
         "recent_rounds": read_recent_autopilot_rounds(root),
-        "disclaimer": "落库实耗可能有延迟；连写弹窗估费为粗算，口径见 novel_agent/pricing.py",
+        "usage_state": "recorded" if persisted.get("call_count") else "no_calls",
+        "disclaimer": "模型响应返回 usage 后会即时落库；供应商未返回 usage 的调用不会虚构费用。",
     }

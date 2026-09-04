@@ -259,12 +259,10 @@ html[data-theme='dark'] .el-empty__description p {
 .page-title-area h1,
 .page-title {
   margin: 0;
-  font-size: 26px;
-  font-weight: 850;
+  color: var(--color-text-strong);
+  font-size: 25px;
+  font-weight: 800;
   letter-spacing: -0.02em;
-  background: linear-gradient(135deg, var(--color-text-strong) 20%, var(--color-primary) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
   display: inline-flex;
   align-items: center;
   gap: 8px;

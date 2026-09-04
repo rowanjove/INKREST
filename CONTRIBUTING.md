@@ -12,7 +12,7 @@ npm run test:unit
 npm run audit:dead-code
 npm run build
 cd ../..
-python -m pytest tests/test_workspace_ui_contract.py -q
+py -3.12 -m pytest tests/test_workspace_ui_contract.py -q
 ```
 
 ### E2E（需本地后台）
@@ -26,8 +26,8 @@ npm run test:e2e
 ### 只改后端（`novel_agent/`、`web/` Python）
 
 ```powershell
-python -m ruff check novel_agent web tests
-python -m pytest tests/ --ignore=tests/smoke -q
+py -3.12 -m ruff check novel_agent web tests
+py -3.12 -m pytest tests/ --ignore=tests/smoke -q
 ```
 
 ### 推送 / 开 PR 前（推荐全量）
@@ -40,9 +40,9 @@ npm run test:electron
 npm run build
 npm run check:bundle
 cd ../..
-python -m ruff check novel_agent web tests
-python -m pytest tests/ --ignore=tests/smoke -q --tb=short
-python -m pytest tests/test_full_chain_chaos.py tests/api/test_novel_smoke_chain.py -q --tb=short
+py -3.12 -m ruff check novel_agent web tests
+py -3.12 -m pytest tests/ --ignore=tests/smoke -q --tb=short
+py -3.12 -m pytest tests/test_full_chain_chaos.py tests/api/test_novel_smoke_chain.py -q --tb=short
 python scripts/perf_api_baseline.py --check
 ```
 
@@ -67,7 +67,7 @@ python scripts/perf_api_baseline.py --check
 
 ## 发布清单（portable / Electron）
 
-1. 确认 `pytest tests/ --ignore=tests/smoke`、`npm run test:unit`、`npm run build`、`npm run check:bundle` 全绿
+1. 确认 `py -3.12 -m pytest tests/ --ignore=tests/smoke`、`npm run test:unit`、`npm run build`、`npm run check:bundle` 全绿
 2. 对齐版本号：`python scripts/sync_version.py`（以根目录 `VERSION` 为准，同步 `package.json` 与 `web/app.py`）
 3. 发布前校验：`python scripts/validate_release.py`
 4. 更新发版说明

@@ -28,6 +28,11 @@ def iter_publication_chapters(
 ) -> Iterator[PublicationChapter]:
     """Yield publication chapters from SQLite without materializing the full book."""
     store = SQLiteStateStore(Path(root_dir))
+    if store.count_manuscript_document_summaries() == 0:
+        from novel_agent.services.chapter_index_sync import sync_chapters_from_disk
+
+        sync_chapters_from_disk(Path(root_dir), store)
+
     selected = selected_chapter_ids(chapter_ids)
     selected_list = list(selected) if selected else None
     for row in store.iter_manuscript_export_rows(chapter_ids=selected_list):

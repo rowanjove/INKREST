@@ -10,6 +10,17 @@ STATUS_PASS = "PASS"
 STATUS_WARN = "WARN"
 STATUS_FAIL = "FAIL"
 
+# Physical / structural checks that may hard-block in block_on_fail mode.
+# Style, anti-AI flavor, burstiness and similar L1 signals stay WARN-only.
+L0_HARD_CHECKS = frozenset(
+    {
+        "continuity_physical",
+        "layout",
+        "scene_delta",
+        "canon_visibility",
+    }
+)
+
 
 @dataclass
 class GuardFinding:
@@ -69,19 +80,22 @@ def _non_empty_final_text(text: str) -> GuardResult:
     )
 
 
-def _status_from_check(check: Mapping[str, Any]) -> str:
-    level = str(check.get("level") or "none")
+def _status_from_check(name: str, check: Mapping[str, Any]) -> str:
+    level = str(check.get("level") or "none").lower()
+    passed = bool(check.get("pass", False))
+    if name in L0_HARD_CHECKS and (not passed or level in {"fail", "error"}):
+        return STATUS_FAIL
     if level == "fail":
         return STATUS_WARN
     if level in {"warning", "review"}:
         return STATUS_WARN
-    if check.get("pass", False):
+    if passed:
         return STATUS_PASS
     return STATUS_WARN
 
 
 def _result_from_quality_check(name: str, check: Mapping[str, Any]) -> GuardResult:
-    status = _status_from_check(check)
+    status = _status_from_check(name, check)
     details = [str(item) for item in check.get("details", []) if item]
     findings = []
     if status != STATUS_PASS:
@@ -100,7 +114,7 @@ def _result_from_quality_check(name: str, check: Mapping[str, Any]) -> GuardResu
     return GuardResult(
         guard=name,
         status=status,
-        level=2,
+        level=1 if name in L0_HARD_CHECKS and status == STATUS_FAIL else 2,
         title=str(check.get("title") or name),
         findings=findings,
         metrics={key: value for key, value in check.items() if key not in {"details"}},

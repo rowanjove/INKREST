@@ -50,6 +50,18 @@ const router = createRouter({
     { path: '/config', name: 'config', component: () => import('./views/ConfigView.vue'), meta: { scope: 'global', title: '设置', navId: 'settings' } },
     { path: '/writer', name: 'writer', component: () => import('./views/WritingWorkspace.vue'), meta: { scope: 'project', title: '正文', navId: 'manuscript', fullBleed: true } },
     { path: '/plugins', name: 'plugins', component: () => import('./views/PluginManager.vue'), meta: { scope: 'global', title: '扩展', navId: 'extensions' } },
+    {
+      path: '/extensions/library/:pluginId/:viewId',
+      name: 'extension-library-view',
+      component: () => import('./views/PluginView.vue'),
+      meta: { scope: 'global', title: '插件' },
+    },
+    {
+      path: '/extensions/project/:pluginId/:viewId',
+      name: 'extension-project-view',
+      component: () => import('./views/PluginView.vue'),
+      meta: { scope: 'project', title: '插件' },
+    },
     { path: '/pet', name: 'pet', component: () => import('./views/PetView.vue'), meta: { scope: 'pet', title: '杉杉', fullBleed: true } },
     { path: '/pet-bubble', name: 'pet-bubble', component: () => import('./views/PetBubbleView.vue'), meta: { scope: 'pet', title: '杉杉助手', fullBleed: true } },
     { path: '/trope-workshop', redirect: '/create?source=template', meta: { scope: 'global', title: '新建作品', navId: 'create' } },

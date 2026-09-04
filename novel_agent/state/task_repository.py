@@ -17,7 +17,7 @@ from novel_agent.domain.tasks import (
     assert_task_transition,
 )
 from novel_agent.state.schema_version import LegacySchemaError, SchemaState
-from novel_agent.state.sqlite_schema import safe_connection
+from novel_agent.state.sqlite_schema import db_write_lock, safe_connection, safe_write_connection
 
 
 class TaskConflictError(RuntimeError):
@@ -26,6 +26,9 @@ class TaskConflictError(RuntimeError):
 
 class TaskOwnershipError(RuntimeError):
     """Raised when a worker mutates a task without its active claim token."""
+
+
+DEFAULT_TASK_LEASE_SECONDS = 900
 
 
 def _utcnow() -> datetime:
@@ -46,6 +49,13 @@ def _load_json(value: str | None) -> dict[str, Any] | None:
         raise ValueError("Task JSON fields must contain objects")
     return loaded
 
+
+_TASK_COLUMNS = (
+    "id, project_id, task_type, status, payload_json, result_json, "
+    "attempt, max_attempts, claim_token, lease_expires_at, "
+    "heartbeat_at, checkpoint, status_reason, created_at, "
+    "started_at, finished_at, parent_task_id, active_child_task_id, checkpoint_kind"
+)
 
 class TaskRepository:
     def __init__(self, db_path: Path, schema_state: SchemaState):
@@ -75,7 +85,7 @@ class TaskRepository:
                 select id, project_id, task_type, status, payload_json, result_json,
                        attempt, max_attempts, claim_token, lease_expires_at,
                        heartbeat_at, checkpoint, status_reason, created_at,
-                       started_at, finished_at
+                       started_at, finished_at, parent_task_id, active_child_task_id, checkpoint_kind
                 from tasks where id = ?
                 """,
                 (task_id,),
@@ -108,7 +118,7 @@ class TaskRepository:
                 select id, project_id, task_type, status, payload_json, result_json,
                        attempt, max_attempts, claim_token, lease_expires_at,
                        heartbeat_at, checkpoint, status_reason, created_at,
-                       started_at, finished_at
+                       started_at, finished_at, parent_task_id, active_child_task_id, checkpoint_kind
                 from tasks {where}
                 order by created_at desc limit ?
                 """,
@@ -147,6 +157,7 @@ class TaskRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    @db_write_lock
     def append_task_log(
         self,
         task_id: str,
@@ -167,7 +178,7 @@ class TaskRepository:
         normalized_step = str(step or "").strip()[:128]
         if not normalized_message:
             return 0
-        with safe_connection(self.db_path) as conn:
+        with safe_write_connection(self.db_path) as conn:
             exists = conn.execute(
                 "select 1 from tasks where id = ?",
                 (task_id,),
@@ -220,6 +231,7 @@ class TaskRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    @db_write_lock
     def create_task(
         self,
         *,
@@ -228,19 +240,21 @@ class TaskRepository:
         task_type: TaskType | str,
         payload: dict[str, Any],
         max_attempts: int = 1,
+        parent_task_id: str | None = None,
+        checkpoint_kind: str | None = None,
     ) -> TaskRecord:
         self._require_v2()
         normalized_type = TaskType(task_type)
         payload_json = _dump_json(payload)
         now = _utcnow().isoformat()
-        with safe_connection(self.db_path) as conn:
+        with safe_write_connection(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             existing = conn.execute(
                 """
                 select id, project_id, task_type, status, payload_json, result_json,
                        attempt, max_attempts, claim_token, lease_expires_at,
                        heartbeat_at, checkpoint, status_reason, created_at,
-                       started_at, finished_at
+                       started_at, finished_at, parent_task_id, active_child_task_id, checkpoint_kind
                 from tasks where id = ?
                 """,
                 (task_id,),
@@ -261,8 +275,8 @@ class TaskRepository:
                 """
                 insert into tasks (
                   id, project_id, task_type, status, payload_json,
-                  attempt, max_attempts, created_at
-                ) values (?, ?, ?, ?, ?, 0, ?, ?)
+                  attempt, max_attempts, created_at, parent_task_id, checkpoint_kind
+                ) values (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
                 """,
                 (
                     task_id,
@@ -272,6 +286,8 @@ class TaskRepository:
                     payload_json,
                     max_attempts,
                     now,
+                    parent_task_id,
+                    checkpoint_kind,
                 ),
             )
         task = self.get_task(task_id)
@@ -279,16 +295,17 @@ class TaskRepository:
             raise RuntimeError(f"Task {task_id!r} disappeared after creation")
         return task
 
+    @db_write_lock
     def claim_task(
         self,
         task_id: str,
         *,
-        lease_seconds: int = 60,
+        lease_seconds: int = DEFAULT_TASK_LEASE_SECONDS,
     ) -> TaskRecord | None:
         self._require_v2()
         now = _utcnow()
         token = secrets.token_urlsafe(24)
-        with safe_connection(self.db_path) as conn:
+        with safe_write_connection(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("begin immediate")
             row = conn.execute(
@@ -300,7 +317,7 @@ class TaskRepository:
             if not row:
                 return None
             status = TaskStatus(row["status"])
-            if status not in {TaskStatus.PENDING, TaskStatus.FAILED}:
+            if status not in {TaskStatus.PENDING, TaskStatus.FAILED, TaskStatus.PAUSED}:
                 return None
             try:
                 assert_task_transition(
@@ -316,7 +333,7 @@ class TaskRepository:
                 """
                 update tasks set
                   status = ?,
-                  attempt = attempt + 1,
+                  attempt = attempt + case when status = ? then 0 else 1 end,
                   claim_token = ?,
                   lease_expires_at = ?,
                   heartbeat_at = ?,
@@ -326,6 +343,7 @@ class TaskRepository:
                 """,
                 (
                     TaskStatus.CLAIMED.value,
+                    TaskStatus.PAUSED.value,
                     token,
                     lease_expires_at,
                     now.isoformat(),
@@ -345,10 +363,87 @@ class TaskRepository:
             )
         return self.get_task(task_id)
 
+    @db_write_lock
+    def request_control(self, task_id: str, action: str) -> TaskRecord:
+        """Persist a cooperative control request without faking its acknowledgement."""
+        self._require_v2()
+        if action not in {"pause_requested", "resume_requested", "cancel_requested", ""}:
+            raise ValueError(f"Unsupported task control action: {action!r}")
+        current = self._required_task(task_id)
+        checkpoint = dict(current.checkpoint or {})
+        current_action = checkpoint.get("control_action")
+        if current_action == "cancel_requested" and action == "pause_requested":
+            return current
+        if action:
+            checkpoint["control_action"] = action
+        else:
+            checkpoint.pop("control_action", None)
+        with safe_write_connection(self.db_path) as conn:
+            conn.execute(
+                "update tasks set checkpoint = ?, status_reason = ? where id = ?",
+                (
+                    _dump_json(checkpoint),
+                    action or None,
+                    task_id,
+                ),
+            )
+        return self._required_task(task_id)
+
+    @db_write_lock
+    def pause_task(
+        self,
+        task_id: str,
+        *,
+        reason: str = "user_paused",
+        resumable_from: str = "",
+    ) -> TaskRecord:
+        """Acknowledge a pause for a task that is not executing in this worker."""
+        self._require_v2()
+        current = self._required_task(task_id)
+        if current.status is TaskStatus.PAUSED:
+            return current
+        assert_task_transition(
+            current.status,
+            TaskStatus.PAUSED,
+            attempt=current.attempt,
+            max_attempts=current.max_attempts,
+        )
+        checkpoint = dict(current.checkpoint or {})
+        checkpoint.pop("control_action", None)
+        if resumable_from:
+            checkpoint["resumable_from"] = resumable_from
+        with safe_write_connection(self.db_path) as conn:
+            updated = conn.execute(
+                """
+                update tasks set status = ?, checkpoint = ?, status_reason = ?,
+                  claim_token = null, lease_expires_at = null, finished_at = null
+                where id = ? and status = ?
+                """,
+                (
+                    TaskStatus.PAUSED.value,
+                    _dump_json(checkpoint),
+                    reason,
+                    task_id,
+                    current.status.value,
+                ),
+            )
+            if updated.rowcount != 1:
+                raise TaskConflictError("Task changed before pause")
+            self._record_event(
+                conn,
+                task_id,
+                current.status,
+                TaskStatus.PAUSED,
+                reason=reason,
+                resumable_from=resumable_from or None,
+            )
+        return self._required_task(task_id)
+
+    @db_write_lock
     def start_task(self, task_id: str, claim_token: str) -> TaskRecord:
         self._require_v2()
         now = _utcnow().isoformat()
-        with safe_connection(self.db_path) as conn:
+        with safe_write_connection(self.db_path) as conn:
             updated = conn.execute(
                 """
                 update tasks set status = ?, started_at = coalesce(started_at, ?)
@@ -373,18 +468,19 @@ class TaskRepository:
             )
         return self._required_task(task_id)
 
+    @db_write_lock
     def heartbeat(
         self,
         task_id: str,
         claim_token: str,
         *,
         checkpoint: dict[str, Any] | None = None,
-        lease_seconds: int = 60,
+        lease_seconds: int = DEFAULT_TASK_LEASE_SECONDS,
     ) -> TaskRecord:
         self._require_v2()
         now = _utcnow()
-        updated_checkpoint = _dump_json(checkpoint)
-        with safe_connection(self.db_path) as conn:
+        with safe_write_connection(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
             if checkpoint is None:
                 updated = conn.execute(
                     """
@@ -402,6 +498,41 @@ class TaskRepository:
                     ),
                 )
             else:
+                row = conn.execute(
+                    """
+                    select checkpoint from tasks
+                    where id = ? and claim_token = ? and status in (?, ?)
+                    """,
+                    (
+                        task_id,
+                        claim_token,
+                        TaskStatus.CLAIMED.value,
+                        TaskStatus.RUNNING.value,
+                    ),
+                ).fetchone()
+                if row is None:
+                    raise TaskOwnershipError("Task lease is not owned by this worker")
+                merged: dict[str, Any] = {}
+                raw_checkpoint = row["checkpoint"]
+                if raw_checkpoint:
+                    try:
+                        loaded = json.loads(raw_checkpoint)
+                    except json.JSONDecodeError:
+                        loaded = {}
+                    if isinstance(loaded, dict):
+                        merged = loaded
+                preserved_control = merged.get("control_action")
+                merged.update(checkpoint)
+                incoming_control = checkpoint.get("control_action") if "control_action" in checkpoint else None
+                if preserved_control == "cancel_requested" and incoming_control in {
+                    None,
+                    "",
+                    "pause_requested",
+                    "resume_requested",
+                }:
+                    merged["control_action"] = "cancel_requested"
+                elif "control_action" not in checkpoint and preserved_control:
+                    merged["control_action"] = preserved_control
                 updated = conn.execute(
                     """
                     update tasks set
@@ -412,7 +543,7 @@ class TaskRepository:
                     (
                         now.isoformat(),
                         (now + timedelta(seconds=lease_seconds)).isoformat(),
-                        updated_checkpoint,
+                        _dump_json(merged),
                         task_id,
                         claim_token,
                         TaskStatus.CLAIMED.value,
@@ -423,6 +554,7 @@ class TaskRepository:
                 raise TaskOwnershipError("Task lease is not owned by this worker")
         return self._required_task(task_id)
 
+    @db_write_lock
     def finish_task(
         self,
         task_id: str,
@@ -455,7 +587,7 @@ class TaskRepository:
             if target in {TaskStatus.SUCCEEDED, TaskStatus.CANCELLED}
             else None
         )
-        with safe_connection(self.db_path) as conn:
+        with safe_write_connection(self.db_path) as conn:
             updated = conn.execute(
                 """
                 update tasks set
@@ -489,6 +621,7 @@ class TaskRepository:
             )
         return self._required_task(task_id)
 
+    @db_write_lock
     def cancel_task(self, task_id: str, *, reason: str = "user_cancelled") -> TaskRecord:
         self._require_v2()
         current = self._required_task(task_id)
@@ -504,7 +637,7 @@ class TaskRepository:
             attempt=current.attempt,
             max_attempts=current.max_attempts,
         )
-        with safe_connection(self.db_path) as conn:
+        with safe_write_connection(self.db_path) as conn:
             updated = conn.execute(
                 """
                 update tasks set
@@ -531,6 +664,7 @@ class TaskRepository:
             )
         return self._required_task(task_id)
 
+    @db_write_lock
     def delete_old_tasks(self, *, keep: int = 50) -> int:
         self._require_v2()
         terminal = (
@@ -538,7 +672,7 @@ class TaskRepository:
             TaskStatus.FAILED.value,
             TaskStatus.CANCELLED.value,
         )
-        with safe_connection(self.db_path) as conn:
+        with safe_write_connection(self.db_path) as conn:
             rows = conn.execute(
                 """
                 select id from tasks
@@ -563,11 +697,12 @@ class TaskRepository:
                 )
         return len(task_ids)
 
+    @db_write_lock
     def recover_expired_leases(self, *, now: datetime | None = None) -> list[str]:
         self._require_v2()
         reference = now or _utcnow()
         recovered: list[str] = []
-        with safe_connection(self.db_path) as conn:
+        with safe_write_connection(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("begin immediate")
             rows = conn.execute(
@@ -628,6 +763,46 @@ class TaskRepository:
                 )
                 recovered.append(row["id"])
         return recovered
+
+    @db_write_lock
+    def recover_orphaned_leases(self, *, live_task_ids: Any = ()) -> list[str]:
+        """Compatibility alias that only reclaims expired leases.
+
+        A process cannot infer ownership from an in-memory task list: another
+        worker may be executing the same SQLite-backed project. Reclaiming a
+        valid lease here would cancel or duplicate that work, so lease expiry
+        is the sole cross-process liveness signal.
+        """
+        return self.recover_expired_leases()
+
+    @db_write_lock
+    def set_active_child_task(
+        self, parent_task_id: str, child_task_id: str | None
+    ) -> TaskRecord:
+        self._require_v2()
+        with safe_write_connection(self.db_path) as conn:
+            conn.execute(
+                "update tasks set active_child_task_id = ? where id = ?",
+                (child_task_id, parent_task_id),
+            )
+        return self._required_task(parent_task_id)
+
+    def list_child_tasks(self, parent_task_id: str) -> list[TaskRecord]:
+        self._require_v2()
+        with safe_connection(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                select id, project_id, task_type, status, payload_json, result_json,
+                       attempt, max_attempts, claim_token, lease_expires_at,
+                       heartbeat_at, checkpoint, status_reason, created_at,
+                       started_at, finished_at, parent_task_id, active_child_task_id, checkpoint_kind
+                from tasks where parent_task_id = ?
+                order by created_at asc
+                """,
+                (parent_task_id,),
+            ).fetchall()
+        return [self._row_to_record(row) for row in rows]
 
     def _required_task(self, task_id: str) -> TaskRecord:
         task = self.get_task(task_id)

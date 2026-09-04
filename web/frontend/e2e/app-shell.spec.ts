@@ -21,7 +21,7 @@ test.describe('V2 application shell', () => {
     await expect(utility.getByRole('button')).toHaveText(['设置', '扩展'])
   })
 
-  test('hydrates deep links and keeps five project centers', async ({ page, request }) => {
+  test('hydrates deep links and keeps six project centers', async ({ page, request }) => {
     await ensureActiveProject(page, request)
     const navigation = page.getByRole('navigation', { name: '项目导航' })
     await expect(navigation.getByRole('button')).toHaveText([
@@ -29,6 +29,7 @@ test.describe('V2 application shell', () => {
       '策划',
       '正文',
       '生产',
+      '质量',
       '发布',
     ])
 

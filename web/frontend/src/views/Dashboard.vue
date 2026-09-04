@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
+import DashboardPipelineBar from '../components/dashboard/DashboardPipelineBar.vue'
+import { useTasksStore } from '../stores/tasks'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { Refresh } from '@element-plus/icons-vue'
@@ -16,6 +18,7 @@ import {
 import { PLANNING_KIND_LABELS, type PlanningWorkspace } from '../entities/planning/planningWorkspace'
 import { getPlanningWorkspace } from '../api'
 import { ref } from 'vue'
+import { resolveSnapshotActionLocation } from '../app/shell/workflowActions'
 
 const router = useRouter()
 const projectStore = useProjectStore()
@@ -28,6 +31,7 @@ const target = computed(() => Number(snapshot.value?.outline_progress.target_cha
 const progress = computed(() => target.value ? Math.min(100, Math.round(completed.value / target.value * 100)) : 0)
 const activeTaskCount = computed(() => snapshot.value?.active_tasks.length || 0)
 const blockingIssues = computed(() => snapshot.value?.blocking_issues || [])
+
 const healthTone = computed(() => {
   if (blockingIssues.value.some((issue) => issue.severity === 'error')) return 'danger'
   if (blockingIssues.value.length || snapshot.value?.readiness.warnings.length) return 'warning'
@@ -47,11 +51,7 @@ function issueTone(issue: BlockingIssue): 'danger' | 'warning' | 'info' {
 
 function openAction(action: SnapshotAction) {
   if (!action.enabled) return
-  if (action.kind === 'navigate' && action.target.startsWith('/')) {
-    router.push(action.target)
-    return
-  }
-  router.push({ path: '/production', query: { intent: action.target, confirm: '1' } })
+  router.push(resolveSnapshotActionLocation(action))
 }
 
 async function load() {
@@ -65,7 +65,18 @@ async function load() {
   ])
 }
 
-onMounted(load)
+const tasksStore = useTasksStore()
+
+onMounted(() => {
+  load()
+  tasksStore.startPolling()
+  tasksStore.startRuntimeLogPolling()
+})
+
+onUnmounted(() => {
+  tasksStore.stopPolling()
+  tasksStore.stopRuntimeLogPolling()
+})
 </script>
 
 <template>
@@ -88,6 +99,8 @@ onMounted(load)
     />
 
     <template v-else-if="snapshot">
+      <DashboardPipelineBar />
+
       <section class="overview-grid">
         <article class="summary-card health-card">
           <div class="card-heading">
@@ -129,12 +142,36 @@ onMounted(load)
               <StatusBadge :label="issue.label" :tone="issueTone(issue)" />
               <p>{{ issue.detail || issue.source }}</p>
               <el-button
-                v-if="issue.chapter_id"
+                v-if="issue.chapter_id || issue.source === 'pipeline'"
                 text
                 type="primary"
                 @click="router.push({ path: '/production', query: { tab: 'reviews', chapter: issue.chapter_id } })"
               >
-                处理问题
+                处理审校
+              </el-button>
+              <el-button
+                v-else-if="issue.code === 'engine' || issue.code === 'config_invalid' || issue.code === 'vector'"
+                text
+                type="primary"
+                @click="router.push('/config')"
+              >
+                前往配置
+              </el-button>
+              <el-button
+                v-else-if="['outline', 'title', 'quota', 'arc_queue'].includes(issue.code)"
+                text
+                type="primary"
+                @click="router.push('/outline')"
+              >
+                前往大纲
+              </el-button>
+              <el-button
+                v-else-if="issue.code === 'assets'"
+                text
+                type="primary"
+                @click="router.push('/state')"
+              >
+                前往设定
               </el-button>
             </div>
           </div>

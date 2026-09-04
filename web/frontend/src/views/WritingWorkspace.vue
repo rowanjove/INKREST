@@ -544,7 +544,7 @@ onBeforeUnmount(() => {
 }
 .title-stack span {
   color: var(--color-text-muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 .manuscript-split {
   flex: 1;
@@ -574,12 +574,12 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-lg);
 }
 .selection-menu button {
-  padding: 6px 9px;
+  padding: 6px 10px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--color-text);
-  font-size: 11px;
+  font-size: 12.5px;
   cursor: pointer;
 }
 .selection-menu button:hover {
@@ -594,18 +594,19 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 8px 14px;
   border: 1px solid var(--color-border);
   border-radius: 99px;
   background: var(--color-bg-surface);
   color: var(--color-primary);
   box-shadow: var(--shadow-md);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
 .continue-button svg { width: 14px; }
 .focus-mode .continue-button { right: 22px; }
-.dialog-copy { color: var(--color-text); line-height: 1.7; }
+.dialog-copy { color: var(--color-text); line-height: 1.7; font-size: 13.5px; }
 .revision-compare {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -620,13 +621,13 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   background: var(--color-bg-surface-muted);
 }
-.revision-compare small { color: var(--color-text-muted); }
-.revision-compare h3 { margin: 6px 0 14px; font-size: 14px; }
+.revision-compare small { color: var(--color-text-muted); font-size: 12px; }
+.revision-compare h3 { margin: 6px 0 14px; font-size: 15px; font-weight: 700; }
 .revision-compare p {
   margin: 0;
   color: var(--color-text);
   font-family: "Noto Serif SC", "Songti SC", serif;
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 1.9;
   white-space: pre-wrap;
 }
@@ -640,7 +641,7 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: var(--color-danger-soft);
   color: var(--color-danger);
-  font-size: 11px;
+  font-size: 12px;
 }
 .mobile-editor { flex: 1; min-height: 0; }
 @media (max-width: 1100px) {

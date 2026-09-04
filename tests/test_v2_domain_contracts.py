@@ -106,6 +106,9 @@ def test_task_record_contains_the_complete_v2_contract():
         "created_at",
         "started_at",
         "finished_at",
+        "parent_task_id",
+        "active_child_task_id",
+        "checkpoint_kind",
     }
 
 

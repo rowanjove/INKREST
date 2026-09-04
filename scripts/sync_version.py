@@ -32,8 +32,8 @@ def sync_package_json(version: str) -> None:
 def sync_app_py(version: str) -> None:
     text = APP_PY.read_text(encoding="utf-8")
     updated, count = re.subn(
-        r'FastAPI\(title="Novel Agent API", version="[^"]+"',
-        f'FastAPI(title="Novel Agent API", version="{version}"',
+        r'(FastAPI\(\s*title="Novel Agent API",\s*version=")[^"]+"',
+        rf'\g<1>{version}"',
         text,
         count=1,
     )

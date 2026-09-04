@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from novel_agent.agents.base import PromptAgent
 from novel_agent.control.genre_genes import ensure_genre_genes
 from novel_agent.control.outline_structure import normalize_macro_outline
+from novel_agent.exceptions import LLMResponseError
 from novel_agent.json_utils import loads_json_object
 from novel_agent.logging_config import get_logger
 
@@ -61,7 +62,7 @@ class ChiefEditorAgent(PromptAgent):
             return outline
         except Exception as exc:
             logger.error("Failed to parse chief editor output: %s", exc)
-            return self._fallback_outline(theme, genre, target_chapters)
+            raise LLMResponseError(f"总编大纲无法解析，已中止规划: {exc}") from exc
 
     def _should_stage_outline(self, target_chapters: int, scale_context: str) -> bool:
         if target_chapters >= _STAGED_MIN_TARGET:

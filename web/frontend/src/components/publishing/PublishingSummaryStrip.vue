@@ -77,8 +77,8 @@ defineProps<{ workspace: PublishingWorkspace }>()
   color: var(--color-danger);
 }
 .summary-strip article > div { display: grid; min-width: 0; gap: 1px; }
-.summary-strip strong { color: var(--color-text-strong); font-size: 15px; line-height: 1.2; }
-.summary-strip span { color: var(--color-text-muted); font-size: 9px; }
+.summary-strip strong { color: var(--color-text-strong); font-size: 16px; line-height: 1.2; font-weight: 750; }
+.summary-strip span { color: var(--color-text-muted); font-size: 12px; }
 @media (max-width: 900px) {
   .summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

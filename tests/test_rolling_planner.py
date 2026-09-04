@@ -1,15 +1,17 @@
 """Tests for rolling chapter queue planner."""
 
 import json
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from novel_agent.control.outline_structure import normalize_macro_outline
 from novel_agent.services.rolling_planner import (
     append_briefs_to_queue,
     count_pending_briefs,
+    ensure_initial_arcs,
     format_chapter_id,
     max_generated_chapter_num,
 )
@@ -57,6 +59,38 @@ class RollingPlannerTests(unittest.TestCase):
         d.mkdir(parents=True)
         (d / "chapter_final.txt").write_text("x" * 200, encoding="utf-8")
         self.assertGreaterEqual(max_generated_chapter_num(self.tmp), 5)
+
+    def test_long_form_initial_queue_only_requests_planning_window(self):
+        outline_path = self.tmp / "workspace" / "outline.json"
+        outline = json.loads(outline_path.read_text(encoding="utf-8"))
+        outline["target_chapters"] = 200
+        outline["scale_profile"] = {
+            "scale": "long",
+            "planning_window": 20,
+            "max_chapters": 200,
+        }
+        outline["macro_outline"] = [
+            {"arc_id": "A01", "chapters": "1-50", "goal": "第一卷"},
+            {"arc_id": "A02", "chapters": "51-100", "goal": "第二卷"},
+        ]
+        outline_path.write_text(json.dumps(outline, ensure_ascii=False), encoding="utf-8")
+        chapters = [
+            {"chapter_id": f"{i:03d}", "chapter_goal": f"goal-{i}"}
+            for i in range(1, 21)
+        ]
+        editor = MagicMock()
+        editor.asplit_chapters = AsyncMock(
+            return_value={"arc_id": "A01", "arc_name": "第一卷", "chapters": chapters}
+        )
+        orchestrator = MagicMock(root_dir=self.tmp, managing_editor=editor)
+
+        created = asyncio.run(ensure_initial_arcs(orchestrator))
+
+        self.assertEqual(created, 1)
+        requested_outline = editor.asplit_chapters.await_args.args[0]
+        self.assertEqual(requested_outline["macro_outline"][0]["chapters"], "1-20")
+        saved = json.loads((self.tmp / "workspace" / "arc_A01.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(saved["chapters"]), 20)
 
 
 class ChiefEditorNormalizeTests(unittest.TestCase):

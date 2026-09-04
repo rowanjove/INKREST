@@ -62,7 +62,9 @@ class FactoryModePolicyTests(unittest.TestCase):
     def test_default_mode_without_meta(self):
         self.assertEqual(load_project_factory_mode(self.tmpdir), DEFAULT_FACTORY_MODE)
         effects = resolve_factory_runtime_effects(self.tmpdir)
+        self.assertEqual(effects, {})
         self.assertNotIn("quality_mode", effects)
+        self.assertNotIn("factory_mode", effects)
 
     def test_newbie_auto_explicit_sets_block_on_fail(self):
         self._write_meta("newbie_auto")

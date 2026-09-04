@@ -1,0 +1,25 @@
+{
+  "manifest_version": "0.2.0",
+  "id": "library-tool-starter",
+  "version": "1.0.0",
+  "name": "书库工具模版",
+  "display_name": "书库工具模版",
+  "description": "专用于书库级视图的插件模板（如作品模板库、全局统计）",
+  "author": "Inkrest Community",
+  "plugin_type": "web_extension",
+  "entry": "plugin:LibraryToolPlugin",
+  "capabilities": ["project_catalog_read", "ui_embed"],
+  "contributes": {
+    "navigation": [
+      {
+        "id": "tpl-manager",
+        "title": "作品模版库",
+        "surface": "library_sidebar",
+        "view": "template-manager",
+        "icon": "collection",
+        "order": 100,
+        "requires": ["project_catalog_read"]
+      }
+    ]
+  }
+}

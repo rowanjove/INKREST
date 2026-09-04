@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Refresh } from '@element-plus/icons-vue'
+import PageShell from '../shared/ui/PageShell.vue'
+import ErrorState from '../shared/ui/ErrorState.vue'
+import { useProjectStore } from '../stores/project'
 import {
   adoptCandidateSetCandidate,
   createQualityBaseline,
@@ -16,18 +21,27 @@ import {
   setVoiceLabFrozen,
   getLongformReadiness,
 } from '../api'
-import type { CalibrationReport, QualityMetrics, QualityReview, VoiceLabState } from '../entities/quality'
+import { l0BlockBanner, type CalibrationReport, type QualityMetrics, type QualityReview, type VoiceLabState } from '../entities/quality'
 
+const route = useRoute()
+const projectStore = useProjectStore()
 const loading = ref(false)
+const loadError = ref('')
 const calibration = ref<CalibrationReport | null>(null)
 const voiceLab = ref<VoiceLabState | null>(null)
 const metrics = ref<QualityMetrics | null>(null)
 const review = ref<QualityReview | null>(null)
 const selectedChapter = ref('')
 const longformReadiness = ref<Record<string, any> | null>(null)
+const loadGeneration = ref(0)
 
 const chapterRows = computed(() => metrics.value?.rows || [])
 const selectedRow = computed(() => chapterRows.value.find((row) => row.chapter_id === selectedChapter.value))
+const l0Banner = computed(() => l0BlockBanner(review.value))
+
+function chapterFromQuery(): string {
+  return typeof route.query.chapter === 'string' ? route.query.chapter : ''
+}
 const calibrationLabel = computed(() => {
   if (!calibration.value || calibration.value.status !== 'calibrated') return '未校准'
   return `已校准 · ${calibration.value.sample_count} 个样本`
@@ -37,33 +51,51 @@ const passRateLabel = computed(() => {
   return rate == null ? '—' : `${Math.round(rate * 100)}%`
 })
 
-async function loadMetrics() {
+async function loadMetrics(generation = loadGeneration.value) {
   const { data } = await getQualityMetrics()
+  if (generation !== loadGeneration.value) return
   metrics.value = data
-  if (!selectedChapter.value && data.rows.length) selectedChapter.value = data.rows[0].chapter_id
+  const queryChapter = chapterFromQuery()
+  const queryExists = Boolean(
+    queryChapter && data.rows.some((row) => row.chapter_id === queryChapter),
+  )
+  if (queryExists && queryChapter) {
+    selectedChapter.value = queryChapter
+  } else if (!selectedChapter.value && data.rows.length) {
+    selectedChapter.value = data.rows[0].chapter_id
+  }
 }
 
 async function loadAll() {
+  const generation = ++loadGeneration.value
   loading.value = true
+  loadError.value = ''
   try {
     const [calibrationResult, voiceResult, readinessResult] = await Promise.all([getQualityCalibration(), getVoiceLab(), getLongformReadiness()])
+    if (generation !== loadGeneration.value) return
     calibration.value = calibrationResult.data
     voiceLab.value = voiceResult.data
     longformReadiness.value = readinessResult.data?.detail || null
-    await loadMetrics()
+    await loadMetrics(generation)
+    if (generation !== loadGeneration.value) return
     if (selectedChapter.value) await loadReview(selectedChapter.value)
   } catch (error: any) {
-    ElMessage.error(`质量中心加载失败：${error?.message || error}`)
+    if (generation !== loadGeneration.value) return
+    loadError.value = error?.message || String(error)
+    ElMessage.error(`质量中心加载失败：${loadError.value}`)
   } finally {
-    loading.value = false
+    if (generation === loadGeneration.value) loading.value = false
   }
 }
 
 async function loadReview(chapterId: string) {
   selectedChapter.value = chapterId
   try {
-    review.value = (await getQualityReview(chapterId)).data
+    const { data } = await getQualityReview(chapterId)
+    if (chapterId !== selectedChapter.value) return
+    review.value = data
   } catch (error: any) {
+    if (chapterId !== selectedChapter.value) return
     review.value = null
     ElMessage.error(`章节证据加载失败：${error?.message || error}`)
   }
@@ -119,7 +151,15 @@ async function saveBaseline() {
 }
 
 async function restoreVoiceVersion(revision: number) {
-  if (!window.confirm(`恢复声线档案 r${revision}？这会创建一个新的活动修订。`)) return
+  try {
+    await ElMessageBox.confirm(
+      `恢复声线档案 r${revision}？这会创建一个新的活动修订。`,
+      '恢复声线档案',
+      { type: 'warning', confirmButtonText: '恢复', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
   try {
     await restoreProseProfile(revision)
     voiceLab.value = (await getVoiceLab()).data
@@ -138,7 +178,15 @@ async function adoptCandidate(candidate: Record<string, any>) {
     return
   }
   try {
-    if (!window.confirm('采纳后会创建新的正文 revision，原正文仍可从修订历史回退。继续？')) return
+    try {
+      await ElMessageBox.confirm(
+        '采纳后会创建新的正文 revision，原正文仍可从修订历史回退。继续？',
+        '采纳候选',
+        { type: 'warning', confirmButtonText: '采纳', cancelButtonText: '取消' },
+      )
+    } catch {
+      return
+    }
     await adoptCandidateSetCandidate(chapterId, String(candidate.candidate_id), revision, setId)
     ElMessage.success('候选已采纳为新正文修订')
     await loadAll()
@@ -153,7 +201,15 @@ async function rollbackCandidate(snapshot: Record<string, any>) {
   const timelineId = String(snapshot.timeline_id || '')
   if (!chapterId || !setId || !timelineId) return
   try {
-    if (!window.confirm('只回滚候选集快照，不会改写正文。继续？')) return
+    try {
+      await ElMessageBox.confirm(
+        '只回滚候选集快照，不会改写正文。继续？',
+        '回滚候选集',
+        { type: 'info', confirmButtonText: '回滚', cancelButtonText: '取消' },
+      )
+    } catch {
+      return
+    }
     await rollbackCandidateSet(chapterId, timelineId, setId)
     ElMessage.success('候选集已回滚，正文未变更')
     await loadReview(chapterId)
@@ -162,19 +218,52 @@ async function rollbackCandidate(snapshot: Record<string, any>) {
   }
 }
 
+watch(
+  () => route.query.chapter,
+  (value) => {
+    const chapterId = typeof value === 'string' ? value : ''
+    if (!chapterId || chapterId === selectedChapter.value) return
+    if (!chapterRows.value.some((row) => row.chapter_id === chapterId)) return
+    void loadReview(chapterId)
+  },
+)
+
+watch(
+  () => projectStore.currentProject?.id,
+  () => {
+    loadGeneration.value += 1
+    selectedChapter.value = ''
+    calibration.value = null
+    voiceLab.value = null
+    metrics.value = null
+    review.value = null
+    longformReadiness.value = null
+    void loadAll()
+  },
+)
+
 onMounted(loadAll)
 </script>
 
 <template>
-  <main class="quality-center" v-loading="loading">
-    <header class="page-head">
-      <div>
-        <p class="eyebrow">QUALITY · LOCAL EVIDENCE</p>
-        <h1>质量中心</h1>
-        <p>把声线、审校证据、候选反馈和基线指标放在同一条可回溯链路上。</p>
-      </div>
-      <el-button @click="loadAll">刷新</el-button>
-    </header>
+  <PageShell
+    title="质量中心"
+    description="把声线、审校证据、候选反馈和基线指标放在同一条可回溯链路上。"
+    eyebrow="文本质量与证据链"
+  >
+    <template #actions>
+      <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
+    </template>
+
+    <ErrorState
+      v-if="loadError && !metrics && !calibration"
+      title="质量中心加载失败"
+      :description="loadError"
+      action-label="重试"
+      @action="loadAll"
+    />
+
+    <div v-else class="quality-center" v-loading="loading">
 
     <section class="summary-grid">
       <article class="summary-card">
@@ -260,6 +349,17 @@ onMounted(loadAll)
           <el-option v-for="row in chapterRows" :key="row.chapter_id" :label="`第 ${row.chapter_id} 章`" :value="row.chapter_id" />
         </el-select>
       </div>
+      <el-alert
+        v-if="l0Banner"
+        class="l0-block-banner"
+        type="error"
+        show-icon
+        :closable="false"
+        :title="l0Banner.title"
+      >
+        <p>拦截项：{{ l0Banner.items.join('、') }}</p>
+        <p v-if="l0Banner.score != null">章节分 {{ l0Banner.score }} / 10 · 自动化生产仅在 L0 硬门未过时阻断</p>
+      </el-alert>
       <div v-if="selectedRow" class="level-strip">
         <div><span>L0 事实/格式</span><strong>{{ review?.levels?.l0?.status || '—' }} · {{ review?.levels?.l0?.finding_count || 0 }} 证据</strong></div>
         <div><span>L1 表达/声线</span><strong>{{ review?.levels?.l1?.status || '—' }} · {{ review?.levels?.l1?.finding_count || 0 }} 证据</strong></div>
@@ -299,63 +399,62 @@ onMounted(loadAll)
         <div><span>候选成本</span><strong>{{ metrics?.aggregate.candidate_cost_units || 0 }} units</strong></div>
       </div>
     </section>
-  </main>
+    </div>
+  </PageShell>
 </template>
 
 <style scoped>
-.quality-center { min-height: 100%; padding: 30px clamp(20px, 4vw, 64px) 56px; background: var(--color-bg-base); color: var(--color-text); }
-.page-head, .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
-.panel-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.page-head { margin-bottom: 24px; }
-.page-head h1 { margin: 4px 0; color: var(--color-text-strong); font-size: 28px; letter-spacing: -.03em; }
-.page-head p:not(.eyebrow), .panel-head p { margin: 0; color: var(--color-text-muted); font-size: 12px; line-height: 1.6; }
-.eyebrow { margin: 0; color: var(--color-primary); font-size: 10px; font-weight: 800; letter-spacing: .16em; }
-.summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.quality-center { display: grid; gap: 16px; min-width: 0; }
+.panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.panel-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.panel-head p { margin: 0; color: var(--color-text-muted); font-size: 13.5px; line-height: 1.6; }
+.summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
 .summary-card, .panel { border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-bg-surface); box-shadow: var(--shadow-sm); }
-.summary-card { display: grid; gap: 7px; padding: 16px; }
-.summary-card span, .summary-card small, .metric-grid span, .level-strip span { color: var(--color-text-muted); font-size: 11px; }
-.summary-card strong { color: var(--color-text-strong); font-size: 20px; }
+.summary-card { display: grid; gap: 7px; padding: 18px; }
+.summary-card span, .metric-grid span, .level-strip span { color: var(--color-text-muted); font-size: 12.5px; }
+.summary-card strong { color: var(--color-text-strong); font-size: 22px; }
 .summary-card strong.warning { color: var(--color-warning); }
-.summary-card small { line-height: 1.5; }
+.summary-card small { color: var(--color-text-muted); font-size: 12px; line-height: 1.5; }
 .workspace-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr); gap: 16px; margin-bottom: 16px; }
 .readiness-panel { margin-bottom: 16px; }
-.readiness-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.readiness-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
 .readiness-grid > div { display: grid; gap: 6px; padding: 10px 12px; border-radius: 9px; background: var(--color-bg-surface-muted); }
-.readiness-grid span { color: var(--color-text-muted); font-size: 10px; }
-.readiness-grid strong { color: var(--color-text-strong); font-size: 12px; }
-.panel { padding: 18px; }
-.panel h2 { margin: 0 0 3px; color: var(--color-text-strong); font-size: 15px; }
+.readiness-grid span { color: var(--color-text-muted); font-size: 12px; }
+.readiness-grid strong { color: var(--color-text-strong); font-size: 13.5px; }
+.panel { padding: 20px; }
+.panel h2 { margin: 0 0 3px; color: var(--color-text-strong); font-size: 16px; font-weight: 750; }
 .evidence-list { display: grid; gap: 8px; margin: 16px 0; }
-.evidence-row { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 10px; padding: 10px; border-radius: 10px; background: var(--color-bg-surface-muted); }
-.evidence-kind { color: var(--color-primary); font-size: 10px; font-weight: 750; }
-.evidence-row strong { color: var(--color-text-strong); font-size: 11px; }
-.evidence-row p, .candidate-row p { margin: 4px 0 0; color: var(--color-text-muted); font-size: 11px; line-height: 1.6; }
-.version-list, .layer-summary, .timeline-list, .evidence-chain { display: grid; gap: 6px; margin: 12px 0; }
-.version-row, .timeline-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--color-text-muted); font-size: 10px; }
-.layer-summary > div, .evidence-chain-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--color-bg-surface-muted); color: var(--color-text-muted); font-size: 10px; }
-.layer-summary small { color: var(--color-text-muted); }
-.evidence-chain-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); }
-.evidence-chain-row p { margin: 0; line-height: 1.5; }
-.evidence-chain-row small { color: var(--color-text-muted); }
-.subhead { color: var(--color-text-strong); font-size: 11px; font-weight: 700; }
+.evidence-row { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 10px; padding: 12px; border-radius: 10px; background: var(--color-bg-surface-muted); }
+.evidence-kind { color: var(--color-primary); font-size: 12px; font-weight: 750; }
+.evidence-row strong { color: var(--color-text-strong); font-size: 13px; }
+.evidence-row p, .candidate-row p { margin: 4px 0 0; color: var(--color-text-muted); font-size: 12.5px; line-height: 1.6; }
+.version-list, .layer-summary, .timeline-list, .evidence-chain { display: grid; gap: 8px; margin: 12px 0; }
+.version-row, .timeline-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--color-text-muted); font-size: 12px; }
+.layer-summary > div, .evidence-chain-row { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 8px; background: var(--color-bg-surface-muted); color: var(--color-text-muted); font-size: 12px; }
+.layer-summary small { color: var(--color-text-muted); font-size: 12px; }
+.evidence-chain-row { display: grid; grid-template-columns: 140px minmax(0, 1fr); }
+.evidence-chain-row p { margin: 0; line-height: 1.5; font-size: 12.5px; }
+.evidence-chain-row small { color: var(--color-text-muted); font-size: 11.5px; }
+.subhead { color: var(--color-text-strong); font-size: 13px; font-weight: 700; }
 .calibration-lines, .metric-grid, .level-strip { display: grid; gap: 8px; }
 .calibration-lines { margin: 20px 0; }
 .calibration-lines > div, .level-strip > div, .metric-grid > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 9px; background: var(--color-bg-surface-muted); }
-.calibration-lines strong, .level-strip strong, .metric-grid strong { color: var(--color-text-strong); font-size: 13px; }
-.muted { color: var(--color-text-muted); font-size: 11px; line-height: 1.6; }
+.calibration-lines strong, .level-strip strong, .metric-grid strong { color: var(--color-text-strong); font-size: 13.5px; }
+.muted { color: var(--color-text-muted); font-size: 12.5px; line-height: 1.6; }
 .review-panel, .metrics-panel { margin-bottom: 16px; }
 .level-strip { grid-template-columns: repeat(3, 1fr); margin: 16px 0; }
 .level-strip > div { display: grid; gap: 5px; }
-.candidate-table { display: grid; gap: 8px; }
-.candidate-policy-alert { margin: 12px 0; }
-.candidate-row { padding: 12px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-bg-surface-muted); }
+.candidate-table { display: grid; gap: 10px; }
+.candidate-policy-alert, .l0-block-banner { margin: 12px 0; }
+.l0-block-banner p { margin: 4px 0 0; line-height: 1.6; }
+.candidate-row { padding: 14px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-bg-surface-muted); }
 .candidate-row > div { display: flex; justify-content: space-between; gap: 12px; }
-.candidate-row > div span { color: var(--color-text-muted); font-size: 10px; }
+.candidate-row > div span { color: var(--color-text-muted); font-size: 12px; }
 .candidate-actions { align-items: center; }
-.candidate-row small, .timeline-note { color: var(--color-text-muted); font-size: 10px; }
+.candidate-row small, .timeline-note { color: var(--color-text-muted); font-size: 12px; }
 .timeline-note { margin-top: 12px; }
 .metric-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-top: 16px; }
 .metric-grid > div { display: grid; gap: 6px; }
 @media (max-width: 1000px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } .workspace-grid { grid-template-columns: 1fr; } .metric-grid, .readiness-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 620px) { .summary-grid, .level-strip, .metric-grid, .readiness-grid { grid-template-columns: 1fr; } .quality-center { padding: 20px 14px 36px; } }
+@media (max-width: 620px) { .summary-grid, .level-strip, .metric-grid, .readiness-grid { grid-template-columns: 1fr; } }
 </style>

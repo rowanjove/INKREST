@@ -74,16 +74,16 @@ const totalHeight = computed(() => virtualizer.value.getTotalSize())
 .runtime-panel { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-bg-surface); }
 .runtime-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; border-bottom: 1px solid var(--color-border); }
 .runtime-panel > header > div { display: grid; gap: 2px; }
-.runtime-panel strong { color: var(--color-text-strong); font-size: 12px; }
-.runtime-panel small { color: var(--color-text-muted); font-size: 9px; }
+.runtime-panel strong { color: var(--color-text-strong); font-size: 13.5px; }
+.runtime-panel small { color: var(--color-text-muted); font-size: 12px; }
 .log-scroll { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 6px 8px; }
 .virtual-list { position: relative; width: 100%; }
-.log-row { position: absolute; inset-inline: 0; top: 0; display: grid; grid-template-columns: 70px 100px minmax(0, 1fr); align-items: center; gap: 8px; padding: 0 8px; border-left: 3px solid transparent; color: var(--color-text); font-size: 10px; }
+.log-row { position: absolute; inset-inline: 0; top: 0; display: grid; grid-template-columns: 82px 115px minmax(0, 1fr); align-items: center; gap: 9px; padding: 0 8px; border-left: 3px solid transparent; color: var(--color-text); font-size: 12px; }
 .log-row.error { border-left-color: var(--color-danger); background: var(--color-alert-danger-bg); }
 .log-row.warning, .log-row.warn { border-left-color: var(--color-warning); }
-.log-row time { color: var(--color-text-subtle); }
-.log-row strong { overflow: hidden; color: var(--color-text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.log-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-row time { color: var(--color-text-subtle); font-size: 11.5px; }
+.log-row strong { overflow: hidden; color: var(--color-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.log-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .llm-panel { min-width: 0; min-height: 0; height: 100%; }
 :deep(.llm-panel .el-card) { height: 100%; }
 @media (max-width: 900px) { .production-logs { grid-template-columns: 1fr; grid-template-rows: minmax(260px, 1fr) minmax(260px, 1fr); } }

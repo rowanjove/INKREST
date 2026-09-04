@@ -14,3 +14,4 @@ class ChapterResult:
     final_path: Path
     audit: Dict[str, Any]
     warnings: List[str] = dataclasses.field(default_factory=list)
+    final_text: str | None = None

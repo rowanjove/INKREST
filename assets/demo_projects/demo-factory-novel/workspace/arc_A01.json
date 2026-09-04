@@ -1,0 +1,71 @@
+{
+  "arc_id": "A01",
+  "arc_name": "试炼篇",
+  "chapters": [
+    {
+      "chapter_id": "001",
+      "chapter_title": "第1章 入学测试",
+      "chapter_goal": "入学测试",
+      "input_state": "资质受疑",
+      "output_state": "展现潜质",
+      "reader_payoff": "测试反转",
+      "hook": "引人瞩目",
+      "must_include": [
+        "测试场景"
+      ],
+      "must_not_include": []
+    },
+    {
+      "chapter_id": "002",
+      "chapter_title": "第2章 首战告捷",
+      "chapter_goal": "首战告捷",
+      "input_state": "初登擂台",
+      "output_state": "击败对手",
+      "reader_payoff": "打脸爽点",
+      "hook": "强敌暗中观察",
+      "must_include": [
+        "战斗对抗"
+      ],
+      "must_not_include": []
+    },
+    {
+      "chapter_id": "003",
+      "chapter_title": "第3章 结识同伴",
+      "chapter_goal": "结识同伴",
+      "input_state": "孤立无援",
+      "output_state": "结成同盟",
+      "reader_payoff": "团队凝聚",
+      "hook": "秘境开启消息",
+      "must_include": [
+        "互动交流"
+      ],
+      "must_not_include": []
+    },
+    {
+      "chapter_id": "004",
+      "chapter_title": "第4章 秘境试炼",
+      "chapter_goal": "秘境试炼",
+      "input_state": "踏入秘境",
+      "output_state": "遭遇伏击与机缘",
+      "reader_payoff": "探索奇遇",
+      "hook": "危机逼近",
+      "must_include": [
+        "秘境探索"
+      ],
+      "must_not_include": []
+    },
+    {
+      "chapter_id": "005",
+      "chapter_title": "第5章 突破瓶颈",
+      "chapter_goal": "突破瓶颈",
+      "input_state": "绝境挣扎",
+      "output_state": "境界突破，威震全场",
+      "reader_payoff": "高潮爆发",
+      "hook": "新篇章起航",
+      "must_include": [
+        "突破高潮"
+      ],
+      "must_not_include": []
+    }
+  ]
+}

@@ -72,8 +72,12 @@ export const PROJECT_NAV_ITEMS: readonly NavigationItem[] = [
   },
 ]
 
+export const ADVANCED_PROJECT_NAV_ITEMS: readonly NavigationItem[] = []
+
 export function activeNavigationId(path: string, inProject: boolean): string {
-  const items = inProject ? PROJECT_NAV_ITEMS : GLOBAL_NAV_ITEMS
+  const items = inProject
+    ? [...PROJECT_NAV_ITEMS, ...ADVANCED_PROJECT_NAV_ITEMS]
+    : GLOBAL_NAV_ITEMS
   const match = items.find((item) =>
     item.match.some((prefix) => prefix === '/' ? path === '/' : path.startsWith(prefix)),
   )

@@ -8,7 +8,7 @@ from novel_agent.prompt_registry import inspect_prompt_sources, prompt_manifest
 
 logger = logging.getLogger(__name__)
 
-EXPECTED_DEFAULTS_HASH = "934d4a3ad20e7fb59bb3547d32b1ffd1b3ff477eef781b09c65e5767253c4a47"
+DEFAULTS_HASH_MANIFEST = ".integrity.sha256"
 
 
 class PromptRepository:
@@ -24,20 +24,29 @@ class PromptRepository:
         if not defaults_dir.exists():
             defaults_dir = self.root_dir / "prompts" / "defaults"
             if not defaults_dir.exists():
-                logger.warning("Default prompts directory 'prompts/defaults' not found. Skipping integrity check.")
                 return
 
         try:
+            manifest_path = defaults_dir / DEFAULTS_HASH_MANIFEST
+            if not manifest_path.is_file():
+                manifest_path = fallback_dir / "defaults" / DEFAULTS_HASH_MANIFEST
+            if not manifest_path.is_file():
+                return
+            expected_hash = manifest_path.read_text(encoding="utf-8").strip().split()[0]
+            if not expected_hash:
+                return
+
             files = sorted(defaults_dir.glob("*.md"))
             h = hashlib.sha256()
             for f in files:
                 content = f.read_text(encoding="utf-8").replace("\r\n", "\n").strip()
                 h.update(content.encode("utf-8"))
             actual_hash = h.hexdigest()
-            if actual_hash != EXPECTED_DEFAULTS_HASH:
+
+            if actual_hash != expected_hash:
                 logger.warning(
                     f"Default prompts integrity check failed! "
-                    f"Expected hash: {EXPECTED_DEFAULTS_HASH}, got: {actual_hash}. "
+                    f"Expected hash: {expected_hash}, got: {actual_hash}. "
                     f"It seems default prompts have been modified."
                 )
         except Exception as e:
@@ -101,4 +110,3 @@ class PromptRepository:
         """Return a project prompt manifest for UI/diagnostic consumers."""
 
         return prompt_manifest(self.root_dir, roles)
-

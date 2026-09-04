@@ -15,6 +15,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
+from novel_agent.quality.fact_ledger import audit_fact_consistency
+
 
 DEFAULT_MIN_LENGTH_RATIO = 0.55
 DEFAULT_MAX_LENGTH_RATIO = 1.45
@@ -355,6 +357,10 @@ def validate_render_candidate(
             reasons.append("candidate_too_long")
     reasons.extend(_format_pollution(candidate))
 
+    fact_audit = audit_fact_consistency(original, candidate) if candidate and original else {"pass": True, "missing_items": [], "missing_states": [], "details": []}
+    if not fact_audit.get("pass", True):
+        reasons.append("fact_drift_violation")
+
     unchanged = bool(candidate) and candidate == original
     status = "unchanged" if unchanged and not reasons else ("rejected" if reasons else "accepted")
     return {
@@ -370,6 +376,12 @@ def validate_render_candidate(
             "candidate_paragraphs": _paragraph_count(candidate),
             "min_chars": resolved.min_chars,
             "max_chars": resolved.max_chars,
+            "fact_ledger": {
+                "missing_items": fact_audit.get("missing_items", []),
+                "missing_states": fact_audit.get("missing_states", []),
+                "pass": fact_audit.get("pass", True),
+                "details": fact_audit.get("details", []),
+            },
         },
         "contract": resolved.to_dict(),
     }

@@ -4,6 +4,7 @@ import type {
   TaskType,
 } from '../../entities/project/projectSnapshot'
 import type { BackendStatus } from '../bootstrap/useDesktopLifecycle'
+import { resolveSnapshotActionHref } from '../shell/workflowActions'
 
 export type DiagnosticTone = 'ready' | 'active' | 'warning' | 'danger' | 'checking'
 
@@ -35,6 +36,7 @@ const TASK_TYPE_LABELS: Record<TaskType, string> = {
   arc_run: '分卷生产',
   novel_continue: '续写小说',
   novel_autopilot: '自动生产',
+  arc_queue_sync: '卷队列同步',
   embedding_setup: '记忆索引',
   export: '作品导出',
 }
@@ -48,9 +50,7 @@ export function taskTypeLabel(type: TaskType): string {
 }
 
 export function destinationForAction(action: SnapshotAction): string {
-  return action.kind === 'navigate'
-    ? action.target
-    : `/workspace?intent=${encodeURIComponent(action.target)}`
+  return resolveSnapshotActionHref(action)
 }
 
 export function buildDiagnosticsSummary(

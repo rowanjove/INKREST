@@ -11,6 +11,16 @@
     "target_chapters": 80,
     "max_chapters": 120
   },
+  "macro_outline": [
+    {
+      "arc_id": "A01",
+      "name": "试炼篇",
+      "chapters": "1-5",
+      "goal": "星河学院入学试炼",
+      "turning_point": "主角能力觉醒",
+      "payoff": "首战告捷，突破瓶颈"
+    }
+  ],
   "chapters": [
     {"chapter_id": "001", "goal": "入学测试", "chapter_title": "第1章 入学测试"},
     {"chapter_id": "002", "goal": "首战告捷", "chapter_title": "第2章 首战告捷"},

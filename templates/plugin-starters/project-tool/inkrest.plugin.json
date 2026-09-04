@@ -1,0 +1,26 @@
+{
+  "manifest_version": "0.2.0",
+  "id": "project-tool-starter",
+  "version": "1.0.0",
+  "name": "作品工具模版",
+  "display_name": "作品工具模版",
+  "description": "专用于作品级工作区的分析或辅助插件模板（如伏笔雷达、人物关系拓扑图）",
+  "author": "Inkrest Community",
+  "plugin_type": "web_extension",
+  "entry": "plugin:ProjectToolPlugin",
+  "capabilities": ["project_read", "ui_embed"],
+  "contributes": {
+    "navigation": [
+      {
+        "id": "foreshadow-radar",
+        "title": "伏笔雷达",
+        "surface": "project_sidebar",
+        "view": "radar-view",
+        "html": "views/radar.html",
+        "icon": "radar",
+        "order": 100,
+        "requires": ["project_read"]
+      }
+    ]
+  }
+}

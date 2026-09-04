@@ -53,58 +53,13 @@ def get_versions(chapter_id: str, session: ProjectSession = RequireProjectDep) -
     session = coerce_project_session(session)
     safe_id = ws_server._validate_id(chapter_id, "chapter_id")
     store = task_manager_for(session).store
-    versions = store.list_chapter_versions(safe_id)
-    
-    chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
-    final_txt_path = chapter_dir / "chapter_final.txt"
-    content = ws_server._read_text(final_txt_path)
-    
-    plan_path = chapter_dir / "plan.json"
-    plan_str = "{}"
-    if plan_path.exists():
-        try:
-            plan_str = plan_path.read_text(encoding="utf-8")
-        except Exception:
-            pass
-            
-    if not versions:
-        store.save_chapter_version(
-            chapter_id=safe_id,
-            version_name="版本 A",
-            content=content,
-            plan=plan_str,
-            is_active=True,
-            note="历史章节补齐的默认版本"
-        )
-        versions = store.list_chapter_versions(safe_id)
-    else:
-        active_version = next((v for v in versions if v.get("is_active") == 1), None)
-        if active_version:
-            if active_version.get("content") != content:
-                store.save_chapter_version(
-                    chapter_id=safe_id,
-                    version_name=active_version["version_name"],
-                    content=content,
-                    plan=active_version.get("plan") or plan_str,
-                    is_active=True,
-                    note=active_version.get("note") or "同步自 chapter_final.txt",
-                    version_id=active_version["id"]
-                )
-                versions = store.list_chapter_versions(safe_id)
-        else:
-            first_v = versions[0]
-            store.save_chapter_version(
-                chapter_id=safe_id,
-                version_name=first_v["version_name"],
-                content=content,
-                plan=first_v.get("plan") or plan_str,
-                is_active=True,
-                note=first_v.get("note") or "同步自 chapter_final.txt",
-                version_id=first_v["id"]
-            )
-            versions = store.list_chapter_versions(safe_id)
-            
-    return versions
+    from novel_agent.services.manuscript_workspace import ensure_manuscript_document
+
+    try:
+        ensure_manuscript_document(session.root_dir, safe_id, store=store)
+    except KeyError:
+        pass
+    return store.list_chapter_versions(safe_id)
 
 @router.post("/api/chapters/{chapter_id}/versions")
 def create_version(
@@ -127,25 +82,48 @@ def create_version(
             content = active_v.get("content", "")
             plan_str = active_v.get("plan", "{}")
         else:
-            chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
-            final_txt_path = chapter_dir / "chapter_final.txt"
-            content = ws_server._read_text(final_txt_path)
-            plan_path = chapter_dir / "plan.json"
+            from novel_agent.services.manuscript_workspace import read_chapter_plain_text
+
+            document = store.get_manuscript_document(safe_id)
+            if document is None and not read_chapter_plain_text(session.root_dir, safe_id):
+                raise HTTPException(404, "当前章节没有可复制的正文")
+            content = str((document or {}).get("plain_text") or "")
+            plan_path = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}" / "plan.json"
             if plan_path.exists():
                 try:
                     plan_str = plan_path.read_text(encoding="utf-8")
                 except Exception:
                     pass
                 
-    v_id = store.save_chapter_version(
-        chapter_id=safe_id,
-        version_name=req.version_name,
-        content=content,
-        plan=plan_str,
-        is_active=False,
-        note=req.note or ""
+    try:
+        document = apply_plain_text_to_manuscript(
+            session.root_dir,
+            chapter_id=safe_id,
+            plain_text=content,
+            source="version",
+        )
+    except DocumentConflictError as exc:
+        raise HTTPException(
+            409,
+            {
+                "code": "DOCUMENT_CONFLICT",
+                "message": "正文已在其他窗口更新，请刷新后重试。",
+                "current": exc.current,
+            },
+        ) from exc
+    created = next(
+        (
+            item
+            for item in store.list_chapter_versions(safe_id)
+            if int(item.get("revision") or 0) == int(document["revision"])
+        ),
+        None,
     )
-    return {"status": "created", "version_id": v_id}
+    return {
+        "status": "created",
+        "version_id": str((created or {}).get("id") or ""),
+        "revision": int(document["revision"]),
+    }
 
 @router.put("/api/chapters/versions/{version_id}")
 def update_version(
@@ -163,6 +141,27 @@ def update_version(
     name = req.version_name if req.version_name is not None else version["version_name"]
     note = req.note if req.note is not None else version["note"]
     content = req.content if req.content is not None else version["content"]
+
+    if version.get("revision_id"):
+        if req.content is None:
+            return {"status": "updated", "revision": version.get("revision")}
+        try:
+            document = apply_plain_text_to_manuscript(
+                session.root_dir,
+                chapter_id=str(version["chapter_id"]),
+                plain_text=content,
+                source="version",
+            )
+        except DocumentConflictError as exc:
+            raise HTTPException(
+                409,
+                {
+                    "code": "DOCUMENT_CONFLICT",
+                    "message": "正文已在其他窗口更新，请刷新后重试。",
+                    "current": exc.current,
+                },
+            ) from exc
+        return {"status": "updated", "revision": int(document["revision"])}
 
     if version["is_active"] == 1 and req.content is not None:
         chapter_id = str(version["chapter_id"])
@@ -203,6 +202,8 @@ def delete_version(version_id: str, session: ProjectSession = RequireProjectDep)
     if not version:
         raise HTTPException(404, f"Version {version_id} not found")
         
+    if version.get("revision_id"):
+        raise HTTPException(400, "修订历史不可删除，请从正文历史回退。")
     try:
         store.delete_chapter_version(version_id)
         return {"status": "deleted"}
@@ -239,8 +240,6 @@ def activate_version(
             "Failed to create pre-activation backup snapshot: %s", exc
         )
         
-    store.set_active_chapter_version(safe_id, version_id)
-
     chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
     title = f"第 {safe_id} 章"
     if version.get("plan"):
@@ -254,6 +253,8 @@ def activate_version(
             pass
 
     try:
+        if not version.get("revision_id"):
+            store.set_active_chapter_version(safe_id, version_id)
         document = apply_plain_text_to_manuscript(
             session.root_dir,
             chapter_id=safe_id,

@@ -31,8 +31,9 @@ const STATE_LABELS: Record<FactoryState, string> = {
   complete: '生产完成',
 }
 
-export function formatFactoryMode(mode: FactoryMode): string {
-  return MODE_LABELS[mode] ?? mode
+export function formatFactoryMode(mode: FactoryMode | string): string {
+  if (!mode || mode === 'unset') return '未设置（只报告）'
+  return MODE_LABELS[mode as FactoryMode] ?? mode
 }
 
 export function factoryModeOptions(): Array<{ value: FactoryMode; label: string }> {
