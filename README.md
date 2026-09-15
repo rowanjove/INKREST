@@ -1,224 +1,142 @@
-# 栖墨 · INKREST
+# 栖墨 · INKREST — 长篇小说创作与生产工作台
 
-**多 Agent 长篇小说创作与生产工作台。**
+[简体中文](README.md) | [English](README.en.md)
 
-开发与架构的现行入口是 [PROJECT.md](PROJECT.md)。历史路线图已归档，不以打勾清单当待办。
+栖墨是一款本地优先的长篇小说创作与生产工作台，将开书策划、灵感蓝图、正文编辑、多 Agent 生产流水线、长篇记忆、去 AI 味、连续性检查、统一质量门禁和多格式发布组织成一条可观察、可暂停、可人工介入的生产闭环。作者始终保留最终决定权。
 
-栖墨不是一个“输入一句话、返回一段正文”的聊天壳。它把开书策划、章节生产、长篇记忆、去 AI 味、连续性检查、质量门禁、自动修章和多格式发布组织成一条可观察、可暂停、可人工介入的生产流水线。
+[下载 Windows v2.0.2](https://github.com/rowanjove/INKREST/releases/tag/v2.0.2) · [更新记录](CHANGELOG.md) · [问题反馈](https://github.com/rowanjove/INKREST/issues)
 
-> 从灵感到长篇：自动规划、辅助续写、审校修复，作者始终保留最终决定权。
+作品与项目状态保存在本地。**调用远程模型时，所选上下文会发送到配置的模型服务，并可能产生费用**；本地优先不代表模型推理一定离线。
 
-![栖墨项目概览](docs/images/readme-overview.png)
+![栖墨项目概览与生产状态](docs/images/readme-overview.png)
 
-## 为什么是栖墨
+## 安装与首次使用
 
-### 多 Agent 长篇生产流水线
+Windows 用户可从 Release 下载 `Setup.2.0.2.exe` 安装包，或 `2.0.2.exe` 便携版。
 
-一章正文不是一次模型调用，而是多个专职环节协作完成：
+启动后创建作品、配置模型服务，再选择手动编辑或辅助生成。开始真实模型任务前，核对服务地址、模型、密钥和费用设置。普通页面浏览不会自动发起写作模型调用；生成、重写、审校和批量任务由用户明确发起。
 
-```text
-全书策划 → 章节计划 → 场景并行写作 → 拼接与文风编辑
-        → 连续性检查 → 统一质量门禁 → 自动修正
-        → 正文入库 → 状态更新与向量索引
-```
+下方源码步骤适用于开发者，不是使用 Windows 发布包的前置要求。
 
-- 策划、写作、文风编辑、连续性检查、审校和状态维护各司其职。
-- 支持全书规划、分批生产、断点续跑和连续失败熔断。
-- 任务进度、费用、日志、阻塞原因和待修章节集中展示，不让流水线变成黑盒。
-- 页面浏览和状态读取不会自动调用模型；生成、重写、审校与批量运行都需要用户显式发起。
+## 工作区与生成流程
 
-### 去 AI 味不是一句 Prompt
-
-栖墨把“降低模板感和机器腔”放进生成与审校闭环，而不是只在提示词末尾附加一句要求：
-
-1. **写前约束**：向写作 Agent 注入文风、禁用表达和去 AI 味规则。
-2. **全文文风编辑**：在不改变情节和人物动作的前提下，减少模板化过渡、空泛修饰和机械表达。
-3. **本地规则检测**：检查情绪直述、抽象修饰、对话过度完整、套路式总结结尾等高频问题。
-4. **统一质量门禁**：把 AI 味、连续性、敏感词、篇幅和审校结果汇总为可见报告。
-5. **定向自动修正**：门禁阻断时可只改问题段落、自动修复章节或在人工改稿后重跑门禁。
-
-去 AI 味能力用于降低机器感、提高文本自然度和编辑效率，不承诺规避或通过任何第三方 AI 检测平台。
-
-### 为长篇连载保留记忆
-
-- SQLite 统一保存正文、修订历史、任务和叙事状态。
-- 上下文组装器按章节目标召回人物、设定、事件、伏笔、前章结尾和相关历史片段。
-- 长篇体量可启用语义向量召回与索引，帮助跨章去重、伏笔回收和设定延续。
-- 连续性检查与质量熔断会在问题扩散到后续章节前暂停生产，交给作者确认。
-
-### 山山：驻场小编辑
-
-<img src="web/frontend/src/assets/pet/shanshan/ui/bubble_avatar.png" width="112" alt="山山，栖墨驻场小编辑">
-
-山山不是单纯的桌面挂件。她常驻 Electron 桌面端，读取当前作品和生产状态，帮作者盯稿、排障和找到下一步：
-
-- 展示当前作品、写作进度、运行任务、门禁阻断和全书暂停状态。
-- 结合任务历史、门禁摘要与运行日志解释“为什么停了”。
-- 提供模型连通性测试、单章重试、章节自动修复和门禁重跑等安全操作。
-- 把作者带到正文、生产中心、设置或日志等正确页面。
-- 在任务完成或失败时切换状态并提醒；对话模型可以单独配置。
-
-山山不会擅自改大纲、删除项目、代写正文或绕过确认直接续跑全书。
-
-## 核心能力
-
-| 能力 | 说明 |
+| 工作区 | 用途 |
 | --- | --- |
-| 开书与策划 | 快速建书、模板建书或 AI 引导建书；管理大纲、卷纲、角色关系、世界设定、时间线与故事素材 |
-| 正文工作区 | 章节目录、富文本编辑、自动保存、修订历史、上下文查看，以及按需续写、改写、润色、精简和扩写 |
-| 全书生产 | 多阶段 Agent 流水线、场景并行、批量章节、断点续跑、失败重试和质量熔断 |
-| 审校与修复 | AI 味、连续性、敏感词、篇幅与审校报告；支持自动修章、人工改稿和门禁重跑 |
-| 长篇稳定 | 项目级 SQLite 真源、叙事状态、章节摘要、检查点和可选向量召回 |
-| 山山助手 | 桌面驻场、任务提醒、状态解释、日志排障、页面指路和受控快捷操作 |
-| 多模型路由 | 日常档、逻辑档、Agent 角色路由、模型库与失败回退链 |
-| 发布与导出 | 从正文真源预览并导出 TXT、Markdown、DOCX、EPUB 3 和 PDF |
-| 多项目与扩展 | 多本作品隔离、备份与重置、第一方插件清单、权限授权和项目级作用域 |
-| 本地优先 | 作品、状态和任务保存在本地；模型密钥与用户作品不进入代码仓库 |
+| 开书与策划 | 管理大纲、卷纲、人物关系、世界设定、时间线与素材 |
+| 正文编辑 | 富文本编辑、自动保存、修订历史、上下文查看和按需改写 |
+| 章节生产 | 策划、场景写作、拼接、文风编辑、审校与状态更新 |
+| 质量检查 | 连续性、篇幅、敏感词及重复／模板化表达检测 |
+| 长篇记忆 | SQLite 项目状态、章节摘要、检查点和可选向量召回 |
+| 发布导出 | TXT、Markdown、DOCX、EPUB 3 和 PDF |
+| 扩展 | 项目隔离、备份、插件权限与项目级作用域 |
 
-## 工作方式
-
-栖墨既可以作为自动化生产线，也可以作为作者副驾：
-
-- **新手自动模式**：质量门禁失败时暂停，并允许自动修正。
-- **作者协作模式**：以人工写作为主，AI 建议和质量问题只在需要时介入。
-- **平台审校模式**：使用更严格的质量门禁与审校策略。
-- **长篇稳定模式**：加强跨章状态、连续性和向量就绪检查。
-- **工作室模式**：面向多书与批量生产，提供连续失败熔断和集中处理入口。
-
-无论使用哪种模式，浏览页面不会产生模型费用，可能消耗额度或改变正文的操作都由用户主动触发。
-
-## 界面预览
-
-### 正文工作区
+章节流水线按计划组织写作、编辑和检查，并支持批量生产、断点续跑、失败重试与连续失败暂停。正文和任务以项目级 SQLite 为数据源；兼容文件与章节产物不应覆盖较新的数据库记录。
 
 ![栖墨正文工作区](docs/images/readme-writer.png)
 
-### 书库
+## 文风与连续性
+
+生成前可配置文风、禁用表达和写作约束；生成后由文风编辑、本地规则与模型审校发现问题，再进行定向修正或人工改稿。检查结果用于辅助编辑，不是作品质量或事实正确性的保证，也不承诺通过第三方 AI 检测。
+
+长篇任务可召回人物、设定、事件、伏笔及历史片段。向量召回是可选能力，需要相应模型与索引就绪。问题导致质量门禁阻断时，应检查报告再决定修章、重跑或继续。
+
+项目提供新手自动、作者协作、平台审校、长篇稳定和工作室等运行模式。它们调整生成与检查策略，不代替作者的最终判断。
+
+## 山山助手
+
+山山常驻 Electron 桌面端，读取作品、任务和日志状态，解释暂停原因，提供页面导航、模型连通性测试、单章重试、自动修章与门禁重跑入口。对话模型可单独配置。
+
+涉及模型调用或正文变更的操作需要用户触发和相应确认。助手不应擅自改大纲、删除项目或绕过确认续跑全书。
 
 ![栖墨书库](docs/images/readme-library.png)
 
-截图使用仓库内置示例书，不包含私人作品或模型密钥。
+截图使用内置示例书，不包含私人作品或密钥。
 
-## 技术组成
+## 从源码启动
 
-| 层级 | 技术 |
-| --- | --- |
-| 后端 | Python 3.11 / 3.12、FastAPI、Pydantic、SQLite |
-| 前端 | Vue 3、TypeScript、Pinia、Vite、Element Plus |
-| 编辑与图形 | Tiptap、Vue Flow、TanStack Virtual |
-| 桌面端 | Electron、electron-builder、PyInstaller |
-| 导出 | TXT、Markdown、DOCX、EPUB 3、PDF |
-| 测试 | pytest、Vitest、Playwright |
+需要 Python **3.11 或 3.12**、Node.js **>=22.12.0**。桌面打包目标为 Windows 10/11。
 
-正文、任务和叙事状态以项目级 SQLite 为真源；工作区中的兼容文件与章节产物不会反向覆盖更新的数据。服务默认只监听 `127.0.0.1`，远程监听必须显式启用访问令牌。
-
-## 快速开始
-
-### 环境要求
-
-- Python 3.11 或 3.12
-- Node.js 22 或满足前端依赖要求的更新版本
-- Windows 10 / 11（桌面打包与当前交付形态）
-
-### 安装依赖
+在 Windows PowerShell 中：
 
 ```powershell
-py -3.12 -m pip install -r requirements.txt
-
-cd web\frontend
+git clone https://github.com/rowanjove/INKREST.git
+cd INKREST
+py -3.12 -m venv .venv
+./.venv/Scripts/python.exe -m pip install -r requirements.txt
+Copy-Item config/pipeline.yaml.example config/pipeline.yaml
+cd web/frontend
 npm ci
-cd ..\..
+npm run build
+cd ../..
+./.venv/Scripts/python.exe main.py serve --no-browser
 ```
 
-### 准备本地配置
+访问 `http://127.0.0.1:8000`。源码启动需要先构建前端；后端从 `web/frontend/dist` 提供页面。修改前端后应重新构建，或使用开发流程。
+
+按需在本地 `config/pipeline.yaml` 或 `config/models.json` 配置模型。它们和 `.env` 已被 Git 忽略，不要强制提交。虚拟环境 `.venv/` 也不应提交；可将它加入本地 `.git/info/exclude`。
+
+### 不消耗模型额度的命令行示例
+
+在仓库根目录使用静态模型干跑：
 
 ```powershell
-Copy-Item config\pipeline.yaml.example config\pipeline.yaml
+./.venv/Scripts/python.exe main.py run-chapter --chapter-id 001 --goal "主角雨夜回到出租屋，并遭遇第一次异常。" --dry-run
 ```
 
+<<<<<<< HEAD
 在 `config/pipeline.yaml` 或 `config/models.json` 中填写模型地址、模型名与密钥。这两个文件以及 `.env` 已被忽略，不应提交。
 工作台会在提交真实生成前检查远程模型凭据；仅填写 provider 不会被当作“可生成”。本机 Ollama/vLLM 等 loopback 服务可不填写 API Key。
+=======
+干跑仍可创建本地产物，不等于只读操作。章节产物位于当前项目的 `workspace/chapters/`。
+>>>>>>> origin/main
 
-### 启动网页工作台
+### Windows 桌面构建
 
-```powershell
-py -3.12 main.py serve --no-browser
-```
-
-然后访问 `http://127.0.0.1:8000`。
-如果 `python` 已指向 Python 3.11/3.12，也可使用 `python main.py serve --no-browser`。
-
-### 构建桌面端
+打包脚本会探测 Python 3.12／3.11 环境；为它安装运行和构建依赖：
 
 ```powershell
-cd web\frontend
-npm run electron:pack
+py -3.12 -m pip install -r requirements.txt -r requirements-build.txt
+cd web/frontend
+npm run electron:build
 ```
 
-构建完成后运行：
-
-```text
-web\frontend\dist-desktop\win-unpacked\栖墨.exe
-```
-
-完整安装包构建使用 `npm run electron:build`。
-
-## 命令行示例
-
-下面的干跑模式使用静态模型，不消耗模型额度：
-
-```powershell
-py -3.12 main.py run-chapter `
-  --chapter-id 001 `
-  --goal "主角雨夜回到出租屋，并遭遇第一次异常。" `
-  --dry-run
-```
-
-章节产物位于当前项目的 `workspace/chapters/`。不要在未经确认的情况下运行连续生成、批量章节或真实模型任务。
+产物位于 `web/frontend/dist-desktop/`。如只需要目录版，可先运行 `npm run build:backend`，再运行 `npm run electron:pack`；目录版程序为 `win-unpacked/栖墨.exe`。完整验收见 [贡献与本地验证](CONTRIBUTING.md)。
 
 ## 验证
 
-后端：
+后端，在仓库根目录：
 
 ```powershell
-py -3.12 -m pytest tests/ --ignore=tests/smoke -q --tb=short
+./.venv/Scripts/python.exe -m pip install pytest pytest-asyncio
+./.venv/Scripts/python.exe -m pytest tests/ --ignore=tests/smoke -q --tb=short
 ```
-
-如果 `python` 已指向 Python 3.11/3.12，等价命令为
-`python -m pytest tests/ --ignore=tests/smoke -q --tb=short`。
 
 前端：
 
 ```powershell
-cd web\frontend
+cd web/frontend
 npm run test:unit
 npm run test:electron
 npm run build
 npm run check:bundle
 ```
 
-更完整的提交、性能、端到端和桌面打包门禁见 [贡献与本地验证](CONTRIBUTING.md)。
+`check:bundle` 使用 PATH 中的 `python`，请确保它指向兼容的 Python 环境。更完整的 lint、性能、E2E 和打包冒烟步骤见贡献指南。真实模型测试可能消耗额度，不应无确认地运行。
 
-## 数据与安全
+## 数据、密钥与插件
 
-- `.env`、`config/pipeline.yaml`、`config/models.json` 不进入版本控制。
-- `projects/`、`workspace/`、`data/`、`state/`、`logs/`、`backups/` 与构建产物默认忽略。
-- 项目备份与 V2 重置都要求输入带项目编号的精确确认词，并在重置前生成可校验备份。
-- API 返回、日志与备份流程会对密钥进行隔离或脱敏。
-- 插件启用前需要基于清单哈希授予权限。
+- `projects/`、`workspace/`、`data/`、`state/`、`logs/` 和 `backups/` 默认不提交。
+- 服务默认监听 `127.0.0.1`；远程监听需要显式启用并配置访问令牌。
+- 项目备份与 V2 重置使用带项目编号的确认词；重置前生成可校验备份。
+- API、日志与备份流程会隔离或脱敏密钥；分享诊断前仍应检查内容。
+- 插件权限需要基于清单哈希授权；安装插件不代表自动信任或允许全部操作。
 
-详见 [V2 数据备份与重置](docs/V2-DATA-RESET.md) 和 [远程部署安全](docs/remote-deployment-security.md)。
+## 技术与文档
 
-## 项目文档
+后端使用 Python、FastAPI、Pydantic 和 SQLite；前端使用 Vue 3、TypeScript、Pinia、Vite、Element Plus 与 Tiptap；桌面端使用 Electron 和 PyInstaller。测试包括 pytest、Vitest 与 Playwright。
 
-- [架构与代码结构](docs/ARCHITECTURE.md)
-- [贡献与本地验证](CONTRIBUTING.md)
-- [插件作者指南](docs/plugins/PLUGIN_AUTHOR.md)
-- [Agent 集成](docs/AGENT-INTEGRATION.md)
-- [V2 数据备份与重置](docs/V2-DATA-RESET.md)
-- [远程部署安全](docs/remote-deployment-security.md)
+[架构](docs/ARCHITECTURE.md) · [贡献指南](CONTRIBUTING.md) · [插件作者指南](docs/plugins/PLUGIN_AUTHOR.md) · [Agent 集成](docs/AGENT-INTEGRATION.md) · [数据备份与重置](docs/V2-DATA-RESET.md) · [远程部署安全](docs/remote-deployment-security.md)
 
-## 开源许可
+## 许可
 
-本项目采用 [Apache License 2.0](LICENSE) 开源许可。版权及署名信息见
-[NOTICE](NOTICE)。
+采用 [Apache License 2.0](LICENSE)，版权与署名见 [NOTICE](NOTICE)。
