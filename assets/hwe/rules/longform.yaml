@@ -1,0 +1,41 @@
+# HWE Rules: Longform (长篇特有套路重复与结构饱和)
+rules:
+  - id: "HWE.LONGFORM.CHAPTER_ENDING_REPEAT"
+    version: 1
+    title: "跨章节章尾模板雷同"
+    family: "longform"
+    scope: ["chapter"]
+    detector_type: "repetition"
+    patterns:
+      - "(?:直到这一刻|黑夜中|黎明前|夜幕笼罩下|未来的路).{0,20}(?:等待着他|深渊|新的风暴|悄然拉开序幕)"
+    severity: "high"
+    confidence: 0.88
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+    why: "跨章节连续以‘深渊凝视/新的风暴悄然拉开序幕’等套路句型作结，读者极易产生审美疲劳。"
+    suggestion: "改用截然不同的章尾形式（如中断在一句未说完的台词、一声突兀的撞击、或一个客观物品的状态变化）。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["oh-story-claudecode"]
+
+  - id: "HWE.LONGFORM.RECENT_PATTERN_SATURATION"
+    version: 1
+    title: "近期高频词/表达饱和"
+    family: "longform"
+    scope: ["chapter"]
+    detector_type: "repetition"
+    patterns: []
+    severity: "medium"
+    confidence: 0.85
+    thresholds:
+      recent_chapter_window: 3
+      repetition_threshold: 4
+    fiction_policy:
+      auto_block: false
+    why: "某个原本正常的动作词或形容词在最近 3~5 章内被高频复用，导致局部语言贫乏化。"
+    suggestion: "建立近窗避免词汇清单，在生成前向提示词中注入规避提醒。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["LifelongLazyLearner/qu-ai-wei", "ExpressionMemory"]

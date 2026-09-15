@@ -149,7 +149,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
         threading.Thread(target=open_browser, args=(args.host, args.port), daemon=True).start()
 
     uvicorn.run(
-        app,
+        "web.app:app" if args.reload else app,
         host=args.host,
         port=args.port,
         reload=args.reload,

@@ -1,8 +1,10 @@
 import asyncio
+from datetime import datetime
 import json
+from pathlib import Path
 import re
 from typing import Any, AsyncGenerator, Dict, List, Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -16,21 +18,51 @@ from novel_agent.persona.shanshan import (
 from novel_agent.services.assistant_knowledge import format_story_context_for_shanshan
 from novel_agent.services.assistant_diagnostics import generate_offline_heuristic_reply
 
+from novel_agent.assistant.models import (
+    ActiveEditorContext,
+    AssistantPatch,
+    PatchStatus,
+    SourceType,
+)
+from novel_agent.assistant.adapter.story_adapter import StoryAdapter
+from novel_agent.assistant.context.resolver import StoryContextResolver, ResolvedContextBundle
+from novel_agent.assistant.skills.registry import get_skill_registry, SkillDefinition
+from novel_agent.assistant.patch.service import PatchService
+
 router = APIRouter()
 
 
 # ---- Request & Response Models ----
 
 class AssistantChatRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     message: str = Field(..., min_length=1)
     history: List[Dict[str, str]] = Field(default_factory=list)
     context: Optional[Dict[str, Any]] = None
+    editor_context: Optional[ActiveEditorContext] = None
+    skill_id: Optional[str] = None
+    thread_id: Optional[str] = None
 
 
 class AssistantChatResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     reply: str
     actions: List[Dict[str, Any]] = Field(default_factory=list)
     suggestions: List[str] = Field(default_factory=list)
+    chips: List[Dict[str, str]] = Field(default_factory=list)
+    citations: List[Dict[str, Any]] = Field(default_factory=list)
+    patch: Optional[Dict[str, Any]] = None
+    run_id: Optional[str] = None
+    thread_id: Optional[str] = None
+    steps: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+
+
+class PatchActionRequest(BaseModel):
+    patch_id: str
 
 
 # ---- Software Handbook & Troubleshooting Guide ----
@@ -61,14 +93,34 @@ HANDBOOK = """
 
 5. **山山能力边界**
    - 可：解释状态、指路页面、测模型、重试单章、分析作品角色与大纲、提供门禁修改建议。
-   - 不可：改大纲、删项目、代写正文、在对话中直接续跑全书批量。
+   - 写作时：提供正文续写、润色、扩写、对白调优等修改提议（以可撤销 Patch 呈现），不可强制静默改写。
+   - 不可：擅自删项目、在对话中直接续跑全书批量。
 """
+
+
+def _resolve_skill(req: AssistantChatRequest) -> Optional[SkillDefinition]:
+    registry = get_skill_registry()
+    if req.skill_id:
+        s = registry.get(req.skill_id)
+        if s:
+            return s
+    found = registry.find_by_command(req.message)
+    if found:
+        return found
+    from novel_agent.assistant.router import IntentRouter
+    detected = IntentRouter.detect_skill(req.message, req.editor_context)
+    if detected:
+        return registry.get(detected)
+    return None
+
 
 
 def _build_shanshan_prompt(
     session: ProjectSession,
     req: AssistantChatRequest,
     context_data: Dict[str, Any],
+    resolved_bundle: Optional[ResolvedContextBundle] = None,
+    active_skill: Optional[SkillDefinition] = None,
 ) -> str:
     """Build a comprehensive context-aware prompt for ShanShan."""
     active_proj = context_data.get("active_project")
@@ -112,7 +164,6 @@ def _build_shanshan_prompt(
         ts = row.get("timestamp")
         ts_label = ""
         if isinstance(ts, (int, float)):
-            from datetime import datetime
             ts_label = datetime.fromtimestamp(ts if ts < 1e12 else ts / 1000).strftime("%H:%M:%S")
         runtime_lines.append(
             f"- [{ts_label}] {row.get('level', 'info')} {row.get('step') or ''} {row.get('message', '')}".strip()
@@ -159,10 +210,29 @@ def _build_shanshan_prompt(
         + (f"\n排障建议: {repair_hint}" if repair_hint else "")
     )
 
-    story_context = format_story_context_for_shanshan(session.root_dir if session.has_project else None)
+    resolved_block = resolved_bundle.formatted_prompt_block if resolved_bundle else ""
+
+    skill_instruction = ""
+    if active_skill:
+        skill_instruction = f"""
+【当前激活技能：{active_skill.name} ({active_skill.command})】
+{active_skill.system_instruction}
+"""
+
+    patch_instruction = ""
+    if (active_skill and active_skill.produces_patch) or (req.editor_context and req.editor_context.selected_text):
+        patch_instruction = """
+【正文修改 Patch 指令要求】
+如果你为用户提出了针对文段的具体改写、润色、扩写或续写内容，请务必在回答末尾以结构化 Patch 格式输出修改方案，格式如下：
+===PATCH===
+{
+  "proposed_text": "此处填写完整的替换文本或接续文本",
+  "reason": "一句话简述修改理由（例如：强化人物隐忍情绪，删除两次重复动词）"
+}
+"""
 
     system_context = f"""
-{story_context}
+{resolved_block}
 
 【小说生成系统当前状态】
 - 当前活跃项目: {proj_name}
@@ -190,6 +260,8 @@ def _build_shanshan_prompt(
 
     system_prompt = f"""{SHANSHAN_CHAT_PERSONA}
 
+{skill_instruction}
+
 {system_context}
 
 【软件使用手册与常见错误指南】
@@ -204,7 +276,9 @@ def _build_shanshan_prompt(
 【任务要求】
 1. 按上文人设回复，支持 Markdown 排版。
 2. 结合 system 状态与作品设定档案；有失败任务、门禁卡点或配置问题时点明原因并给出可执行建议。
-3. 如果用户的提问或当前问题可以通过特定快捷操作解决，请在回答的最后新起一行，输出动作指令：
+3. 回答中如涉及作品设定事实，请明确指出依据出处。
+{patch_instruction}
+4. 如果用户的提问或当前问题可以通过特定快捷操作解决，请在回答的最后新起一行，输出动作指令：
 格式如下：
 ===ACTIONS===
 [
@@ -223,7 +297,7 @@ def _build_shanshan_prompt(
 - factory_intent: 执行工厂控制台建议动作。参数 {{"intent": "create|plan|run|monitor|repair|export"}}
 - inspect_gate_detail: 获取章节详细门禁诊断。参数 {{"chapter_id": "章节号"}}
 
-4. 在回答的最末尾（若有动作指令，则在动作指令之后），可以输出 2~3 个适合用户下一步提问的简短追问建议（每个不超过15字）：
+5. 在回答的最末尾（若有动作指令，则在动作指令之后），可以输出 2~3 个适合用户下一步提问的简短追问建议（每个不超过15字）：
 格式如下：
 ===SUGGESTIONS===
 ["查看第 1 章门禁详情", "下一章看点建议", "全书暂停了怎么续跑"]
@@ -231,7 +305,295 @@ def _build_shanshan_prompt(
     return system_prompt
 
 
+def _parse_patch_from_text(text: str) -> tuple[str, Optional[Dict[str, Any]]]:
+    """Extract ===PATCH=== JSON block from text."""
+    if "===PATCH===" not in text:
+        return text, None
+    parts = text.split("===PATCH===", 1)
+    reply = parts[0].strip()
+    patch_str = parts[1].strip()
+
+    # If there are subsequent markers like ===ACTIONS=== or ===SUGGESTIONS===, cut before them
+    next_marker = re.search(r'===(?:ACTIONS|SUGGESTIONS)===', patch_str)
+    subsequent = ""
+    if next_marker:
+        subsequent = patch_str[next_marker.start():]
+        patch_str = patch_str[:next_marker.start()].strip()
+
+    patch_data = None
+    try:
+        json_match = re.search(r'\{.*\}', patch_str, re.DOTALL)
+        if json_match:
+            patch_data = json.loads(json_match.group(0))
+        else:
+            patch_data = json.loads(patch_str)
+    except Exception as e:
+        ws_server.logger.warning("Failed to parse patch json: %s", e)
+
+    full_reply = (reply + "\n\n" + subsequent).strip() if subsequent else reply
+    return full_reply, patch_data
+
+
+class PreferenceCreateRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    content: str = Field(..., min_length=1)
+    preference_type: str = "style"
+    scope: str = "global"
+
+
 # ---- API Endpoints ----
+
+@router.get("/api/assistant/preferences")
+async def list_assistant_preferences(
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Returns global and project-level author preferences."""
+    from novel_agent.assistant.memory.store import AssistantStore
+    store = AssistantStore(session.root_dir if session.has_project else None)
+    project_id = session.project_id if session.has_project else None
+    prefs = store.list_preferences(project_id)
+    return {"preferences": [p.model_dump() for p in prefs]}
+
+
+@router.post("/api/assistant/preferences")
+async def create_assistant_preference(
+    req: PreferenceCreateRequest,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Creates a new author writing preference."""
+    import uuid
+    from novel_agent.assistant.memory.store import AssistantStore
+    from novel_agent.assistant.models import AuthorPreference
+    store = AssistantStore(session.root_dir if session.has_project else None)
+    pref = AuthorPreference(
+        id=f"pref_{uuid.uuid4().hex[:8]}",
+        scope=req.scope,
+        project_id=session.project_id if req.scope == "project" else None,
+        preference_type=req.preference_type,
+        content=req.content,
+    )
+    saved = store.save_preference(pref)
+    return {"success": True, "preference": saved.model_dump()}
+
+
+@router.delete("/api/assistant/preferences/{pref_id}")
+async def delete_assistant_preference(
+    pref_id: str,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Deletes an author preference."""
+    from novel_agent.assistant.memory.store import AssistantStore
+    store = AssistantStore(session.root_dir if session.has_project else None)
+    deleted = store.delete_preference(pref_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Preference not found")
+    return {"success": True, "deleted_id": pref_id}
+
+
+@router.post("/api/assistant/context/preview")
+async def preview_assistant_context(
+    req: AssistantChatRequest,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Inspects context bundle composition and token budget without triggering LLM."""
+    adapter = StoryAdapter(session.root_dir if session.has_project else None)
+    resolver = StoryContextResolver(adapter)
+    active_skill = _resolve_skill(req)
+    resolved_bundle = resolver.resolve(
+        req.message, req.editor_context, active_skill.id if active_skill else None
+    )
+    return {
+        "chips": resolved_bundle.chips,
+        "citations": [c.model_dump() for c in resolved_bundle.citations],
+        "budget_breakdown": resolved_bundle.budget_breakdown,
+        "total_chars": resolved_bundle.total_chars,
+        "preview_text": resolved_bundle.formatted_prompt_block[:1500],
+    }
+
+
+@router.get("/api/assistant/skills")
+async def list_assistant_skills():
+    """Returns all registered skills for ShanShan Assistant."""
+    registry = get_skill_registry()
+    return {"skills": [s.model_dump() for s in registry.list_skills()]}
+
+
+@router.get("/api/assistant/patches")
+async def list_assistant_patches(
+    chapter_id: Optional[str] = None,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Lists recent patches for the active project."""
+    service = PatchService(session.root_dir if session.has_project else None)
+    project_id = session.project_id if session.has_project else None
+    patches = service.list_patches(project_id=project_id, chapter_id=chapter_id)
+    return {"patches": [p.model_dump() for p in patches]}
+
+
+@router.post("/api/assistant/patches/{patch_id}/apply")
+async def apply_assistant_patch(
+    patch_id: str,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Applies a proposed patch to chapter manuscript."""
+    service = PatchService(session.root_dir if session.has_project else None)
+    res = service.apply_patch(patch_id)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Failed to apply patch"))
+    patch = res.get("patch")
+    return {
+        "success": True,
+        "patch": patch.model_dump() if patch else None,
+        "new_text": res.get("new_text"),
+    }
+
+
+@router.post("/api/assistant/patches/{patch_id}/reject")
+async def reject_assistant_patch(
+    patch_id: str,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Rejects a proposed patch."""
+    service = PatchService(session.root_dir if session.has_project else None)
+    updated = service.reject_patch(patch_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Patch not found")
+    return {"success": True, "patch": updated.model_dump()}
+
+
+@router.post("/api/assistant/patches/{patch_id}/revert")
+async def revert_assistant_patch(
+    patch_id: str,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Reverts an accepted patch."""
+    service = PatchService(session.root_dir if session.has_project else None)
+    res = service.revert_patch(patch_id)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Failed to revert patch"))
+    patch = res.get("patch")
+    return {
+        "success": True,
+        "patch": patch.model_dump() if patch else None,
+        "reverted_text": res.get("reverted_text"),
+    }
+
+
+@router.get("/api/assistant/tools")
+async def list_assistant_tools():
+    """Lists registered tools for ShanShan Assistant."""
+    from novel_agent.assistant.tools.builtin_tools import register_builtin_tools
+    reg = register_builtin_tools()
+    defs = reg.list_definitions()
+    return {
+        "tools": [
+            {
+                "name": d.name,
+                "description": d.description,
+                "permission_level": d.permission_level.value,
+                "requires_confirmation": d.requires_confirmation,
+                "parameters_schema": d.parameters_schema,
+            }
+            for d in defs
+        ]
+    }
+
+
+@router.get("/api/assistant/runs")
+async def list_assistant_runs(
+    limit: int = 50,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Lists recent runs trace for the project."""
+    from novel_agent.assistant.memory.store import AssistantStore
+    store = AssistantStore(session.root_dir if session.has_project else None)
+    project_id = session.project_id if session.has_project else None
+    runs = store.list_runs(project_id=project_id, limit=limit)
+    return {"runs": [r.model_dump() for r in runs]}
+
+
+@router.get("/api/assistant/runs/{run_id}")
+async def get_assistant_run(
+    run_id: str,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Gets details and steps trace of a specific agent run."""
+    from novel_agent.assistant.memory.store import AssistantStore
+    store = AssistantStore(session.root_dir if session.has_project else None)
+    run = store.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return {"run": run.model_dump()}
+
+
+class ActionConfirmRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    action: Dict[str, Any]
+
+
+@router.post("/api/assistant/runs/{run_id}/confirm")
+async def confirm_assistant_run_action(
+    run_id: str,
+    req: ActionConfirmRequest,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Confirms and executes a pending action that required explicit confirmation."""
+    from novel_agent.assistant.kernel import ShanShanKernel
+    kernel = ShanShanKernel(root_dir=session.root_dir if session.has_project else None)
+    result = await kernel.run(
+        user_message="确认执行操作",
+        user_confirmed=True,
+        confirmed_action=req.action,
+        confirm_run_id=run_id,
+        project_id=session.project_id if session.has_project else None,
+    )
+    return result.model_dump()
+
+
+class CreateThreadRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    title: str = "新对话"
+
+
+@router.get("/api/assistant/threads")
+async def list_assistant_threads(
+    limit: int = 50,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Lists recent conversation threads."""
+    from novel_agent.assistant.memory.store import AssistantStore
+    store = AssistantStore(session.root_dir if session.has_project else None)
+    project_id = session.project_id if session.has_project else None
+    threads = store.list_threads(project_id=project_id, limit=limit)
+    return {"threads": threads}
+
+
+@router.post("/api/assistant/threads")
+async def create_assistant_thread(
+    req: Optional[CreateThreadRequest] = None,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Creates a new assistant chat thread."""
+    from novel_agent.assistant.memory.store import AssistantStore
+    store = AssistantStore(session.root_dir if session.has_project else None)
+    project_id = session.project_id if session.has_project else None
+    title = req.title if req and req.title else "新对话"
+    thread = store.create_thread(title=title, project_id=project_id)
+    return {"thread": thread}
+
+
+@router.get("/api/assistant/threads/{thread_id}/messages")
+async def list_assistant_thread_messages(
+    thread_id: str,
+    limit: int = 100,
+    session: ProjectSession = Depends(get_project_session),
+):
+    """Lists messages in a conversation thread."""
+    from novel_agent.assistant.memory.store import AssistantStore
+    store = AssistantStore(session.root_dir if session.has_project else None)
+    messages = store.list_messages(thread_id=thread_id, limit=limit)
+    return {"messages": messages}
+
 
 @router.post("/api/assistant/chat", response_model=AssistantChatResponse)
 async def assistant_chat(
@@ -245,27 +607,110 @@ async def assistant_chat(
     context_data = await build_assistant_context(session)
     llm = assistant_module._get_assistant_llm(session.root_dir)
 
+    adapter = StoryAdapter(session.root_dir if session.has_project else None)
+    resolver = StoryContextResolver(adapter)
+    active_skill = _resolve_skill(req)
+    resolved_bundle = resolver.resolve(req.message, req.editor_context, active_skill.id if active_skill else None)
+
+    from novel_agent.assistant.trace.run_tracker import RunTracker
+    from novel_agent.assistant.memory.store import AssistantStore
+
+    store = AssistantStore(session.root_dir if session.has_project else None)
+    tracker = RunTracker(store)
+
+    thread_id = req.thread_id
+    if not thread_id:
+        t = store.create_thread(
+            title=req.message[:30],
+            project_id=session.project_id if session.has_project else None,
+        )
+        thread_id = t["id"]
+
+    # Record user message in thread
+    store.add_message(
+        thread_id=thread_id,
+        role="user",
+        content=req.message,
+        skill_id=active_skill.id if active_skill else None,
+    )
+
+    run = tracker.start_run(
+        project_id=session.project_id if session.has_project else None,
+        thread_id=thread_id,
+        skill_id=active_skill.id if active_skill else None,
+    )
+
     if not llm:
         offline = generate_offline_heuristic_reply(
             req.message,
             session.root_dir if session.has_project else None,
             context_data,
         )
+        reply_text = offline.get("reply", SHANSHAN_REPLY_NO_LLM)
+        tracker.finish_run(run.id, status="completed", output_text=reply_text)
+        store.add_message(
+            thread_id=thread_id,
+            role="assistant",
+            content=reply_text,
+            skill_id=active_skill.id if active_skill else None,
+        )
         return AssistantChatResponse(
-            reply=offline.get("reply", SHANSHAN_REPLY_NO_LLM),
+            reply=reply_text,
             actions=offline.get("actions", []),
             suggestions=offline.get("suggestions", []),
+            chips=resolved_bundle.chips,
+            citations=[c.model_dump() for c in resolved_bundle.citations],
+            run_id=run.id,
+            thread_id=thread_id,
+            steps=[],
         )
 
-    system_prompt = _build_shanshan_prompt(session, req, context_data)
+
+    system_prompt = _build_shanshan_prompt(
+        session, req, context_data, resolved_bundle, active_skill
+    )
 
     try:
         llm_response = await llm.agenerate(role="山山助手", prompt=system_prompt)
-        parsed = assistant_module._parse_chat_response(llm_response)
+        text_no_patch, patch_data = _parse_patch_from_text(llm_response)
+        parsed = assistant_module._parse_chat_response(text_no_patch)
+
+        # Handle patch creation if patch data is found or if skill produces patch
+        patch_model = None
+        if patch_data and isinstance(patch_data, dict):
+            proposed_text = patch_data.get("proposed_text") or ""
+            reason = patch_data.get("reason") or (active_skill.name if active_skill else "山山提议修改")
+            if proposed_text and req.editor_context and req.editor_context.chapter_id:
+                patch_service = PatchService(session.root_dir if session.has_project else None)
+                patch_model = patch_service.create_patch(
+                    project_id=session.project_id or "default",
+                    chapter_id=req.editor_context.chapter_id,
+                    original_text=req.editor_context.selected_text or "",
+                    proposed_text=proposed_text,
+                    reason=reason,
+                    skill_id=active_skill.id if active_skill else None,
+                    source_range=req.editor_context.selection_range,
+                )
+
+        final_reply_text = parsed.get("reply", "")
+        tracker.finish_run(run.id, status="completed", output_text=final_reply_text)
+        store.add_message(
+            thread_id=thread_id,
+            role="assistant",
+            content=final_reply_text,
+            skill_id=active_skill.id if active_skill else None,
+            patch_id=patch_model.id if patch_model else None,
+        )
         return AssistantChatResponse(
-            reply=parsed.get("reply", ""),
+            reply=final_reply_text,
             actions=parsed.get("actions", []),
             suggestions=parsed.get("suggestions", []),
+            chips=resolved_bundle.chips,
+            citations=[c.model_dump() for c in resolved_bundle.citations],
+            patch=patch_model.model_dump() if patch_model else None,
+            run_id=run.id,
+            thread_id=thread_id,
+            steps=[s.model_dump() for s in run.steps],
         )
     except Exception as e:
         ws_server.logger.error("LLM generation failed in assistant chat: %s", e)
@@ -274,8 +719,17 @@ async def assistant_chat(
             session.root_dir if session.has_project else None,
             context_data,
         )
-        # If offline has a specific answer for the query, use it; otherwise provide friendly error
         reply = offline.get("reply") if offline.get("reply") != SHANSHAN_REPLY_NO_LLM else SHANSHAN_REPLY_LLM_ERROR.format(detail=str(e))
+        try:
+            tracker.finish_run(run.id, status="failed", output_text=reply)
+            store.add_message(
+                thread_id=thread_id,
+                role="assistant",
+                content=reply,
+                skill_id=active_skill.id if active_skill else None,
+            )
+        except Exception:
+            pass
         return AssistantChatResponse(
             reply=reply,
             actions=offline.get("actions", [
@@ -283,7 +737,13 @@ async def assistant_chat(
                 {"label": "去模型配置页", "type": "navigate", "payload": {"route": "/config"}}
             ]),
             suggestions=offline.get("suggestions", []),
+            chips=resolved_bundle.chips,
+            citations=[c.model_dump() for c in resolved_bundle.citations],
+            run_id=run.id,
+            thread_id=thread_id,
+            steps=[s.model_dump() for s in run.steps],
         )
+
 
 
 @router.post("/api/assistant/chat/stream")
@@ -298,7 +758,15 @@ async def assistant_chat_stream(
     context_data = await build_assistant_context(session)
     llm = assistant_module._get_assistant_llm(session.root_dir)
 
+    adapter = StoryAdapter(session.root_dir if session.has_project else None)
+    resolver = StoryContextResolver(adapter)
+    active_skill = _resolve_skill(req)
+    resolved_bundle = resolver.resolve(req.message, req.editor_context, active_skill.id if active_skill else None)
+
     async def sse_generator() -> AsyncGenerator[str, None]:
+        # Send initial context metadata event
+        yield f"event: context\ndata: {json.dumps(resolved_bundle.to_dict(), ensure_ascii=False)}\n\n"
+
         if not llm:
             offline = generate_offline_heuristic_reply(
                 req.message,
@@ -306,7 +774,6 @@ async def assistant_chat_stream(
                 context_data,
             )
             reply = offline.get("reply", SHANSHAN_REPLY_NO_LLM)
-            # Simulate smooth chunked delivery
             chunk_size = max(1, len(reply) // 8)
             for i in range(0, len(reply), chunk_size):
                 chunk = reply[i : i + chunk_size]
@@ -317,11 +784,16 @@ async def assistant_chat_stream(
                 "reply": reply,
                 "actions": offline.get("actions", []),
                 "suggestions": offline.get("suggestions", []),
+                "chips": resolved_bundle.chips,
+                "citations": [c.model_dump() for c in resolved_bundle.citations],
+                "patch": None,
             }
             yield f"event: done\ndata: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
             return
 
-        system_prompt = _build_shanshan_prompt(session, req, context_data)
+        system_prompt = _build_shanshan_prompt(
+            session, req, context_data, resolved_bundle, active_skill
+        )
         accumulated = ""
         marker_encountered = False
 
@@ -339,7 +811,7 @@ async def assistant_chat_stream(
                 accumulated += chunk
                 if not marker_encountered:
                     buffer += chunk
-                    match = re.search(r'===(?:ACTIONS|SUGGESTIONS)===', buffer)
+                    match = re.search(r'===(?:PATCH|ACTIONS|SUGGESTIONS)===', buffer)
                     if match:
                         marker_encountered = True
                         pre_text = buffer[:match.start()]
@@ -354,7 +826,7 @@ async def assistant_chat_stream(
                             yield f"event: chunk\ndata: {json.dumps({'chunk': safe_to_yield}, ensure_ascii=False)}\n\n"
 
             if not marker_encountered and buffer:
-                match = re.search(r'===(?:ACTIONS|SUGGESTIONS)===', buffer)
+                match = re.search(r'===(?:PATCH|ACTIONS|SUGGESTIONS)===', buffer)
                 if match:
                     pre_text = buffer[:match.start()]
                     if pre_text:
@@ -362,11 +834,32 @@ async def assistant_chat_stream(
                 else:
                     yield f"event: chunk\ndata: {json.dumps({'chunk': buffer}, ensure_ascii=False)}\n\n"
 
-            parsed = assistant_module._parse_chat_response(accumulated)
+            text_no_patch, patch_data = _parse_patch_from_text(accumulated)
+            parsed = assistant_module._parse_chat_response(text_no_patch)
+
+            patch_model = None
+            if patch_data and isinstance(patch_data, dict):
+                proposed_text = patch_data.get("proposed_text") or ""
+                reason = patch_data.get("reason") or (active_skill.name if active_skill else "山山提议修改")
+                if proposed_text and req.editor_context and req.editor_context.chapter_id:
+                    patch_service = PatchService(session.root_dir if session.has_project else None)
+                    patch_model = patch_service.create_patch(
+                        project_id=session.project_id or "default",
+                        chapter_id=req.editor_context.chapter_id,
+                        original_text=req.editor_context.selected_text or "",
+                        proposed_text=proposed_text,
+                        reason=reason,
+                        skill_id=active_skill.id if active_skill else None,
+                        source_range=req.editor_context.selection_range,
+                    )
+
             done_payload = {
                 "reply": parsed.get("reply", ""),
                 "actions": parsed.get("actions", []),
                 "suggestions": parsed.get("suggestions", []),
+                "chips": resolved_bundle.chips,
+                "citations": [c.model_dump() for c in resolved_bundle.citations],
+                "patch": patch_model.model_dump() if patch_model else None,
             }
             yield f"event: done\ndata: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
@@ -386,6 +879,9 @@ async def assistant_chat_stream(
                     {"label": "去模型配置页", "type": "navigate", "payload": {"route": "/config"}}
                 ]),
                 "suggestions": offline.get("suggestions", []),
+                "chips": resolved_bundle.chips,
+                "citations": [c.model_dump() for c in resolved_bundle.citations],
+                "patch": None,
             }
             yield f"event: done\ndata: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 

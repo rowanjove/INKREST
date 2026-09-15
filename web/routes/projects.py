@@ -61,6 +61,7 @@ from novel_agent.services.v2_reset import (
     ActiveProjectTasksError,
     UnsafeProjectPathError,
     V2ResetError,
+    create_project_deletion_backup,
     create_v2_backup,
     reset_project_to_v2,
 )
@@ -75,6 +76,10 @@ class ProjectPinRequest(BaseModel):
 
 class ProjectRenameRequest(BaseModel):
     name: str
+
+
+class ProjectDeleteRequest(BaseModel):
+    confirmation: Optional[str] = None
 
 
 MAX_PROJECT_ZIP_BYTES = 50 * 1024 * 1024
@@ -466,8 +471,12 @@ def import_demo_project(demo_id: str = Query("demo-factory-novel")) -> Dict[str,
 
 
 @router.delete("/api/projects/{pid}")
-def delete_project(pid: str) -> Dict[str, str]:
+def delete_project(pid: str, req: Optional[ProjectDeleteRequest] = None) -> Dict[str, Any]:
     ws_server._validate_id(pid, "project_id")
+    if req is not None and req.confirmation is not None:
+        expected = f"DELETE {pid}"
+        if req.confirmation.strip() != expected:
+            raise HTTPException(400, f"Confirmation must be {expected!r}")
     with ws_server._project_lock:
         projects_root = (ws_server.BASE_DIR / "projects").resolve()
         project_dir = (projects_root / pid).resolve()
@@ -478,9 +487,25 @@ def delete_project(pid: str) -> Dict[str, str]:
                 409,
                 "Cannot delete project while generation tasks are running",
             )
+        backup_dict = None
+        if project_dir.exists():
+            try:
+                backup = create_project_deletion_backup(
+                    projects_root=projects_root,
+                    project_root=project_dir,
+                    project_id=pid,
+                )
+                backup_dict = backup.as_dict()
+            except Exception as exc:
+                logging.getLogger("web.routes.projects").warning(
+                    "Failed to create deletion backup for %s: %s", pid, exc
+                )
         ws_server.release_project(pid)
         ws_server.project_manager.delete_project(pid)
-    return {"status": "deleted"}
+    result = {"status": "deleted"}
+    if backup_dict is not None:
+        result["backup"] = backup_dict
+    return result
 
 
 @router.post("/api/projects/{pid}/switch")

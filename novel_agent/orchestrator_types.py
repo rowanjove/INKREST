@@ -15,3 +15,4 @@ class ChapterResult:
     audit: Dict[str, Any]
     warnings: List[str] = dataclasses.field(default_factory=list)
     final_text: str | None = None
+    quality_decision: Dict[str, Any] | None = None

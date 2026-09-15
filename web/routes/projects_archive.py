@@ -180,7 +180,10 @@ def _verify_v2_backup_if_present(tmp_path: Path) -> None:
                 return
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise HTTPException(400, "V2 backup manifest is invalid") from exc
-            if not isinstance(manifest, dict) or manifest.get("format") != "novel-agent-v2-backup":
+            if not isinstance(manifest, dict) or manifest.get("format") not in {
+                "novel-agent-v2-backup",
+                "novel-agent-project-deletion-backup",
+            }:
                 return
             project_id = str(manifest.get("project_id") or "")
             if not project_id:

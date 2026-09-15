@@ -107,6 +107,28 @@ async def test_replenish_stops_at_tier_ceiling(scale: str, tmp_path: Path) -> No
     assert added == 0
 
 
+@pytest.mark.asyncio
+async def test_replenish_reuses_active_orchestrator_editor(tmp_path: Path, monkeypatch) -> None:
+    """Batch replenishment must not rebuild a real-model client behind dry-run."""
+    _outline(tmp_path, "medium")
+    orch = MagicMock()
+    orch.root_dir = tmp_path
+    orch._chapter_pipeline_complete = lambda _cid: False
+    orch.managing_editor.split_chapters.return_value = {
+        "arc_id": "A01",
+        "chapters": [{"chapter_id": "001", "chapter_title": "第一章", "chapter_goal": "开场"}],
+    }
+
+    def _unexpected_config_load(_root):
+        raise AssertionError("rolling replenish rebuilt PipelineConfig instead of reusing the active editor")
+
+    monkeypatch.setattr("novel_agent.pipeline.PipelineConfig.from_config", _unexpected_config_load)
+    added = await replenish_rolling_window(orch)
+
+    assert added == 1
+    orch.managing_editor.split_chapters.assert_called_once()
+
+
 def test_epic_hot_path_no_full_scan_with_cache(tmp_path: Path) -> None:
     _outline(tmp_path, "epic")
     for n in [1, 100, 500]:

@@ -1,0 +1,125 @@
+# HWE Rules: Rhythm (节奏机械化)
+rules:
+  - id: "HWE.RHYTHM.TRIPLE_LIST_OVERUSE"
+    version: 1
+    title: "机械三段式并列"
+    family: "rhythm"
+    scope: ["sentence", "paragraph"]
+    detector_type: "rhythm"
+    patterns:
+      - "([\u4e00-\u9fa5]{2,6})[、,]([\u4e00-\u9fa5]{2,6})(?:[、,]|以及|和)([\u4e00-\u9fa5]{2,6})"
+      - "(?:既|不仅).{2,10}(?:又|而且).{2,10}(?:更|还).{2,10}"
+    severity: "medium"
+    confidence: 0.88
+    thresholds:
+      per_1000_chars: 2
+      consecutive_hits: 2
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: true
+    why: "模型极度迷恋三元组式并列（A、B和C，既……又……更……），造成句式如同做工作报告般刻板。"
+    suggestion: "精简为单一有力动作，或打破三元结构，改为非对称叙事。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["stop-slop", "blader/humanizer"]
+
+  - id: "HWE.RHYTHM.PARALLELISM_OVERUSE"
+    version: 1
+    title: "排比泛滥与对称惯性"
+    family: "rhythm"
+    scope: ["paragraph"]
+    detector_type: "rhythm"
+    patterns:
+      - "是他.{2,15}；是他.{2,15}；也是他.{2,15}"
+      - "有人在.{2,15}，有人在.{2,15}，还有人在.{2,15}"
+    severity: "medium"
+    confidence: 0.85
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: false
+    why: "连续对称的排比句虽然修辞工整，但在叙事小说中会中断沉浸感，显得造作且节奏单一。"
+    suggestion: "打破句式长度对称，交错长短句。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["LifelongLazyLearner/qu-ai-wei"]
+
+  - id: "HWE.RHYTHM.STACCATO_ABUSE"
+    version: 1
+    title: "无功能连续蹦豆短句"
+    family: "rhythm"
+    scope: ["paragraph"]
+    detector_type: "rhythm"
+    patterns: []
+    severity: "low"
+    confidence: 0.80
+    thresholds:
+      consecutive_short_sentences: 5
+      max_short_len: 6
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: true
+    why: "模型为了追求紧张感，机械生成一堆‘风在吹。夜很黑。他站着。他在等。’式的无营养碎句。"
+    suggestion: "把破碎动作合成有因果关联的复合句，保留真正有张力的停顿。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["Anbeeld/WRITING.md", "stop-slop"]
+
+  - id: "HWE.RHYTHM.REPETITIVE_OPENING"
+    version: 1
+    title: "连续段落开头句式雷同"
+    family: "rhythm"
+    scope: ["chapter"]
+    detector_type: "rhythm"
+    patterns: []
+    severity: "medium"
+    confidence: 0.86
+    thresholds:
+      consecutive_paragraphs: 3
+    fiction_policy:
+      auto_block: false
+    why: "连续三段以上都以‘林默……’、‘他……’或时间副词开头，显示出模型段落组织机制的僵化。"
+    suggestion: "变换段首角度，交替使用环境特写、动作先行、对话起段或心理活动起段。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["KKKKhazix/human-writing"]
+
+  - id: "HWE.RHYTHM.REPETITIVE_CLOSING"
+    version: 1
+    title: "连续段落收尾句式雷同"
+    family: "rhythm"
+    scope: ["chapter"]
+    detector_type: "rhythm"
+    patterns: []
+    severity: "medium"
+    confidence: 0.85
+    thresholds:
+      consecutive_paragraphs: 3
+    fiction_policy:
+      auto_block: false
+    why: "连续段落结尾均以判断句、感叹或特定标点收束，形成机械敲击感。"
+    suggestion: "段尾避免格式化收束，多采用开放式动作或未决状态。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["stop-slop"]
+
+  - id: "HWE.RHYTHM.UNIFORM_SENTENCE_LENGTH"
+    version: 1
+    title: "句长机械单调（低方差）"
+    family: "rhythm"
+    scope: ["paragraph"]
+    detector_type: "rhythm"
+    patterns: []
+    severity: "low"
+    confidence: 0.78
+    thresholds:
+      variance_coefficient_max: 0.18
+      min_sentence_count: 5
+    fiction_policy:
+      auto_block: false
+    why: "整段句子长度几乎完全一致（缺乏长句与短句的呼吸律动），是典型的机械生成特征。"
+    suggestion: "拉开句式长短梯次，利用短句提速，长句铺陈。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["hardikpandya/stop-slop", "adewale/anti-slop-writing"]

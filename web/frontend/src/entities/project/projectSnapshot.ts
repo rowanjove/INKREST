@@ -93,11 +93,19 @@ export interface ChapterProgress {
   authoritative_completed: number
   completed_chapter_ids?: string[]
   total_words?: number
+  library_indexed?: number
+  disk_chapters_with_final?: number
+  disk_pipeline_complete?: number
   pending_total?: number
+  pending_retry_count?: number
+  pending_gate_count?: number
   batch_status?: string
   batch_paused?: boolean
   pause_reason?: string
   remaining_chapters?: number
+  last_arc_id?: string
+  last_chapter_id?: string
+  fail_streak?: number
   [key: string]: unknown
 }
 
@@ -109,6 +117,47 @@ export interface BlockingIssue {
   detail?: string
   chapter_id?: string | null
   errors?: Array<Record<string, unknown>>
+}
+
+export interface BlockingIssueAction {
+  label: string
+  target: string
+}
+
+export function blockingIssueDetail(issue: BlockingIssue): string {
+  if (issue.detail) return issue.detail
+  const validationMessages = (issue.errors || [])
+    .map((error) => String(error.message || error.msg || error.detail || '').trim())
+    .filter(Boolean)
+  if (validationMessages.length) return validationMessages.join('；')
+  if (issue.chapter_id) return `关联章节：${issue.chapter_id}`
+  return `来源：${issue.source}`
+}
+
+export function blockingIssueAction(issue: BlockingIssue): BlockingIssueAction {
+  if (issue.chapter_id || issue.source === 'pipeline') {
+    const chapter = issue.chapter_id ? `&chapter=${encodeURIComponent(issue.chapter_id)}` : ''
+    return { label: '处理审校', target: `/production?tab=reviews${chapter}` }
+  }
+  if (issue.code === 'engine') {
+    return { label: '配置模型', target: '/config#models-providers' }
+  }
+  if (issue.code === 'vector') {
+    return { label: '配置向量', target: '/config#memory' }
+  }
+  if (issue.code === 'config_invalid') {
+    return { label: '修复配置', target: '/config#generation-quality' }
+  }
+  if (['outline_invalid', 'outline_corrupt'].includes(issue.code)) {
+    return { label: '先备份再修复', target: '/config#system-data' }
+  }
+  if (['outline', 'title', 'quota', 'arc_queue'].includes(issue.code)) {
+    return { label: '前往大纲', target: '/outline' }
+  }
+  if (issue.code === 'assets') {
+    return { label: '管理资产', target: '/assets' }
+  }
+  return { label: '检查项目数据', target: '/config#system-data' }
 }
 
 export interface QualitySummary {

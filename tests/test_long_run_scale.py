@@ -87,6 +87,16 @@ class LongRunScaleTests(unittest.TestCase):
         )
         self.assertTrue(chapter_run_is_failure(result))
 
+    def test_chapter_run_is_failure_reads_quality_decision(self):
+        result = ChapterResult(
+            chapter_id="004",
+            final_path=Path("x"),
+            audit={"risk_level": "低"},
+            warnings=[],
+            quality_decision={"status": "blocked", "blocking": True},
+        )
+        self.assertTrue(chapter_run_is_failure(result))
+
     def test_batch_fail_streak_from_pipeline(self):
         (self.tmpdir / "config" / "pipeline.yaml").write_text(
             "runtime:\n  batch_fail_streak_max: 3\n", encoding="utf-8"

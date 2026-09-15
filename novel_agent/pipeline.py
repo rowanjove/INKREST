@@ -33,7 +33,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "chapter": {
         "default_target_chars": [1200, 2200],
         "default_scene_target_chars": [400, 800],
-        "quality_mode": "report_only",
+        "quality_mode": "block_on_fail",
         "quality_auto_rewrite": True,
         "persona_evaluations": "auto",
         "generation_style_mode": "full",

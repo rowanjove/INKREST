@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -167,8 +168,27 @@ def _parse_version(ver: str) -> Tuple[int, ...]:
     return tuple(parts or [0])
 
 
+def _versions_dir(root_dir: Path, plugin_id: str) -> Path:
+    return _plugins_dir(root_dir) / ".versions" / plugin_id
+
+
+def inspect_plugin_zip(zip_bytes: bytes) -> Dict[str, Any]:
+    """Validate a plugin archive and return its manifest without installing it."""
+    if len(zip_bytes) > MAX_ZIP_BYTES:
+        raise ManifestError(f"ZIP 超过大小上限（{MAX_ZIP_BYTES // 1024 // 1024}MB）")
+
+    with tempfile.TemporaryDirectory(prefix="inkrest-plugin-inspect-") as tmp:
+        tmp_path = Path(tmp)
+        zip_path = tmp_path / "upload.zip"
+        zip_path.write_bytes(zip_bytes)
+        staging = tmp_path / "staging"
+        _extract_zip_safe(zip_path, staging)
+        plugin_src = _normalize_zip_root(staging)
+        return load_manifest(plugin_src)
+
+
 def install_plugin_zip(root_dir: Path, zip_bytes: bytes, *, replace: bool = False) -> Dict[str, Any]:
-    """Validate and install a plugin archive into plugins/<id>/."""
+    """Validate and install a plugin archive into plugins/<id>/ with transactional rollback."""
     if len(zip_bytes) > MAX_ZIP_BYTES:
         raise ManifestError(f"ZIP 超过大小上限（{MAX_ZIP_BYTES // 1024 // 1024}MB）")
 
@@ -186,39 +206,76 @@ def install_plugin_zip(root_dir: Path, zip_bytes: bytes, *, replace: bool = Fals
         plugin_id = manifest["id"]
         target = plugins_root / plugin_id
 
+        backup_dir: Optional[Path] = None
+        old_ver = "0.0.0"
+
         if target.exists():
+            record_path = target / INSTALL_RECORD
+            if record_path.is_file():
+                try:
+                    old_ver = json.loads(record_path.read_text(encoding="utf-8")).get(
+                        "version", old_ver
+                    )
+                except (json.JSONDecodeError, OSError):
+                    pass
+            else:
+                try:
+                    old_manifest = load_manifest(target)
+                    old_ver = old_manifest.get("version", old_ver)
+                except Exception:
+                    pass
+
             if not replace:
-                record_path = target / INSTALL_RECORD
-                old_ver = "0.0.0"
-                if record_path.is_file():
-                    try:
-                        old_ver = json.loads(record_path.read_text(encoding="utf-8")).get(
-                            "version", old_ver
-                        )
-                    except (json.JSONDecodeError, OSError):
-                        pass
                 if _parse_version(manifest["version"]) <= _parse_version(old_ver):
                     raise ManifestError(
                         f"已安装 {plugin_id} v{old_ver}，新包 v{manifest['version']} 未更高"
                     )
-            shutil.rmtree(target)
 
-        shutil.copytree(plugin_src, target)
-        bundle_files = _apply_bundles(target, manifest.get("bundles") or [])
-        extract_files = _apply_extract_rules(target, manifest.get("extract") or [])
-        all_files = _collect_files(target)
+            # Transactional step 1: back up existing target directory before touching
+            backup_dir = plugins_root / f".backup_{plugin_id}_{int(time.time() * 1000)}"
+            try:
+                shutil.move(str(target), str(backup_dir))
+            except Exception as exc:
+                raise ManifestError(f"备份旧插件失败: {exc}") from exc
 
-        install_record = {
-            "id": plugin_id,
-            "version": manifest["version"],
-            "installed_files": all_files,
-            "bundle_targets": bundle_files,
-            "extract_targets": extract_files,
-        }
-        (target / INSTALL_RECORD).write_text(
-            json.dumps(install_record, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        # Transactional step 2: extract, apply rules, validate
+        try:
+            shutil.copytree(plugin_src, target)
+            bundle_files = _apply_bundles(target, manifest.get("bundles") or [])
+            extract_files = _apply_extract_rules(target, manifest.get("extract") or [])
+            all_files = _collect_files(target)
+
+            install_record = {
+                "id": plugin_id,
+                "version": manifest["version"],
+                "installed_files": all_files,
+                "bundle_targets": bundle_files,
+                "extract_targets": extract_files,
+                "installed_at": time.time(),
+                "previous_version": old_ver if backup_dir else None,
+            }
+            (target / INSTALL_RECORD).write_text(
+                json.dumps(install_record, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            # Ensure the installed target can be loaded
+            load_manifest(target)
+
+            # Transactional step 3: commit transaction - archive old version
+            if backup_dir and backup_dir.exists():
+                ver_archive_dir = _versions_dir(root_dir, plugin_id) / old_ver
+                if ver_archive_dir.exists():
+                    shutil.rmtree(ver_archive_dir)
+                ver_archive_dir.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(backup_dir), str(ver_archive_dir))
+
+        except Exception:
+            # Transactional rollback: restore old version if backup existed, remove failed target
+            if target.exists():
+                shutil.rmtree(target)
+            if backup_dir and backup_dir.exists():
+                shutil.move(str(backup_dir), str(target))
+            raise
 
     return {
         "id": plugin_id,
@@ -230,9 +287,107 @@ def install_plugin_zip(root_dir: Path, zip_bytes: bytes, *, replace: bool = Fals
     }
 
 
+def rollback_plugin(
+    root_dir: Path, plugin_id: str, target_version: Optional[str] = None
+) -> Dict[str, Any]:
+    """Roll back an installed plugin to a previously archived version."""
+    plugins_root = _plugins_dir(root_dir)
+    target = plugins_root / plugin_id
+    versions_dir = _versions_dir(root_dir, plugin_id)
+
+    if not versions_dir.is_dir():
+        raise ManifestError(f"插件 {plugin_id} 没有可回滚的历史版本归档")
+
+    available = [
+        d.name for d in versions_dir.iterdir()
+        if d.is_dir() and not d.name.startswith(".")
+    ]
+    if not available:
+        raise ManifestError(f"插件 {plugin_id} 没有可用的历史版本")
+
+    # Sort available versions
+    available.sort(key=_parse_version)
+    selected_ver = target_version or available[-1]
+    source_ver_dir = versions_dir / selected_ver
+
+    if not source_ver_dir.is_dir():
+        raise ManifestError(f"指定的回滚版本 v{selected_ver} 不存在")
+
+    # Get current version before rollback
+    current_ver = "0.0.0"
+    if target.exists():
+        record = read_install_record(target)
+        current_ver = record.get("version", current_ver)
+
+    # Swap directories atomically
+    temp_target = plugins_root / f".rollback_swap_{plugin_id}_{int(time.time() * 1000)}"
+    if target.exists():
+        shutil.move(str(target), str(temp_target))
+
+    try:
+        shutil.copytree(source_ver_dir, target)
+        # Archive the rolled-back version so user can re-roll forward if desired
+        if current_ver != "0.0.0" and temp_target.exists():
+            curr_archive = versions_dir / current_ver
+            if curr_archive.exists():
+                shutil.rmtree(curr_archive)
+            shutil.move(str(temp_target), str(curr_archive))
+        elif temp_target.exists():
+            shutil.rmtree(temp_target)
+
+        # Remove the restored version from archives to prevent duplicates
+        shutil.rmtree(source_ver_dir)
+    except Exception as exc:
+        # Restore original on failure
+        if target.exists():
+            shutil.rmtree(target)
+        if temp_target.exists():
+            shutil.move(str(temp_target), str(target))
+        raise ManifestError(f"回滚操作失败: {exc}") from exc
+
+    manifest = load_manifest(target)
+    return {
+        "id": plugin_id,
+        "version": manifest["version"],
+        "display_name": manifest.get("display_name") or plugin_id,
+        "message": f"插件已成功回滚至 v{manifest['version']}",
+    }
+
+
+def list_plugin_versions(root_dir: Path, plugin_id: str) -> Dict[str, Any]:
+    """List current version and available rollback versions for a plugin."""
+    target = _plugins_dir(root_dir) / plugin_id
+    current_version = None
+    if target.exists():
+        try:
+            m = load_manifest(target)
+            current_version = m.get("version")
+        except Exception:
+            pass
+
+    versions_dir = _versions_dir(root_dir, plugin_id)
+    archived_versions = []
+    if versions_dir.is_dir():
+        archived_versions = sorted(
+            [d.name for d in versions_dir.iterdir() if d.is_dir() and not d.name.startswith(".")],
+            key=_parse_version,
+            reverse=True,
+        )
+
+    return {
+        "id": plugin_id,
+        "current_version": current_version,
+        "archived_versions": archived_versions,
+    }
+
+
 def uninstall_plugin(root_dir: Path, plugin_id: str) -> bool:
     """Remove plugin directory and registry entry (caller updates yaml)."""
     target = _plugins_dir(root_dir) / plugin_id
+    versions_dir = _versions_dir(root_dir, plugin_id)
+    if versions_dir.exists():
+        shutil.rmtree(versions_dir, ignore_errors=True)
+
     if not target.exists():
         legacy_py = _plugins_dir(root_dir) / f"{plugin_id}.py"
         if legacy_py.is_file():

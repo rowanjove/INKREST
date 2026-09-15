@@ -10,8 +10,12 @@ const { sections, scrollTo } = useConfigNavigation()
   <section class="config-page">
     <header class="page-head">
       <div class="page-title-area">
-        <h1>设置</h1>
-        <p>按创作任务组织常用配置；高风险与内部选项集中收纳在高级区域。</p>
+        <div class="title-row">
+          <div class="title-text">
+            <h1>设置</h1>
+            <p>按创作任务组织常用配置；高风险与内部选项集中收纳在高级区域。</p>
+          </div>
+        </div>
       </div>
       <ConfigPageNav :sections="sections" :on-scroll-to="scrollTo" />
     </header>
@@ -24,18 +28,32 @@ const { sections, scrollTo } = useConfigNavigation()
 .config-page {
   display: flex;
   flex-direction: column;
-  gap: 28px;
-  width: min(100%, 1120px);
-  padding-bottom: 48px;
+  gap: 12px;
+  width: 100%;
+  padding-bottom: 36px;
 }
 
 .page-head {
   display: grid;
-  gap: 14px;
+  gap: 8px;
 }
 
-.page-title-area p {
-  margin: 4px 0 0;
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.title-text h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--color-text-strong);
+}
+
+.title-text p {
+  margin: 3px 0 0;
   color: var(--color-text-muted);
   font-size: 12px;
 }
@@ -46,13 +64,13 @@ const { sections, scrollTo } = useConfigNavigation()
 }
 
 .config-page :deep(.fold-head) {
-  min-height: 72px;
-  padding: 15px 18px;
+  min-height: 46px;
+  padding: 8px 14px;
 }
 
 .config-page :deep(.head-left) {
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .config-page :deep(.collapse-arrow) {
@@ -61,21 +79,20 @@ const { sections, scrollTo } = useConfigNavigation()
 }
 
 .config-page :deep(.fold-head h2) {
-  font-size: 17px;
-  font-weight: 800;
+  font-size: 14px;
+  font-weight: 750;
   line-height: 1.25;
 }
 
 .config-page :deep(.fold-head p) {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   color: var(--color-text-muted);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .config-page :deep(.fold-body) {
-  gap: 14px;
-  padding: 16px 18px 18px;
+  gap: 8px;
+  padding: 10px 14px 12px;
 }
-
 </style>

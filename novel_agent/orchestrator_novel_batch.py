@@ -156,6 +156,31 @@ async def run_chapter_briefs(
         )
 
         try:
+            from novel_agent.services.chapter_gate_rerun import should_retry_gate_only
+
+            if should_retry_gate_only(orch.root_dir, chapter_id):
+                gate_result = await orch.arun_gate_only(chapter_id)
+                if not chapter_run_is_failure(gate_result):
+                    results.append(gate_result)
+                    consecutive_failures = 0
+                    consecutive_skips = 0
+                    try:
+                        from novel_agent.services.batch_retry_queue import dismiss_batch_retry
+
+                        dismiss_batch_retry(orch.root_dir, chapter_id)
+                    except Exception:
+                        pass
+                    try:
+                        from novel_agent.services.progress_sync import record_chapter_success
+
+                        record_chapter_success(
+                            orch.root_dir,
+                            chapter_id,
+                            pipeline_complete=orch._chapter_pipeline_complete(chapter_id),
+                        )
+                    except Exception:
+                        pass
+                    continue
             result = await orch.arun_chapter(chapter_id, chapter_goal)
             results.append(result)
             if chapter_run_is_failure(result):
@@ -431,6 +456,9 @@ async def arun_arcs(
                 briefs = filter_briefs_for_resume(
                     briefs, orch._chapter_pipeline_complete
                 )
+            from novel_agent.services.batch_retry_queue import prioritize_retry_briefs
+
+            briefs = prioritize_retry_briefs(orch.root_dir, briefs)
             if chapters_budget:
                 remaining = chapters_budget - len(all_results)
                 if remaining <= 0:
@@ -523,6 +551,11 @@ async def arun_arcs(
         stopped_reason = "queue_empty" if all_results else "idle"
     elif chapters_budget and len(all_results) >= chapters_budget:
         stopped_reason = "max_chapters"
+    else:
+        # Returning a plain list (or an empty reason) made a bounded arc run
+        # look successful even though unfinished briefs remained in the
+        # queue.  Preserve that state for TaskManager's parent outcome.
+        stopped_reason = "incomplete"
     return BatchRunResult(
         all_results,
         paused=circuit_stopped,
@@ -562,7 +595,7 @@ async def arun_novel(
     genre: str = "玄幻",
     target_chapters: int = 20,
     special_requirements: str = "",
-    ) -> List[ChapterResult]:
+    ) -> BatchRunResult:
     logger.info("Starting novel generation asynchronously: theme=%s, genre=%s, chapters=%d",
                 theme, genre, target_chapters)
     orch._ensure_project_dirs()
@@ -640,6 +673,8 @@ async def arun_novel(
 
     scale_name = str(scale_profile.get("scale") or "medium")
     results: List[ChapterResult] = []
+    circuit_stopped = False
+    stopped_reason = ""
     if should_run_by_arc_batches(target_chapters, scale_name):
         for arc in all_arcs:
             aid = str(arc.get("arc_id") or "")
@@ -661,13 +696,31 @@ async def arun_novel(
                 {"arc_id": aid, "completed": len(arc_results)},
             )
             if stopped:
+                circuit_stopped = True
+                try:
+                    from novel_agent.services.arc_queue import novel_batch_pause_reason
+
+                    stopped_reason = novel_batch_pause_reason(orch.root_dir) or "batch_paused"
+                except Exception:
+                    stopped_reason = "batch_paused"
                 break
     else:
-        results, _ = await run_chapter_briefs(orch, 
+        results, stopped = await run_chapter_briefs(orch,
             all_chapters,
             calibration_interval=calibration_interval,
             all_chapters_ref=all_chapters,
         )
+        circuit_stopped = bool(stopped)
+        if circuit_stopped:
+            try:
+                from novel_agent.services.arc_queue import novel_batch_pause_reason
+
+                stopped_reason = novel_batch_pause_reason(orch.root_dir) or "batch_paused"
+            except Exception:
+                stopped_reason = "batch_paused"
+
+    if not circuit_stopped:
+        stopped_reason = "queue_empty" if len(results) >= len(all_chapters) else "incomplete"
 
     logger.info(
         "Novel generation completed (Async): %d/%d chapters succeeded",
@@ -684,5 +737,9 @@ async def arun_novel(
                 default=None,
             )
 
-    return results
+    return BatchRunResult(
+        results,
+        paused=circuit_stopped,
+        stopped_reason=stopped_reason,
+    )
 

@@ -10,7 +10,7 @@ test.describe('production review workspace', () => {
       timeout: 15_000,
     })
     await page.getByText('第三章 门后的影子').click()
-    await expect(page.getByText('文风与表达')).toBeVisible()
+    await expect(page.getByText('文风与表达', { exact: true })).toBeVisible()
   })
 
   test('seeded queue supports filters and chapter selection', async ({ page, request }) => {
@@ -26,7 +26,7 @@ test.describe('production review workspace', () => {
   test('repair action opens confirmation without executing it', async ({ page, request }) => {
     await openWithActiveProject(page, request, '/production?tab=reviews')
     await page.getByText('第三章 门后的影子').click()
-    await page.getByRole('button', { name: '重跑门禁', exact: true }).click()
+    await page.locator('.recovery-actions').getByRole('button', { name: '重跑门禁', exact: true }).click()
     await expect(page.locator('.el-dialog')).toBeVisible()
     await expect(page.getByText('确认生产动作')).toBeVisible()
     await expect(page.getByText('只有点击下方确认按钮后才会提交')).toBeVisible()

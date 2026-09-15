@@ -104,7 +104,7 @@ def pin_public_image_url(raw_url: str) -> PinnedEndpoint:
 def _rewrite_url(url: httpx.URL, ip: str) -> httpx.URL:
     host = ip
     if ":" in ip and not ip.startswith("["):
-        host = ip
+        host = f"[{ip}]"
     return url.copy_with(host=host)
 
 
@@ -114,7 +114,7 @@ class PinnedIPTransport(httpx.HTTPTransport):
         self._endpoint = endpoint
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        headers = request.headers.mutablecopy()
+        headers = request.headers.copy()
         headers["host"] = (
             self._endpoint.hostname
             if (request.url.port in (None, 80, 443))
@@ -138,7 +138,7 @@ class PinnedAsyncIPTransport(httpx.AsyncHTTPTransport):
         self._endpoint = endpoint
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        headers = request.headers.mutablecopy()
+        headers = request.headers.copy()
         headers["host"] = (
             self._endpoint.hostname
             if (request.url.port in (None, 80, 443))

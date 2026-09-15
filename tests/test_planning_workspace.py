@@ -93,3 +93,35 @@ referenceAuthors: []
     assert rules[1].summary == "2 条写作原则"
     assert rules[2].summary == "尚未配置"
     assert all(len(entity.name) < 20 for entity in rules)
+
+
+def test_planning_workspace_ingests_story_blueprint(tmp_path):
+    (tmp_path / "assets").mkdir()
+    bp_data = {
+        "title": "异界算力魔神",
+        "usp": {"one_sentence_hook": "运维工程师用算力重构仙界"},
+        "reader_promises": [
+            {
+                "id": "promise_power",
+                "promise_type": "power_upgrade",
+                "description": "每五章获得一次算力突破与降维打击",
+                "expected_interval": "5 chapters",
+            }
+        ],
+    }
+    (tmp_path / "assets" / "story_blueprint.json").write_text(
+        json.dumps(bp_data, ensure_ascii=False), encoding="utf-8"
+    )
+
+    workspace = build_planning_workspace(tmp_path)
+    kinds = [e.kind for e in workspace.entities]
+    assert "blueprint" in kinds
+    assert "promise" in kinds
+
+    bp_entity = next(e for e in workspace.entities if e.kind == "blueprint")
+    assert bp_entity.name == "异界算力魔神"
+    assert "运维工程师" in bp_entity.summary
+
+    promise_entity = next(e for e in workspace.entities if e.kind == "promise")
+    assert "算力突破" in promise_entity.name
+

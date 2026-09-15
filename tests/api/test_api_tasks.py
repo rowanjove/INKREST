@@ -1,7 +1,7 @@
 from tests.api._base import *  # noqa: F403
 
 import web.context as web_context
-from novel_agent.domain.tasks import TaskType
+from novel_agent.domain.tasks import BatchOutcome, TaskStatus as DomainTaskStatus, TaskType
 from novel_agent.state.sqlite_store import safe_connection
 from web.project_task_registry import ProjectTaskRegistry
 from web.models import TaskStatus
@@ -59,6 +59,30 @@ class ApiTasksTests(ApiTestBase):
         for task in blocked:
             with self.subTest(task=task["id"]):
                 self.assertFalse(_is_auto_resumable_single_chapter_task(task))
+
+        from web.tasks import _is_auto_resumable_task
+
+        self.assertTrue(
+            _is_auto_resumable_task(
+                {
+                    "id": "gate-1",
+                    "chapter_id": "001",
+                    "task_type": "chapter",
+                    "mode": "gate_only",
+                    "status": "pending",
+                }
+            )
+        )
+        self.assertTrue(
+            _is_auto_resumable_task(
+                {"id": "novel-cont", "task_type": "novel_continue", "status": "pending"}
+            )
+        )
+        self.assertFalse(
+            _is_auto_resumable_task(
+                {"id": "novel-1", "task_type": "novel_run", "status": "pending"}
+            )
+        )
 
     def test_task_manager_rejects_duplicate_running_chapter(self):
         manager = TaskManager(self.tmpdir)
@@ -173,6 +197,46 @@ class ApiTasksTests(ApiTestBase):
         self.assertIn("message", task["result"])
         self.assertIn("batch exploded", task["error"])
 
+    def test_batch_child_failure_marks_parent_failed(self):
+        import asyncio
+
+        manager = TaskManager(self.tmpdir)
+        batch_id = "batch-child-fail"
+        manager._create_task_record(
+            batch_id,
+            TaskType.CHAPTER_BATCH,
+            {
+                "chapters": [{"chapter_id": "001", "goal": "first"}],
+                "goal": "批量生成 1 章",
+                "dry_run": True,
+            },
+        )
+
+        async def failed_child_outcome(*_args, **_kwargs):
+            return BatchOutcome(
+                status=DomainTaskStatus.FAILED,
+                failed_chapter="001",
+                reason="planner failed",
+                resumable_from="001",
+                child_task_ids=["child-1"],
+            )
+
+        async def run_scenario():
+            with patch("web.tasks.run_chapter_batch", failed_child_outcome):
+                await manager._run_batch(
+                    batch_id,
+                    [{"chapter_id": "001", "goal": "first"}],
+                    dry_run=True,
+                )
+
+        asyncio.run(run_scenario())
+
+        task = manager.get_task(batch_id)
+        self.assertEqual(task["status"], "failed")
+        self.assertEqual(task["result"]["failed_chapter"], "001")
+        self.assertEqual(task["resumable_from"], "001")
+        self.assertIn("planner failed", task["error"])
+
     def test_switch_project_allows_background_tasks_via_registry(self):
         original_active = web_server._active_project_id
         original_base = web_server.BASE_DIR
@@ -224,7 +288,11 @@ class ApiTasksTests(ApiTestBase):
             manager_a = registry.get(self.tmpdir / "projects" / first["id"])
             manager_a._running_tasks["task-a"] = MagicMock()
 
-            response = TestClient(web_app).delete(f"/api/projects/{first['id']}")
+            response = TestClient(web_app).request(
+                "DELETE",
+                f"/api/projects/{first['id']}",
+                json={"confirmation": f"DELETE {first['id']}"},
+            )
 
             self.assertEqual(response.status_code, 409)
             self.assertTrue((self.tmpdir / "projects" / first["id"]).exists())

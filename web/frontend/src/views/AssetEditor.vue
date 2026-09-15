@@ -4,6 +4,8 @@ import { FolderOpened, MagicStick, Plus } from '@element-plus/icons-vue'
 import AssetListSidebar from '../components/asset/AssetListSidebar.vue'
 import AssetEditorPanel from '../components/asset/AssetEditorPanel.vue'
 import AssetEditorDialogs from '../components/asset/AssetEditorDialogs.vue'
+import PlanningSectionNav from '../components/planning/PlanningSectionNav.vue'
+import PlanningWorkspaceHeader from '../components/planning/PlanningWorkspaceHeader.vue'
 import { useAssetEditor } from '../composables/useAssetEditor'
 
 const {
@@ -50,23 +52,26 @@ onMounted(loadAssets)
 </script>
 
 <template>
-  <section class="asset-editor">
-    <header class="page-head">
-      <div class="page-title-area">
-        <h1>资产编辑</h1>
-        <p>维护角色、世界观、规则等项目素材；可手写、新增，也可让 AI 批量生成。</p>
-      </div>
-      <div class="head-actions">
+  <section class="planning-page asset-editor">
+    <PlanningWorkspaceHeader
+      eyebrow="策划中心"
+      title="素材资产"
+      description="维护人物、世界、规则与自定义素材，在生产前补齐故事设定。"
+    >
+      <template #actions>
         <el-button :icon="FolderOpened" @click="loadAssets">刷新</el-button>
         <el-button :icon="Plus" @click="createDialogVisible = true">新增资产</el-button>
         <el-button type="primary" :icon="MagicStick" @click="openGenerateDialog">AI 生成</el-button>
-      </div>
-    </header>
+      </template>
+    </PlanningWorkspaceHeader>
+
+    <PlanningSectionNav />
 
     <el-alert v-if="loadError" :title="loadError" type="warning" show-icon class="error-bar" />
 
-    <div class="asset-layout">
-      <AssetListSidebar
+    <div class="asset-content">
+      <div class="asset-layout">
+        <AssetListSidebar
         :grouped-assets="groupedAssets"
         :current-asset-name="currentAsset?.name"
         :selected-custom-assets="selectedCustomAssets"
@@ -80,7 +85,7 @@ onMounted(loadAssets)
         :on-context-command="handleContextCommand"
       />
 
-      <AssetEditorPanel
+        <AssetEditorPanel
         v-model:edit-content="editContent"
         v-model:show-asset-source="showAssetSource"
         :loading="loading"
@@ -93,7 +98,8 @@ onMounted(loadAssets)
         :content-blocks="contentBlocks"
         @save="handleSave"
         @open-add-term="openAddTermDialog"
-      />
+        />
+      </div>
     </div>
 
     <AssetEditorDialogs
@@ -115,19 +121,31 @@ onMounted(loadAssets)
 
 <style scoped>
 .asset-editor {
-  display: grid;
-  gap: 18px;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-bg-canvas);
 }
 
 .error-bar {
-  border-radius: 8px;
+  border-radius: 0;
+}
+
+.asset-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-5);
+  background: var(--color-bg-page);
 }
 
 .asset-layout {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
   gap: 16px;
-  min-height: calc(100vh - 210px);
+  min-height: 620px;
 }
 
 @media (max-width: 980px) {

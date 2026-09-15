@@ -25,6 +25,8 @@ from novel_agent.quality.candidate_policy import evaluate_candidate_policy
 from novel_agent.services.manuscript_workspace import build_manuscript_workspace, text_sha256
 from novel_agent.quality.metrics import build_quality_metrics, metrics_csv, save_quality_baseline
 from novel_agent.quality.voice_lab import build_voice_lab, record_voice_feedback, set_voice_lab_frozen
+from novel_agent.quality.decision import derive_quality_decision
+from novel_agent.services.quality_review import quality_issues_from_report
 from web.deps import ProjectSession, RequireProjectDep, coerce_project_session, touch_project_activity
 from web.helpers import _validate_id
 
@@ -60,6 +62,23 @@ def _evidence_chain(reports: Path, quality: Dict[str, Any], audit: Dict[str, Any
                     "source": finding.get("source") or finding.get("source_ref") or finding.get("chapter_id"),
                     "summary": finding.get("message") or finding.get("reason") or finding.get("type") or str(finding),
                 })
+        details = check.get("details")
+        if isinstance(details, str):
+            details = [details]
+        if isinstance(details, list):
+            for index, detail in enumerate(details[:30]):
+                if detail in (None, ""):
+                    continue
+                item = dict(detail) if isinstance(detail, dict) else {"summary": str(detail)}
+                evidence.append({
+                    "layer": "L1",
+                    "kind": "quality_detail",
+                    "check": str(check_name),
+                    "index": index,
+                    "span": item.get("span") or item.get("source_span"),
+                    "source": item.get("source") or item.get("source_ref"),
+                    "summary": item.get("message") or item.get("reason") or item.get("summary") or str(item),
+                })
     issues = audit.get("issues") if isinstance(audit.get("issues"), list) else []
     for index, issue in enumerate(issues[:30]):
         item = dict(issue) if isinstance(issue, dict) else {"summary": str(issue)}
@@ -74,6 +93,14 @@ def _evidence_chain(reports: Path, quality: Dict[str, Any], audit: Dict[str, Any
     for name, check in (gate.get("checks") or {}).items() if isinstance(gate.get("checks"), dict) else []:
         if isinstance(check, dict) and check.get("pass") is False:
             evidence.append({"layer": "L0", "kind": "gate_failure", "check": str(name), "summary": check.get("reason") or "统一门禁未通过"})
+    gate_quality = gate.get("quality") if isinstance(gate.get("quality"), dict) else {}
+    for name in gate_quality.get("blocked_by") or []:
+        evidence.append({
+            "layer": "L0",
+            "kind": "gate_failure",
+            "check": str(name),
+            "summary": f"统一门禁未通过：{name}",
+        })
     for contract_path in sorted(reports.glob("*_render_contract.json"))[:20]:
         contract = _read_json(contract_path)
         lock = contract.get("content_lock") if isinstance(contract.get("content_lock"), dict) else {}
@@ -245,6 +272,17 @@ def get_quality_review(
         quality = _read_json(reports / "quality.json")
         audit = _read_json(reports / "audit.json")
         gate = _read_json(reports / "unified_gate.json")
+        quality_for_review = dict(quality)
+        quality_audit = quality_for_review.get("audit")
+        quality_audit = quality_audit if isinstance(quality_audit, dict) else {}
+        if isinstance(audit.get("issues"), list) and not isinstance(
+            quality_audit.get("issues"), list
+        ):
+            quality_for_review["audit"] = {
+                **quality_audit,
+                "issues": audit["issues"],
+                "status": quality_audit.get("status") or audit.get("status") or "ok",
+            }
         candidate_set = load_candidate_set(root, safe_id)
         document_payload: Dict[str, Any] = {}
         try:
@@ -259,6 +297,8 @@ def get_quality_review(
             document_payload = {}
         return {
             "chapter_id": safe_id,
+            "quality_decision": derive_quality_decision(quality_for_review),
+            "issues": quality_issues_from_report(quality_for_review),
             "levels": {
                 "l0": (quality.get("quality_layers", {}).get("L0") or gate.get("guard_summary") or {}) if isinstance(quality, dict) else {},
                 "l1": (quality.get("quality_layers", {}).get("L1") or quality) if isinstance(quality, dict) else {},

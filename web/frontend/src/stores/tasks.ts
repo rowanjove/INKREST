@@ -23,12 +23,20 @@ export interface LogEntry {
   chapter_id?: string
 }
 
+function normalizeProgressTimestamp(value: unknown): number {
+  const raw = typeof value === 'number' ? value : Number(value || 0)
+  if (!Number.isFinite(raw) || raw <= 0) return Date.now()
+  return raw > 1e12 ? raw : raw * 1000
+}
+
 export interface ProgressEntry {
   step: string
   status: 'running' | 'done' | 'error' | 'skipped' | 'warning' | 'blocked'
   chapter_id: string
   data?: Record<string, any>
   timestamp: number
+  task_id?: string
+  run_id?: string
 }
 
 export interface TaskSummary {
@@ -47,6 +55,7 @@ export interface TaskSummary {
     data?: Record<string, any>
     timestamp?: number
   }
+  pipeline_progress?: ProgressEntry[]
   result?: {
     code?: string
     failure_kind?: string
@@ -195,6 +204,11 @@ export const useTasksStore = defineStore('tasks', () => {
   const lastProgressLogKey = ref('')
 
   function addProgress(entry: ProgressEntry) {
+    entry = {
+      ...entry,
+      task_id: entry.task_id || currentTaskId.value || undefined,
+      run_id: entry.run_id || entry.task_id || currentTaskId.value || undefined,
+    }
     const logKey = `${entry.chapter_id}:${entry.step}:${entry.status}`
     if (logKey !== lastProgressLogKey.value && entry.step) {
       lastProgressLogKey.value = logKey
@@ -407,42 +421,56 @@ export const useTasksStore = defineStore('tasks', () => {
 
   function processTasksList(data: TaskSummary[]) {
       taskList.value = data.slice()
-      let runningFound = false
-      let pausedTaskId = ''
-      for (const task of data) {
-        if (task.status === 'running' || task.status === 'claimed') {
-          runningFound = true
-          currentTaskId.value = task.task_id
-          if (task.chapter_id) {
-            currentChapterId.value = task.chapter_id
+      const activeTask = data.find((task) => task.status === 'running' || task.status === 'claimed')
+        || data.find((task) => task.status === 'pending' && (isNovelPipelineTask(task) || isAutoResumablePendingTask(task)))
+        || data.find((task) => task.status === 'paused')
+      const terminalPipelineTask = data.find(
+        (task) => ['succeeded', 'failed', 'cancelled'].includes(task.status)
+          && Array.isArray(task.pipeline_progress)
+          && task.pipeline_progress.length > 0,
+      )
+      const displayTask = activeTask || terminalPipelineTask
+
+      if (displayTask) {
+        currentTaskId.value = displayTask.task_id
+        if (displayTask.chapter_id) currentChapterId.value = displayTask.chapter_id
+        if (Array.isArray(displayTask.pipeline_progress) && displayTask.pipeline_progress.length) {
+          const incoming = displayTask.pipeline_progress.map((entry) => ({
+            ...entry,
+            task_id: entry.task_id || displayTask.task_id,
+            run_id: entry.run_id || displayTask.task_id,
+            timestamp: normalizeProgressTimestamp(entry.timestamp),
+          }))
+          const currentForTask = progress.value.filter(
+            (entry) => entry.task_id === displayTask.task_id,
+          )
+          const currentMax = Math.max(0, ...currentForTask.map((entry) => entry.timestamp || 0))
+          const incomingMax = Math.max(0, ...incoming.map((entry) => entry.timestamp || 0))
+          if (!currentForTask.length || incomingMax >= currentMax) {
+            progress.value = incoming
           }
-          isRunning.value = true
+        }
+      }
+
+      const runningFound = Boolean(activeTask && activeTask.status !== 'paused')
+      if (activeTask) {
+        isRunning.value = runningFound
+      } else if (terminalPipelineTask) {
+        isRunning.value = false
+      }
+      for (const task of data) {
+        if (task.task_id === activeTask?.task_id && (task.status === 'running' || task.status === 'claimed')) {
           if (task.progress) {
             addProgress({
               step: task.progress.step,
               status: task.progress.status,
               chapter_id: task.progress.chapter_id || task.chapter_id || '',
               data: task.progress.data,
-              timestamp: (task.progress.timestamp ?? 0) * 1000,
+              timestamp: normalizeProgressTimestamp(task.progress.timestamp),
+              task_id: task.task_id,
+              run_id: task.task_id,
             })
           }
-        } else if (task.status === 'pending' && (isNovelPipelineTask(task) || isAutoResumablePendingTask(task))) {
-          runningFound = true
-          currentTaskId.value = task.task_id
-          if (task.chapter_id) {
-            currentChapterId.value = task.chapter_id
-          }
-          isRunning.value = true
-        } else if (task.status === 'paused' && !runningFound) {
-          pausedTaskId = task.task_id
-          currentTaskId.value = task.task_id
-          if (task.chapter_id) currentChapterId.value = task.chapter_id
-          progress.value.forEach((entry) => {
-            if (entry.chapter_id && entry.chapter_id === task.chapter_id && entry.status === 'running') {
-              entry.status = 'warning'
-            }
-          })
-          isRunning.value = false
         } else if (task.status === 'succeeded') {
           const conflictHint = manuscriptConflictHint(task.result)
           if (conflictHint && !notifiedManuscriptConflicts.has(task.task_id)) {
@@ -502,10 +530,11 @@ export const useTasksStore = defineStore('tasks', () => {
       }
       const hasLocalRunningProgress = progress.value.some((p) => p.status === 'running')
       if (!runningFound && !hasLocalRunningProgress) {
-        if (isRunning.value) {
-          isRunning.value = false
+        isRunning.value = false
+        if (!displayTask) {
+          currentTaskId.value = ''
+          currentChapterId.value = ''
         }
-        if (!pausedTaskId) currentTaskId.value = ''
       }
   }
 

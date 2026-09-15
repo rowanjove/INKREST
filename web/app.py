@@ -42,6 +42,9 @@ from web.routes.quality import router as quality_router
 from web.routes.production import router as production_router
 from web.routes.publishing import router as publishing_router
 from web.routes.search import router as search_router
+from web.routes.hwe import router as hwe_router
+from web.routes.blueprint import router as blueprint_router
+from web.routes.commercial import router as commercial_router
 
 def _api_docs_enabled() -> bool:
     if os.environ.get(ALLOW_REMOTE_ENV, "").lower() in ("1", "true", "yes"):
@@ -153,6 +156,9 @@ app.include_router(quality_router)
 app.include_router(production_router)
 app.include_router(publishing_router)
 app.include_router(search_router)
+app.include_router(hwe_router, prefix="/api/hwe", tags=["hwe"])
+app.include_router(blueprint_router)
+app.include_router(commercial_router)
 
 if os.environ.get("E2E_FIXTURES", "").strip() in ("1", "true", "yes"):
     from web.routes.e2e_fixtures import router as e2e_fixtures_router
@@ -201,6 +207,13 @@ def mount_plugin_web_extensions(pm) -> None:
         if not hasattr(ext, "get_router"):
             continue
         plugin_router = ext.get_router()
+        prefix = str(getattr(plugin_router, "prefix", "") or "")
+        if plugin_router and not prefix.startswith("/api/ext/"):
+            _logger.warning(
+                "Skipping plugin '%s' web extension: router prefix must start with /api/ext/",
+                name,
+            )
+            continue
         if plugin_router:
             previous_count = len(app.router.routes)
             app.include_router(
@@ -219,6 +232,9 @@ def mount_plugin_web_extensions(pm) -> None:
                 )
                 app.router.routes[spa_index:spa_index] = new_routes
             _mounted_web_extensions[name] = loaded
+    stale = [name for name in list(_mounted_web_extensions) if name not in pm.plugins]
+    for name in stale:
+        _mounted_web_extensions.pop(name, None)
 
 
 # Include plugin web extension routers

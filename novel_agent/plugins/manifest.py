@@ -12,14 +12,20 @@ from novel_agent.plugins.permissions import (
     effective_capabilities,
     validate_declared_capabilities,
 )
+from novel_agent.version import (
+    APP_VERSION,
+    PLUGIN_API_VERSION,
+    PLUGIN_MANIFEST_SCHEMA_VERSION,
+)
 
 MANIFEST_FILENAMES = ("inkrest.plugin.json", "plugin.json")
 PLUGIN_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
-CORE_VERSION = "1.0.0"
+V2_PLUGIN_ID_RE = re.compile(r"^[a-z][a-z0-9_.-]{1,63}$")
+CORE_VERSION = APP_VERSION
 VALID_PLUGIN_TYPES = {t.value for t in PluginType}
 LEGACY_CAPABILITY_MARKERS = {"hooks"}
 
-CONTRIBUTION_ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,47}$")
+CONTRIBUTION_ID_RE = re.compile(r"^[a-z][a-z0-9_.-]{1,63}$")
 VALID_SURFACES = {"library_sidebar", "project_sidebar"}
 VALID_VISIBILITIES = {"visible", "collapsed", "hidden"}
 ALLOWED_NAVIGATION_ICONS = {
@@ -128,7 +134,7 @@ def _validate_contributes(
         if icon not in ALLOWED_NAVIGATION_ICONS:
             icon = "extensions"
 
-        view = str(item.get("view") or "").strip()
+        view = str(item.get("view") or item.get("view_id") or "").strip()
         if not view or not CONTRIBUTION_ID_RE.match(view):
             raise ManifestError(f"导航贡献项 view 无效: '{view}'，须为合法内部标识")
         if any(bad in view for bad in (":", "/", "\\", "..")):
@@ -196,10 +202,10 @@ def _validate_contributes(
             "scope": scope,
         })
 
-    return {
-        "navigation": normalized_nav,
-        "commands": normalized_cmd,
-    }
+    result = dict(raw)
+    result["navigation"] = normalized_nav
+    result["commands"] = normalized_cmd
+    return result
 
 
 def find_manifest_path(plugin_root: Path) -> Optional[Path]:
@@ -226,7 +232,9 @@ def load_manifest(plugin_root: Path) -> Dict[str, Any]:
 
 def validate_manifest(data: Dict[str, Any], plugin_root: Path) -> Dict[str, Any]:
     pid = str(data.get("id") or data.get("name") or "").strip()
-    if not pid or not PLUGIN_ID_RE.match(pid):
+    schema_ver = int(data.get("schema_version") or data.get("$schema_version") or 1)
+    id_pattern = V2_PLUGIN_ID_RE if schema_ver >= 2 else PLUGIN_ID_RE
+    if not pid or not id_pattern.match(pid):
         raise ManifestError(
             "id 必填，且须为小写字母开头的 2–64 位标识（字母/数字/_/-）"
         )
@@ -256,13 +264,20 @@ def validate_manifest(data: Dict[str, Any], plugin_root: Path) -> Dict[str, Any]
             )
     min_core = core_constraint or "0.1.0"
 
+    if isinstance(engines, dict) and "plugin_api" in engines:
+        api_constraint = str(engines["plugin_api"]).strip()
+        if api_constraint and not is_core_version_compatible(api_constraint, PLUGIN_API_VERSION):
+            raise ManifestError(
+                f"插件要求插件 API 版本 '{api_constraint}'，当前系统插件 API 版本为 '{PLUGIN_API_VERSION}'"
+            )
+
     requires = data.get("requires") or []
     if not isinstance(requires, list):
         raise ManifestError("requires 必须是字符串数组")
     requires = [str(r).strip() for r in requires if str(r).strip()]
 
-    capabilities_declared = "capabilities" in data
-    raw_capabilities = data.get("capabilities")
+    capabilities_declared = "capabilities" in data or "permissions" in data
+    raw_capabilities = data.get("capabilities") if "capabilities" in data else data.get("permissions")
     legacy_capability_mode = bool(
         isinstance(raw_capabilities, list)
         and raw_capabilities
@@ -289,7 +304,10 @@ def validate_manifest(data: Dict[str, Any], plugin_root: Path) -> Dict[str, Any]
     _validate_entry_path(plugin_root, entry)
     contributes = _validate_contributes(data.get("contributes"), capabilities, plugin_root)
 
+    schema_version = int(data.get("schema_version") or 1)
+
     normalized = {
+        "schema_version": schema_version,
         "id": pid,
         "name": pid,
         "version": version,
@@ -314,6 +332,7 @@ def validate_manifest(data: Dict[str, Any], plugin_root: Path) -> Dict[str, Any]
         ),
         "config_schema": data.get("config_schema") if isinstance(data.get("config_schema"), dict) else {},
         "tags": data.get("tags") if isinstance(data.get("tags"), list) else [],
+        "activation_events": [str(e).strip() for e in data.get("activation_events", []) if str(e).strip()],
         "extract": extract_rules,
         "bundles": [str(b).strip() for b in bundles if str(b).strip()],
         "digest": str(data.get("digest") or "").strip(),

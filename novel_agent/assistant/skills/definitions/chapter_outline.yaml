@@ -1,0 +1,10 @@
+id: chapter_outline
+name: 章纲设计
+command: /章纲
+description: 为当前章节生成或优化分章大纲
+model_policy: balanced
+produces_patch: false
+system_instruction: >
+  请根据当前作品的立意、卷宏观规划与上一章剧情结尾，
+  为当前章生成结构清晰的分章大纲：
+  包含章节标题、字数预估、本章核心任务（Goal）、主要冲突（Conflict）与结果转折（Turn）。

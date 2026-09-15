@@ -1,0 +1,7 @@
+{
+  "id": "neg_legitimate_dialogue_01",
+  "category": "dialogue",
+  "text": "“你记错了，”林默对服务生解释道，“他不是三号房的客人，而是十三号房的。”",
+  "expected_rules": [],
+  "description": "对白中的客观事实纠错，绝不可被误杀为否定翻转"
+}

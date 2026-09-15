@@ -100,7 +100,6 @@ PLUGIN_MANAGER = ROOT / "web" / "frontend" / "src" / "views" / "PluginManager.vu
 PLUGIN_GRID = ROOT / "web" / "frontend" / "src" / "components" / "plugin" / "PluginGrid.vue"
 PLUGIN_MANAGER_COMPOSABLE = ROOT / "web" / "frontend" / "src" / "composables" / "usePluginManager.ts"
 SHARED_EMPTY_STATE = ROOT / "web" / "frontend" / "src" / "shared" / "ui" / "EmptyState.vue"
-NOVEL_PROGRESS_HELP = ROOT / "web" / "frontend" / "src" / "components" / "NovelProgressHelp.vue"
 EMBEDDING_CONFIG = ROOT / "web" / "frontend" / "src" / "components" / "EmbeddingConfig.vue"
 PIPELINE_RUNTIME = ROOT / "web" / "frontend" / "src" / "components" / "PipelineRuntimeConfig.vue"
 SHANSHAN_COPY = ROOT / "web" / "frontend" / "src" / "constants" / "shanshanCopy.ts"
@@ -203,8 +202,8 @@ def test_dashboard_exposes_snapshot_health_and_safe_next_actions() -> None:
     assert "项目健康" in dashboard
     assert "安全的下一步" in dashboard
     assert "authoritative_completed" in dashboard
-    assert "<el-progress" in dashboard
-    assert "planning?.counts" in dashboard
+    assert "DashboardProgressCard" in dashboard
+    assert "planning?.entities.length" in dashboard
     assert "blockingIssues" in dashboard
 
 
@@ -274,9 +273,12 @@ def test_empty_state_panel_used_in_key_views() -> None:
 
 def test_dashboard_exposes_authoritative_progress_bar() -> None:
     source = DASHBOARD.read_text(encoding="utf-8")
+    card = (
+        ROOT / "web" / "frontend" / "src" / "components" / "dashboard" / "DashboardProgressCard.vue"
+    ).read_text(encoding="utf-8")
     assert "authoritative_completed" in source
     assert "target_chapters" in source
-    assert "<el-progress" in source
+    assert "<el-progress" in card
 
 
 def test_manuscript_tree_virtualizes_and_filters_chapters() -> None:
@@ -545,7 +547,9 @@ def test_production_page_is_the_single_operations_center() -> None:
     source = PRODUCTION_CENTER.read_text(encoding="utf-8")
     compact = source.replace("\n", "").replace(" ", "")
     assert ">生产中心<" in compact
-    assert "运行、审校修复、费用与日志" in source
+    assert "启动、暂停、恢复与返修都在这里完成" in source
+    assert ">控制台<" in compact
+    assert ">任务历史<" in compact
     assert "ProductionTaskWorkspace" in source
     assert "ProductionReviewWorkspace" in source
 
@@ -557,14 +561,38 @@ def test_production_pause_banner_prioritizes_repair_before_resume() -> None:
     assert "useNovelBatchRun" in source
     assert "batchPaused" in source
     assert "pauseReason" in source
-
-
-def test_novel_progress_help_includes_dual_audit_footnote() -> None:
-    source = (
-        ROOT / "web" / "frontend" / "src" / "components" / "NovelProgressHelp.vue"
+    assert "openBatchDialog" in source
+    pipeline_bar = (ROOT / "web" / "frontend" / "src" / "components" / "dashboard" / "DashboardPipelineBar.vue").read_text(encoding="utf-8")
+    assert "resumeBatchRun" in pipeline_bar
+    tasks = PRODUCTION_TASKS.read_text(encoding="utf-8")
+    assert "恢复任务" in tasks
+    assert "resume_task" in tasks
+    assert "重新生产本章" in tasks
+    wait_source = (
+        ROOT / "web" / "frontend" / "src" / "utils" / "waitForQueueTask.ts"
     ).read_text(encoding="utf-8")
-    assert "INTERNAL_GATE_HINT" in source
-    assert "EXTERNAL_AUDIT_HINT" in source
+    assert "QueueWaitTimeoutError" in wait_source
+    assert "abortAndThrow" in wait_source
+    assert "仍在后台运行" in wait_source
+
+
+def test_dashboard_progress_cards_expose_canonical_sources() -> None:
+    dashboard = DASHBOARD.read_text(encoding="utf-8")
+    progress_card = (
+        ROOT / "web" / "frontend" / "src" / "components" / "dashboard" / "DashboardProgressCard.vue"
+    ).read_text(encoding="utf-8")
+    queue_card = (
+        ROOT / "web" / "frontend" / "src" / "components" / "dashboard" / "DashboardQueueCard.vue"
+    ).read_text(encoding="utf-8")
+    details = (
+        ROOT / "web" / "frontend" / "src" / "components" / "dashboard" / "ProgressMetricDetails.vue"
+    ).read_text(encoding="utf-8")
+    assert "DashboardProgressCard" in dashboard
+    assert "DashboardQueueCard" in dashboard
+    assert "chapter_progress" in dashboard
+    assert "全书批量进度（权威）" in details
+    assert "三处数字不一致" in details
+    assert "pending_briefs" in queue_card
 
 
 def test_e2e_fixture_route_gated_by_env() -> None:
@@ -605,20 +633,31 @@ def test_llm_log_viewer_fills_remaining_height() -> None:
     assert 'max-height="520"' not in source
 
 
-def test_outline_page_places_progress_help_above_queue_status() -> None:
+def test_outline_page_places_identity_before_single_arc_overview() -> None:
     source = OUTLINE_EDITOR.read_text(encoding="utf-8")
     template = source.split("<template>", 1)[1]
-    help_idx = template.index("<NovelProgressHelp")
-    queue_idx = template.index("<OutlineQueueStatus")
-    assert help_idx < queue_idx
+    identity_idx = template.index("<OutlineIdentityBand")
+    overview_idx = template.index("arcs-overview-panel")
+    assert identity_idx < overview_idx
+    assert "<NovelProgressHelp" not in template
+    assert "<OutlineQueueStatus" not in template
+
+
+def test_outline_classic_pane_does_not_repeat_arc_overview() -> None:
+    source = (
+        ROOT / "web" / "frontend" / "src" / "components" / "outline" / "OutlineClassicPane.vue"
+    ).read_text(encoding="utf-8")
+    assert "卷纲 / 阶段" not in source
+    assert "arc-panel" not in source
 
 
 def test_progress_help_and_production_use_canonical_progress_sources() -> None:
-    help_source = NOVEL_PROGRESS_HELP.read_text(encoding="utf-8")
+    dashboard_source = DASHBOARD.read_text(encoding="utf-8")
     production_source = PRODUCTION_CENTER.read_text(encoding="utf-8")
-    assert "useNovelProgress" in help_source
+    assert "getOutlineQueueStatus" in dashboard_source
+    assert "snapshot.chapter_progress" in dashboard_source
     assert "snapshot.chapter_progress" in production_source
-    assert "getNovelBatchStatus" not in help_source
+    assert "getNovelBatchStatus" not in dashboard_source
 
 
 def test_shanshan_copy_points_to_production_center() -> None:
@@ -811,14 +850,13 @@ def test_trope_entry_is_folded_into_the_create_wizard() -> None:
     assert "PresetSelector" in quick_form
 
 
-def test_config_view_shell_delegates_to_nav_and_sections() -> None:
+def test_config_view_shell_delegates_to_navigation_and_sections() -> None:
     shell_source = CONFIG_VIEW.read_text(encoding="utf-8")
     stack_source = CONFIG_SECTIONS_STACK.read_text(encoding="utf-8")
     assert "ConfigPageNav" in shell_source
     assert "ConfigSectionsStack" in shell_source
     assert "useConfigNavigation" in shell_source
-    assert "LLMConfig" in stack_source
-    assert "EmbeddingConfig" in stack_source
+    assert ".config-page :deep(.fold-head)" in shell_source
 
 
 def test_production_shell_delegates_to_workspace_panels() -> None:

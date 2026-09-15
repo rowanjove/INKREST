@@ -74,13 +74,16 @@ async def run_chapter(req: ChapterRequest, session: ProjectSession = RequireProj
     try:
         safe_id = ws_server._validate_id(req.chapter_id, "chapter_id")
         chapter_dir = session.root_dir / "workspace" / "chapters" / f"chapter_{safe_id}"
-        _reset_chapter_generation_artifacts(chapter_dir)
         
         task_id = await task_manager.submit_chapter(
             chapter_id=req.chapter_id,
             goal=req.goal,
             dry_run=req.dry_run,
         )
+        # Only clear stale generation artifacts after the task manager has
+        # atomically accepted the chapter lease.  A duplicate request raises
+        # before this point and must leave the running task's checkpoint intact.
+        _reset_chapter_generation_artifacts(chapter_dir)
     except ValueError as exc:
         raise HTTPException(409, str(exc))
     task = await task_manager.get_task_async(task_id)
@@ -161,8 +164,6 @@ async def rewrite_chapter(chapter_id: str, session: ProjectSession = RequireProj
     if not chapter_dir.exists():
         raise HTTPException(404, f"Chapter {safe_id} not found")
         
-    _reset_chapter_generation_artifacts(chapter_dir)
-            
     plan = ws_server._read_json(chapter_dir / "plan.json")
     goal = (
         plan.get("chapter_goal")
@@ -176,6 +177,7 @@ async def rewrite_chapter(chapter_id: str, session: ProjectSession = RequireProj
             goal=goal,
             dry_run=False,
         )
+        _reset_chapter_generation_artifacts(chapter_dir)
     except ValueError as exc:
         raise HTTPException(409, str(exc))
     task = await task_manager.get_task_async(task_id)
@@ -295,14 +297,6 @@ async def run_rewrite_batch(req: RewriteBatchRequest, session: ProjectSession = 
         if not chapter_dir.exists():
             continue
             
-        # 清理已有的 checkpoint.json，保证重写会完整重新跑
-        checkpoint_path = chapter_dir / "checkpoint.json"
-        if checkpoint_path.exists():
-            try:
-                checkpoint_path.unlink()
-            except OSError as e:
-                ws_server.logger.warning("Failed to delete checkpoint file %s: %s", checkpoint_path, e)
-                
         plan = ws_server._read_json(chapter_dir / "plan.json")
         goal = (
             plan.get("chapter_goal")
@@ -320,6 +314,13 @@ async def run_rewrite_batch(req: RewriteBatchRequest, session: ProjectSession = 
         raise HTTPException(400, "没有找到有效的可重写章节。")
         
     batch_id = await task_manager_for(session).submit_batch(chapters_to_run, req.dry_run)
+    for chapter in chapters_to_run:
+        _reset_chapter_generation_artifacts(
+            session.root_dir
+            / "workspace"
+            / "chapters"
+            / f"chapter_{chapter['chapter_id']}"
+        )
     return {"batch_id": batch_id, "chapter_count": len(chapters_to_run)}
 
 

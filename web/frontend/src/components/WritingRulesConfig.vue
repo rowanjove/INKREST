@@ -49,14 +49,23 @@ const handleSave = async () => {
   }
 }
 
+const props = withDefaults(
+  defineProps<{
+    bare?: boolean
+  }>(),
+  {
+    bare: false,
+  },
+)
+
 onMounted(() => {
   loadData()
 })
 </script>
 
 <template>
-  <section id="writing-rules" class="fold-card writing-rules-config">
-    <div class="fold-head" @click="expanded = !expanded">
+  <section id="writing-rules" class="fold-card writing-rules-config" :class="{ 'is-bare': bare }">
+    <div v-if="!bare" class="fold-head" @click="expanded = !expanded">
       <div class="head-left">
         <span class="collapse-arrow" :class="{ open: expanded }">▶</span>
         <div>
@@ -76,7 +85,7 @@ onMounted(() => {
       </el-button>
     </div>
 
-    <div v-show="expanded" class="fold-body writing-rules-body" v-loading="loading">
+    <div v-show="bare || expanded" class="fold-body writing-rules-body" v-loading="loading">
       <el-alert type="info" :closable="false" class="rules-overview">
         <template #title>三块分工（避免填错位置）</template>
         <ul class="overview-list">

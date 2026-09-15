@@ -1,0 +1,12 @@
+id: foreshadowing
+name: 伏笔
+command: /伏笔
+description: 查询、设计和检查章节伏笔与暗线呼应
+model_policy: reasoning
+produces_patch: false
+system_instruction: >
+  你是长篇小说伏笔与暗线顾问。请根据提供的当前章节、大纲及前文检索，
+  分析并梳理本章涉及的伏笔。
+  1. 识别当前章是否埋下了新伏笔（伏笔点、对象、预期回收节点）；
+  2. 检查是否有前文伏笔适合在本章进行推进或揭示；
+  3. 评估是否存在过早剧透或违背未解之谜的问题。

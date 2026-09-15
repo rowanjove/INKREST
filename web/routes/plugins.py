@@ -4,6 +4,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from web.context import (
+    get_global_plugin_manager,
     get_plugin_manager,
     merged_plugin_catalog,
     merged_plugin_navigation,
@@ -29,6 +30,7 @@ class ConfigUpdateRequest(BaseModel):
 
 class ViewSessionRequest(BaseModel):
     project_id: Optional[str] = None
+    context_revision: int = 1
 
 
 class ViewRpcRequest(BaseModel):
@@ -38,18 +40,27 @@ class ViewRpcRequest(BaseModel):
     context_revision: int = 1
 
 
-def _manager_for(plugin_id: str):
-    pm = get_plugin_manager()
-    catalog_names = {item.get("name") for item in pm.list_plugin_catalog()}
-    if plugin_id in pm.plugins or plugin_id in catalog_names:
-        return pm
-    from web.context import get_global_plugin_manager
+class RollbackRequest(BaseModel):
+    target_version: Optional[str] = None
 
+
+def _manager_for(plugin_id: str):
+    project_pm = get_plugin_manager()
     global_pm = get_global_plugin_manager()
-    global_names = {item.get("name") for item in global_pm.list_plugin_catalog()}
-    if plugin_id in global_pm.plugins or plugin_id in global_names:
+    global_catalog = {
+        item.get("name"): item for item in global_pm.list_plugin_catalog()
+    }
+    project_catalog = {
+        item.get("name"): item for item in project_pm.list_plugin_catalog()
+    }
+    global_row = global_catalog.get(plugin_id)
+    if global_row and global_row.get("plugin_type") == "web_extension":
         return global_pm
-    return pm
+    if plugin_id in project_pm.plugins or plugin_id in project_catalog:
+        return project_pm
+    if plugin_id in global_pm.plugins or plugin_id in global_catalog:
+        return global_pm
+    return project_pm
 
 
 def _reload_plugin_manager(pm):
@@ -89,7 +100,12 @@ def create_view_session(plugin_id: str, view_id: str, req: ViewSessionRequest):
     """Allocate an active authenticated session for a plugin view."""
     pm = _manager_for(plugin_id)
     try:
-        return pm.create_view_session(plugin_id, view_id, project_id=req.project_id)
+        return pm.create_view_session(
+            plugin_id,
+            view_id,
+            project_id=req.project_id,
+            context_revision=req.context_revision,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -147,8 +163,15 @@ async def install_plugin(file: UploadFile = File(...)):
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(400, "请上传 .zip 格式的插件包")
     data = await file.read()
-    pm = get_plugin_manager()
     try:
+        from novel_agent.plugins.installer import inspect_plugin_zip
+
+        manifest = inspect_plugin_zip(data)
+        pm = (
+            get_global_plugin_manager()
+            if manifest.get("plugin_type") == "web_extension"
+            else get_plugin_manager()
+        )
         result = pm.install_from_zip(data, replace=True)
     except Exception as exc:
         from novel_agent.plugins.manifest import ManifestError
@@ -305,3 +328,50 @@ def get_plugin_schema(name: str):
         if item.get("name") == name:
             return item.get("config_schema") or {}
     raise HTTPException(404, f"Plugin {name} not found")
+
+
+@router.post("/{name}/rollback")
+def rollback_plugin(name: str, req: RollbackRequest = RollbackRequest()):
+    """Rollback a plugin to a target version or the previous backup."""
+    name = _validate_id(name, "plugin_name")
+    pm = _manager_for(name)
+    try:
+        result = pm.rollback_plugin(name, target_version=req.target_version)
+    except Exception as exc:
+        raise HTTPException(400, f"Failed to rollback plugin {name}: {exc}") from exc
+    _reload_plugin_manager(pm)
+    return {"name": name, "status": "rolled_back", "target_version": req.target_version, "result": result}
+
+
+@router.get("/{name}/versions")
+def list_plugin_versions(name: str):
+    """List archived historical versions of a plugin."""
+    name = _validate_id(name, "plugin_name")
+    pm = _manager_for(name)
+    info = pm.list_plugin_versions(name)
+    return {"name": name, **info}
+
+
+@router.get("/{name}/diagnostics")
+def get_plugin_diagnostics(name: str):
+    """Get runtime diagnostics and state transition history for a plugin."""
+    name = _validate_id(name, "plugin_name")
+    pm = _manager_for(name)
+    diag = pm.get_diagnostics(name)
+    if not diag:
+        raise HTTPException(404, f"No diagnostics found for plugin {name}")
+    return {"name": name, "diagnostics": diag.to_dict()}
+
+
+@router.get("/diagnostics/all")
+def get_all_plugin_diagnostics():
+    """Get runtime diagnostics for all plugins."""
+    project_pm = get_plugin_manager()
+    global_pm = get_global_plugin_manager()
+    res = {}
+    for name, diag in project_pm.get_all_diagnostics().items():
+        res[name] = diag.to_dict()
+    for name, diag in global_pm.get_all_diagnostics().items():
+        if name not in res:
+            res[name] = diag.to_dict()
+    return {"diagnostics": res}

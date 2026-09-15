@@ -115,6 +115,38 @@ def _patch_findings(report: Mapping[str, Any], final_text: str, *, limit: int = 
                 }
             )
 
+    audit = report.get("audit") if isinstance(report.get("audit"), Mapping) else {}
+    for issue in audit.get("issues") or []:
+        if not isinstance(issue, Mapping):
+            continue
+        issue_type = str(issue.get("type") or "")
+        severity = str(issue.get("severity") or issue.get("level") or "").lower()
+        critical = str(issue.get("audit_class") or "").upper() == "CRITICAL"
+        if issue_type not in {"sensitive_word_hit", "word_count_out_of_bounds"} and not critical:
+            if severity not in {"high", "critical", "高", "fail"}:
+                continue
+        target = str(issue.get("target_text") or "").strip() or str(issue.get("text") or "").strip()
+        if not target:
+            continue
+        start = final_text.find(target)
+        end = start + len(target) if start >= 0 else 0
+        if start < 0:
+            start = 0
+            end = 0
+        candidates.append(
+            {
+                "check": "audit",
+                "issue_id": str(issue.get("issue_id") or issue.get("id") or f"audit:{issue_type}:{start}"),
+                "type": issue_type or "audit",
+                "severity": severity or "high",
+                "start": start,
+                "end": end,
+                "target": target[:360],
+                "why": str(issue.get("why") or issue.get("text") or "审校指出需要修正")[:360],
+                "fix": str(issue.get("fix") or issue.get("suggestion") or "只修改该证据范围")[:360],
+            }
+        )
+
     severity_order = {"high": 0, "critical": 0, "review": 1, "warning": 2, "medium": 2, "low": 3}
     candidates.sort(key=lambda item: (severity_order.get(str(item.get("severity")), 2), item["start"], item["end"]))
     selected: List[Dict[str, Any]] = []

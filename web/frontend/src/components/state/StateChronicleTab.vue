@@ -52,7 +52,7 @@ defineProps<{
 
 <template>
 <div class="chronicle-root">
-          <el-card class="chronicle-toolbar-card" shadow="never">
+          <section class="chronicle-toolbar-card">
             <div class="chronicle-toolbar">
               <div class="chronicle-toolbar-left">
                 <p class="chronicle-hint">
@@ -81,9 +81,9 @@ defineProps<{
                 </el-button>
               </div>
             </div>
-          </el-card>
+          </section>
 
-          <el-tabs v-model="activeTimelineTab" type="border-card" class="state-tabs">
+          <el-tabs v-model="activeTimelineTab" class="state-tabs">
             
             <!-- Relations Graph Tab -->
             <el-tab-pane label="人物图谱" name="relations">
@@ -730,14 +730,23 @@ defineProps<{
 }
 
 .chronicle-root{
-  margin-top: 10px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-.chronicle-toolbar-card :deep(.el-card__body){
+.chronicle-toolbar-card {
   padding: 14px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+}
+
+.state-tabs {
+  padding: 0 var(--space-4) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
 }
 
 .chronicle-toolbar{

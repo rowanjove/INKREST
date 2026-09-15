@@ -38,3 +38,16 @@ def test_pin_url_rejects_private_lan_for_public_images():
                 allow_loopback=False,
                 require_https=False,
             )
+
+
+def test_rewrite_url_ipv6_brackets():
+    import httpx
+    from web.outbound import _rewrite_url
+
+    url = httpx.URL("https://api.example.com:8443/v1/chat")
+    rewritten_ipv6 = _rewrite_url(url, "2606:4700:4700::1111")
+    assert str(rewritten_ipv6) == "https://[2606:4700:4700::1111]:8443/v1/chat"
+
+    rewritten_ipv4 = _rewrite_url(url, "1.1.1.1")
+    assert str(rewritten_ipv4) == "https://1.1.1.1:8443/v1/chat"
+

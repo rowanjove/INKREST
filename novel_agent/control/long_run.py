@@ -175,6 +175,9 @@ async def backoff_on_rate_limit(root_dir: Path, attempt: int) -> None:
 
 def chapter_run_is_failure(result: Any) -> bool:
     """True when a chapter result should count toward batch circuit breaker."""
+    decision = getattr(result, "quality_decision", None) or {}
+    if isinstance(decision, dict) and decision.get("blocking"):
+        return True
     warnings = getattr(result, "warnings", None) or []
     for msg in warnings:
         text = str(msg)

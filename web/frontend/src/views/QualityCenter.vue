@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import PageShell from '../shared/ui/PageShell.vue'
 import ErrorState from '../shared/ui/ErrorState.vue'
+import HumanWritingPanel from '../components/quality/HumanWritingPanel.vue'
 import { useProjectStore } from '../stores/project'
 import {
   adoptCandidateSetCandidate,
@@ -20,10 +21,13 @@ import {
   restoreProseProfile,
   setVoiceLabFrozen,
   getLongformReadiness,
+  rerunChapterGate,
+  resumeChapterAudit,
 } from '../api'
 import { l0BlockBanner, type CalibrationReport, type QualityMetrics, type QualityReview, type VoiceLabState } from '../entities/quality'
 
 const route = useRoute()
+const router = useRouter()
 const projectStore = useProjectStore()
 const loading = ref(false)
 const loadError = ref('')
@@ -34,10 +38,79 @@ const review = ref<QualityReview | null>(null)
 const selectedChapter = ref('')
 const longformReadiness = ref<Record<string, any> | null>(null)
 const loadGeneration = ref(0)
+type QualityTab = 'review' | 'hwe' | 'voice' | 'metrics'
+const qualityTabFromQuery = (): QualityTab => {
+  const value = String(route.query.tab || '')
+  return value === 'hwe' || value === 'voice' || value === 'metrics' ? value : 'review'
+}
+const activeQualityTab = ref<QualityTab>(qualityTabFromQuery())
+const rerunningGate = ref(false)
+const resumingAudit = ref(false)
 
 const chapterRows = computed(() => metrics.value?.rows || [])
 const selectedRow = computed(() => chapterRows.value.find((row) => row.chapter_id === selectedChapter.value))
 const l0Banner = computed(() => l0BlockBanner(review.value))
+const qualityDecision = computed(() => review.value?.quality_decision)
+const actionableIssues = computed(() => review.value?.issues || [])
+const decisionAlertType = computed(() => {
+  if (qualityDecision.value?.status === 'blocked' || qualityDecision.value?.status === 'incomplete') return 'error'
+  if (qualityDecision.value?.status === 'review') return 'warning'
+  return 'success'
+})
+
+function selectQualityTab(tab: QualityTab) {
+  activeQualityTab.value = tab
+  const query = { ...route.query }
+  if (tab === 'review') delete query.tab
+  else query.tab = tab
+  void router.replace({ path: '/quality', query })
+}
+
+function openSelectedChapter() {
+  if (!selectedChapter.value) return
+  void router.push({ path: '/writer', query: { chapter: selectedChapter.value } })
+}
+
+function formatSpan(span: unknown): string {
+  if (!span) return ''
+  if (typeof span === 'string') return span
+  if (Array.isArray(span)) return span.join('–')
+  if (typeof span === 'object') {
+    const value = span as Record<string, unknown>
+    const start = value.start ?? value.line_start ?? value.from
+    const end = value.end ?? value.line_end ?? value.to
+    if (start != null || end != null) return `${start ?? '?'}–${end ?? start ?? '?'}`
+  }
+  return ''
+}
+
+async function rerunSelectedGate() {
+  if (!selectedChapter.value || rerunningGate.value) return
+  rerunningGate.value = true
+  try {
+    await rerunChapterGate(selectedChapter.value)
+    ElMessage.success(`第 ${selectedChapter.value} 章门禁任务已提交`)
+    await loadReview(selectedChapter.value)
+  } catch (error: any) {
+    ElMessage.error(error?.message || '重跑门禁失败')
+  } finally {
+    rerunningGate.value = false
+  }
+}
+
+async function resumeSelectedAudit() {
+  if (!selectedChapter.value || resumingAudit.value) return
+  resumingAudit.value = true
+  try {
+    await resumeChapterAudit(selectedChapter.value)
+    ElMessage.success(`第 ${selectedChapter.value} 章审校任务已提交`)
+    await loadReview(selectedChapter.value)
+  } catch (error: any) {
+    ElMessage.error(error?.message || '重试审校失败')
+  } finally {
+    resumingAudit.value = false
+  }
+}
 
 function chapterFromQuery(): string {
   return typeof route.query.chapter === 'string' ? route.query.chapter : ''
@@ -229,6 +302,11 @@ watch(
 )
 
 watch(
+  () => route.query.tab,
+  () => { activeQualityTab.value = qualityTabFromQuery() },
+)
+
+watch(
   () => projectStore.currentProject?.id,
   () => {
     loadGeneration.value += 1
@@ -248,8 +326,8 @@ onMounted(loadAll)
 <template>
   <PageShell
     title="质量中心"
-    description="把声线、审校证据、候选反馈和基线指标放在同一条可回溯链路上。"
-    eyebrow="文本质量与证据链"
+    description="先处理阻断和返修；声线、校准与长期指标放在独立工作区中。"
+    eyebrow="审校、修复与质量策略"
   >
     <template #actions>
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
@@ -265,7 +343,33 @@ onMounted(loadAll)
 
     <div v-else class="quality-center" v-loading="loading">
 
-    <section class="summary-grid">
+    <nav class="quality-tabs" aria-label="质量中心分区">
+      <button :class="{ active: activeQualityTab === 'review' }" @click="selectQualityTab('review')">
+        <strong>待办审校</strong>
+        <small>问题、修复、候选与证据</small>
+      </button>
+      <button :class="{ active: activeQualityTab === 'hwe' }" @click="selectQualityTab('hwe')">
+        <strong>活人文风</strong>
+        <small>去模板化、叙事克制、节奏多样</small>
+      </button>
+      <button :class="{ active: activeQualityTab === 'voice' }" @click="selectQualityTab('voice')">
+        <strong>声线与校准</strong>
+        <small>文风档案、样本与人工反馈</small>
+      </button>
+      <button :class="{ active: activeQualityTab === 'metrics' }" @click="selectQualityTab('metrics')">
+        <strong>指标诊断</strong>
+        <small>基线、长篇能力与趋势指标</small>
+      </button>
+    </nav>
+
+    <section v-if="activeQualityTab === 'hwe'" class="hwe-section">
+      <HumanWritingPanel
+        :initial-chapter="selectedChapter"
+        :available-chapters="chapterRows.map((r) => ({ chapter_id: r.chapter_id }))"
+      />
+    </section>
+
+    <section v-if="activeQualityTab === 'metrics'" class="summary-grid">
       <article class="summary-card">
         <span>校准状态</span>
         <strong :class="{ warning: calibrationLabel === '未校准' }">{{ calibrationLabel }}</strong>
@@ -288,7 +392,7 @@ onMounted(loadAll)
       </article>
     </section>
 
-    <section v-if="longformReadiness" class="panel readiness-panel">
+    <section v-if="activeQualityTab === 'metrics' && longformReadiness" class="panel readiness-panel">
       <div class="panel-head"><div><h2>长篇能力与降级</h2><p>{{ longformReadiness.scale }} · 目标 {{ longformReadiness.target_chapters || 0 }} 章</p></div><el-tag :type="(longformReadiness.retrieval?.degraded || []).length ? 'warning' : 'success'">{{ (longformReadiness.retrieval?.degraded || []).length ? '有降级' : '可用' }}</el-tag></div>
       <div class="readiness-grid">
         <div><span>FTS</span><strong>{{ longformReadiness.retrieval?.fts?.status || '—' }}</strong></div>
@@ -302,7 +406,7 @@ onMounted(loadAll)
       <p v-if="longformReadiness.retrieval?.degraded?.length" class="muted">降级：{{ longformReadiness.retrieval.degraded.join('、') }}</p>
     </section>
 
-    <section class="workspace-grid">
+    <section v-if="activeQualityTab === 'voice'" class="workspace-grid">
       <article class="panel voice-panel">
         <div class="panel-head">
           <div><h2>声线实验室</h2><p>样本证据与章节偏离趋势</p></div>
@@ -342,12 +446,36 @@ onMounted(loadAll)
       </article>
     </section>
 
-    <section class="panel review-panel">
+    <section v-if="activeQualityTab === 'review'" class="panel review-panel">
       <div class="panel-head">
         <div><h2>审校中心</h2><p>L0 / L1 / L2 证据、候选与回溯状态</p></div>
         <el-select v-model="selectedChapter" placeholder="选择章节" size="small" @change="loadReview">
           <el-option v-for="row in chapterRows" :key="row.chapter_id" :label="`第 ${row.chapter_id} 章`" :value="row.chapter_id" />
         </el-select>
+      </div>
+      <div v-if="qualityDecision" class="repair-summary">
+        <el-alert
+          :type="decisionAlertType"
+          show-icon
+          :closable="false"
+          :title="qualityDecision.title"
+          :description="qualityDecision.message"
+        />
+        <div class="repair-actions">
+          <el-button type="primary" @click="openSelectedChapter">打开正文并修改</el-button>
+          <el-button
+            v-if="qualityDecision.status === 'blocked' || qualityDecision.status === 'review'"
+            type="warning"
+            :loading="rerunningGate"
+            @click="rerunSelectedGate"
+          >重跑门禁</el-button>
+          <el-button
+            v-if="qualityDecision.status === 'incomplete'"
+            type="warning"
+            :loading="resumingAudit"
+            @click="resumeSelectedAudit"
+          >重试审校</el-button>
+        </div>
       </div>
       <el-alert
         v-if="l0Banner"
@@ -364,6 +492,22 @@ onMounted(loadAll)
         <div><span>L0 事实/格式</span><strong>{{ review?.levels?.l0?.status || '—' }} · {{ review?.levels?.l0?.finding_count || 0 }} 证据</strong></div>
         <div><span>L1 表达/声线</span><strong>{{ review?.levels?.l1?.status || '—' }} · {{ review?.levels?.l1?.finding_count || 0 }} 证据</strong></div>
         <div><span>L2 人工偏好</span><strong>{{ review?.levels?.l2?.status || '—' }} · {{ review?.levels?.l2?.finding_count || 0 }} 证据</strong></div>
+      </div>
+      <div v-if="actionableIssues.length" class="actionable-issues">
+        <div class="subhead">需要处理的问题</div>
+        <article v-for="issue in actionableIssues" :key="issue.code" class="issue-card" :class="{ blocking: issue.blocking }">
+          <div class="issue-head">
+            <strong>{{ issue.label }}</strong>
+            <el-tag :type="issue.blocking ? 'danger' : 'warning'" size="small">
+              {{ issue.blocking ? '必须修复' : '优化建议' }}
+            </el-tag>
+          </div>
+          <p v-for="detail in issue.details || []" :key="detail">{{ detail }}</p>
+          <small v-if="issue.location || formatSpan(issue.span)">
+            位置：{{ issue.location || '本章正文' }}{{ formatSpan(issue.span) ? ` · ${formatSpan(issue.span)}` : '' }}
+          </small>
+          <div class="issue-suggestion">怎么改：{{ issue.suggestion }}</div>
+        </article>
       </div>
       <el-alert v-if="review?.candidate_policy?.recommend" class="candidate-policy-alert" title="建议人工评估多候选" type="warning" :closable="false">
         {{ (review?.candidate_policy?.reason_codes || []).join('、') }}；当前为 {{ review?.candidate_policy?.mode || 'manual_only' }}，不会自动生成。
@@ -386,7 +530,7 @@ onMounted(loadAll)
       </div>
     </section>
 
-    <section class="panel metrics-panel">
+    <section v-if="activeQualityTab === 'metrics'" class="panel metrics-panel">
       <div class="panel-head"><div><h2>指标面板</h2><p>仅作本地诊断与基线比较</p></div></div>
       <div class="metric-grid">
         <div><span>事实冲突</span><strong>{{ metrics?.aggregate.fact_conflict_count || 0 }}</strong></div>
@@ -405,6 +549,30 @@ onMounted(loadAll)
 
 <style scoped>
 .quality-center { display: grid; gap: 16px; min-width: 0; }
+.quality-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg-surface);
+}
+.quality-tabs button {
+  display: grid;
+  gap: 4px;
+  padding: 11px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+.quality-tabs button:hover { background: var(--color-bg-hover); color: var(--color-text-strong); }
+.quality-tabs button.active { border-color: color-mix(in srgb, var(--color-primary) 32%, var(--color-border)); background: var(--color-primary-soft); color: var(--color-primary); }
+.quality-tabs strong { font-size: 13.5px; }
+.quality-tabs small { font-size: 11px; }
 .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .panel-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .panel-head p { margin: 0; color: var(--color-text-muted); font-size: 13.5px; line-height: 1.6; }
@@ -442,6 +610,15 @@ onMounted(loadAll)
 .calibration-lines strong, .level-strip strong, .metric-grid strong { color: var(--color-text-strong); font-size: 13.5px; }
 .muted { color: var(--color-text-muted); font-size: 12.5px; line-height: 1.6; }
 .review-panel, .metrics-panel { margin-bottom: 16px; }
+.repair-summary { display: grid; gap: 10px; margin: 14px 0; }
+.repair-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actionable-issues { display: grid; gap: 10px; margin: 16px 0; }
+.issue-card { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--color-warning); border-radius: 10px; background: var(--color-bg-surface-muted); }
+.issue-card.blocking { border-color: var(--color-danger); }
+.issue-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.issue-card p { margin: 0; color: var(--color-text); font-size: 13px; line-height: 1.6; }
+.issue-card small { color: var(--color-text-muted); }
+.issue-suggestion { color: var(--color-text-strong); font-size: 13px; line-height: 1.6; }
 .level-strip { grid-template-columns: repeat(3, 1fr); margin: 16px 0; }
 .level-strip > div { display: grid; gap: 5px; }
 .candidate-table { display: grid; gap: 10px; }
@@ -456,5 +633,5 @@ onMounted(loadAll)
 .metric-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-top: 16px; }
 .metric-grid > div { display: grid; gap: 6px; }
 @media (max-width: 1000px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } .workspace-grid { grid-template-columns: 1fr; } .metric-grid, .readiness-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 620px) { .summary-grid, .level-strip, .metric-grid, .readiness-grid { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .quality-tabs, .summary-grid, .level-strip, .metric-grid, .readiness-grid { grid-template-columns: 1fr; } }
 </style>

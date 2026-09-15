@@ -32,7 +32,7 @@ export const APP_TOUR_STEPS: AppTourStep[] = [
   {
     id: 'journey',
     title: '六大核心创作中心',
-    body: '按概览、策划、正文、生产、质量、发布推进，全流程直达，随写随检。',
+    body: '自动生产按概览、策划、生产、正文、质量、发布推进；手写时也可以从策划直接进入正文。',
     route: '/workspace',
     selector: '[data-tour="project-journey"]',
   },

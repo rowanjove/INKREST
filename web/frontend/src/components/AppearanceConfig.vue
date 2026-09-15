@@ -11,12 +11,21 @@ const options: { value: ThemeMode; label: string; hint: string }[] = [
   { value: 'system', label: '跟随系统', hint: '随 OS 切换' },
 ]
 
+const props = withDefaults(
+  defineProps<{
+    bare?: boolean
+  }>(),
+  {
+    bare: false,
+  },
+)
+
 const onChange = (mode: ThemeMode) => setThemeMode(mode)
 </script>
 
 <template>
-  <section id="appearance" class="fold-card appearance-section">
-    <div class="fold-head" @click="expanded = !expanded">
+  <section id="appearance" class="fold-card appearance-section" :class="{ 'is-bare': bare }">
+    <div v-if="!bare" class="fold-head" @click="expanded = !expanded">
       <div class="head-left">
         <span class="collapse-arrow" :class="{ open: expanded }">▶</span>
         <div>
@@ -29,7 +38,11 @@ const onChange = (mode: ThemeMode) => setThemeMode(mode)
         </div>
       </div>
     </div>
-    <div v-show="expanded" class="fold-body">
+    <div v-show="bare || expanded" class="fold-body">
+      <div v-if="bare" class="bare-appearance-head">
+        <strong>外观与主题</strong>
+        <span>全局界面亮/暗（侧栏、卡片、表单）；写作稿纸配色仍在写作页单独切换。当前：<strong>{{ resolvedTheme === 'dark' ? '深色' : '浅色' }}</strong></span>
+      </div>
       <el-radio-group
         :model-value="themeMode"
         class="theme-radio-group"
@@ -66,7 +79,7 @@ const onChange = (mode: ThemeMode) => setThemeMode(mode)
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 16px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-bg-surface);
@@ -106,5 +119,22 @@ const onChange = (mode: ThemeMode) => setThemeMode(mode)
   .theme-radio-group {
     grid-template-columns: 1fr;
   }
+}
+
+.bare-appearance-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.bare-appearance-head strong {
+  font-size: 14px;
+  color: var(--color-text-strong);
+}
+
+.bare-appearance-head span {
+  font-size: 12px;
+  color: var(--color-text-muted);
 }
 </style>

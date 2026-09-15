@@ -1,5 +1,7 @@
 """Custom exceptions for the novel agent system."""
 
+from __future__ import annotations
+
 
 class AgentError(Exception):
     """Base exception for all agent errors."""

@@ -1,0 +1,17 @@
+{
+  "id": "mystery_detective",
+  "name": "本格/社会派推理",
+  "channels": [
+    "general",
+    "male",
+    "female"
+  ],
+  "tags": [
+    "本格解谜",
+    "社会派",
+    "密室诡计",
+    "暴风雪山庄",
+    "人性深渊"
+  ],
+  "description": "逻辑解谜、严密诡计与社会隐痛并重，公平呈现线索与惊天反转"
+}

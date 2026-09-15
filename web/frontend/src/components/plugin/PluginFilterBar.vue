@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { Grid, List } from '@element-plus/icons-vue'
 import { pluginTypes } from '../../utils/pluginManagerConfig'
 
 const searchQuery = defineModel<string>('searchQuery', { required: true })
 const selectedType = defineModel<string>('selectedType', { required: true })
 const selectedStatus = defineModel<string>('selectedStatus', { required: true })
+const viewMode = defineModel<'list' | 'card'>('viewMode', { default: 'list' })
 </script>
 
 <template>
@@ -26,6 +28,19 @@ const selectedStatus = defineModel<string>('selectedStatus', { required: true })
       <el-option label="已启用" value="active" />
       <el-option label="已禁用" value="inactive" />
     </el-select>
+
+    <div class="view-mode-toggle">
+      <el-radio-group v-model="viewMode" size="default">
+        <el-radio-button value="list">
+          <el-icon><List /></el-icon>
+          <span class="mode-text">窄行</span>
+        </el-radio-button>
+        <el-radio-button value="card">
+          <el-icon><Grid /></el-icon>
+          <span class="mode-text">卡片</span>
+        </el-radio-button>
+      </el-radio-group>
+    </div>
   </div>
 </template>
 
@@ -35,17 +50,28 @@ const selectedStatus = defineModel<string>('selectedStatus', { required: true })
   gap: 12px;
   padding: 16px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .search-input {
   flex: 1;
+  min-width: 200px;
 }
 
 .filter-select {
-  width: 240px;
+  width: 200px;
 }
 
 .filter-select-sm {
-  width: 140px;
+  width: 130px;
+}
+
+.view-mode-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.mode-text {
+  margin-left: 4px;
 }
 </style>

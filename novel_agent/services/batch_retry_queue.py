@@ -94,6 +94,26 @@ def list_pending_retries(root_dir: Path) -> List[Dict[str, Any]]:
     return pending
 
 
+def prioritize_retry_briefs(root_dir: Path, briefs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Put chapters already in the retry queue at the front of a batch."""
+    pending = {
+        str(row.get("chapter_id") or "").strip()
+        for row in list_pending_retries(root_dir)
+    }
+    pending.discard("")
+    if not pending:
+        return list(briefs)
+    head: List[Dict[str, Any]] = []
+    tail: List[Dict[str, Any]] = []
+    for brief in briefs:
+        cid = str(brief.get("chapter_id") or "").strip()
+        if cid in pending:
+            head.append(brief)
+        else:
+            tail.append(brief)
+    return head + tail
+
+
 def dismiss_batch_retry(root_dir: Path, chapter_id: str) -> bool:
     cid = str(chapter_id or "").strip()
     doc = _load_doc(root_dir)

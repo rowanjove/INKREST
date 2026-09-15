@@ -134,7 +134,32 @@ export interface AiEditIntent {
 
 export interface AiEditSuggestion extends AiEditIntent {
   replacement: string
+  patchId?: string
+  chips?: Array<{ type: string; label: string; id: string }>
+  citations?: Array<{ source_type: string; source_id: string; title: string; snippet?: string }>
 }
+
+export interface AssistantPatch {
+  id: string
+  project_id: string
+  chapter_id: string
+  original_text: string
+  proposed_text: string
+  reason: string
+  skill_id?: string
+  status: 'proposed' | 'accepted' | 'partially_accepted' | 'rejected' | 'reverted'
+  created_at?: string
+  updated_at?: string
+}
+
+export interface AssistantSkill {
+  id: string
+  name: string
+  command: string
+  description?: string
+  produces_patch?: boolean
+}
+
 
 export const EMPTY_TIPTAP_DOCUMENT: JSONContent = {
   type: 'doc',

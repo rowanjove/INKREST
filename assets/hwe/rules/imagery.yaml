@@ -1,0 +1,106 @@
+# HWE Rules: Imagery (修辞与身体反应惯性)
+rules:
+  - id: "HWE.IMAGERY.SIMILE_DENSITY"
+    version: 1
+    title: "比喻词过密（仿佛/宛如）"
+    family: "imagery"
+    scope: ["paragraph"]
+    detector_type: "phrase"
+    patterns:
+      - "仿佛"
+      - "宛如"
+      - "犹如"
+      - "好似"
+    severity: "medium"
+    confidence: 0.90
+    thresholds:
+      single_hit: "ignore"
+      per_1000_chars: 4
+      max_per_paragraph: 3
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: true
+    why: "单段中密集出现‘仿佛’、‘宛如’，表明修辞过度廉价，缺乏对客观物理细节的直写能力。"
+    suggestion: "将明喻改为直接陈述句，或删去多余的装饰性比喻。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["stop-slop", "adewale/anti-slop-writing"]
+
+  - id: "HWE.IMAGERY.STOCK_METAPHOR"
+    version: 1
+    title: "陈腐死比喻"
+    family: "imagery"
+    scope: ["sentence"]
+    detector_type: "phrase"
+    patterns:
+      - "晴天霹雳"
+      - "热锅上的蚂蚁"
+      - "时间在这一刻凝固"
+      - "空气仿佛凝固"
+      - "空气瞬间安静"
+      - "死一般的寂静"
+    severity: "medium"
+    confidence: 0.95
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: true
+    why: "被使用过亿次的死比喻，无法唤起读者任何真实生动的感官联想，只会传递模板感。"
+    suggestion: "描写具体的声响中断、人物手部停顿或具体的物理环境反应。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["KKKKhazix/human-writing", "stop-slop"]
+
+  - id: "HWE.IMAGERY.BODY_REACTION_REPEAT"
+    version: 1
+    title: "高频生理反应模板"
+    family: "imagery"
+    scope: ["sentence", "paragraph"]
+    detector_type: "phrase"
+    patterns:
+      - "喉结滚动"
+      - "瞳孔骤缩"
+      - "倒吸一口凉气"
+      - "指尖发白"
+      - "呼吸一滞"
+      - "心跳漏了一拍"
+      - "后背泛起一股凉意"
+      - "嘴角微微上扬"
+    severity: "medium"
+    confidence: 0.94
+    thresholds:
+      single_hit: "report"
+      per_1000_chars: 2
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: false
+    why: "网文模型四大生理反应（喉结、瞳孔、凉气、呼吸一滞），反复机械套用导致角色如同提线木偶。"
+    suggestion: "替换为更有角色个性特征的动作（如摸口袋、看手表、挪动坐姿）或纯粹的沉默。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["worldwonderer/oh-story-claudecode", "KKKKhazix/human-writing"]
+
+  - id: "HWE.IMAGERY.GAZE_OVERUSE"
+    version: 1
+    title: "视线/目光动词滥用"
+    family: "imagery"
+    scope: ["paragraph"]
+    detector_type: "phrase"
+    patterns:
+      - "目光落在了"
+      - "眼神闪烁"
+      - "视线交汇"
+      - "眼中闪过一丝"
+    severity: "low"
+    confidence: 0.88
+    thresholds:
+      per_1000_chars: 3
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: false
+    why: "模型极度依赖‘目光’‘眼神’来作为镜头转场的拐杖，动辄‘眼中闪过一丝复杂’，虚浮无物。"
+    suggestion: "省略‘目光落在’这一媒介词，直接写被观察的物品或对方的具体动作。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["stop-slop", "KKKKhazix/human-writing"]

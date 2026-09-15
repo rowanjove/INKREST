@@ -32,7 +32,7 @@ const emit = defineEmits<{
 }>()
 
 const query = ref('')
-const filter = ref<ProductionReviewFilter>('all')
+const filter = ref<ProductionReviewFilter>('error')
 const selectedIds = ref<string[]>([])
 const scrollElement = ref<HTMLElement | null>(null)
 const filtered = computed(() =>
@@ -260,7 +260,7 @@ function emitBulk(kind: Exclude<ProductionActionKind, 'cancel_task'>) {
             重试审校
           </el-button>
           <el-button
-            v-if="selected.stage === 'batch_retry'"
+            v-if="['quality_blocked', 'approval_rejected', 'report_failed', 'report_invalid', 'batch_retry'].includes(selected.stage)"
             type="danger"
             plain
             @click="emit('action', 'rewrite', [selected.chapter_id])"
@@ -278,7 +278,7 @@ function emitBulk(kind: Exclude<ProductionActionKind, 'cancel_task'>) {
             plain
             @click="emit('action', 'dismiss', [selected.chapter_id])"
           >
-            标记已处理
+            忽略并移出队列
           </el-button>
         </footer>
       </template>

@@ -18,6 +18,7 @@ const GUEST_BRIDGE = `
     window.inkrest = window.inkrest || {};
     window.inkrest.callRpc = callRpc;
     window.addEventListener('message', function (event) {
+      if (event.source !== window.parent) return;
       const data = event.data;
       if (!data || typeof data !== 'object') return;
       if (data.type === 'inkrest:rpc_response') {
@@ -40,11 +41,12 @@ export function wrapPluginViewHtml(html: string): string {
   const source = String(html || '').trim()
   if (!source) return ''
   const csp =
-    "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self' data: blob:; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self';\">"
+    "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self' data: blob:; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self';\"><style>html,body{margin:0;padding:0;width:100%;height:100%;background-color:transparent;color:inherit;box-sizing:border-box;}*,*::before,*::after{box-sizing:inherit;}</style>"
   if (/<html[\s>]/i.test(source)) {
     let wrapped = source.replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, '')
-    wrapped = wrapped.replace(/<head([^>]*)>/i, `<head$1>${csp}`)
-    if (!wrapped.includes('http-equiv="Content-Security-Policy"')) {
+    if (/<head[\s>]/i.test(wrapped)) {
+      wrapped = wrapped.replace(/<head([^>]*)>/i, `<head$1>${csp}`)
+    } else {
       wrapped = wrapped.replace(/<html([^>]*)>/i, `<html$1><head>${csp}</head>`)
     }
     if (/<\/body>/i.test(wrapped)) {

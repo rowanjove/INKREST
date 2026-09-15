@@ -61,6 +61,9 @@ def inspect_schema_state(db_path: Path) -> tuple[SchemaState, int | None]:
         if conn is not None:
             conn.close()
     if not row:
+        v2_tables = tables & {"documents", "document_revisions", "tasks"}
+        if {"documents", "tasks"}.issubset(v2_tables):
+            return SchemaState.V2, SCHEMA_VERSION
         return SchemaState.LEGACY, None
     try:
         version = int(row[0])

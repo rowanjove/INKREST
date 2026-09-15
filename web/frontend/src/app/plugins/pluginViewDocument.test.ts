@@ -25,4 +25,12 @@ describe('wrapPluginViewHtml', () => {
     expect(wrapped).toContain("default-src 'self' data: blob:")
     expect(wrapped).not.toContain('default-src *')
   })
+
+  it('still injects CSP when a comment mentions the header name', () => {
+    const wrapped = wrapPluginViewHtml(
+      '<html><!-- http-equiv="Content-Security-Policy" --><body>ok</body></html>',
+    )
+    expect(wrapped).toContain('http-equiv="Content-Security-Policy"')
+    expect(wrapped).toContain("default-src 'self' data: blob:")
+  })
 })

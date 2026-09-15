@@ -40,6 +40,8 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('StateChronicleTab')
     expect(source).toContain('剧情设定库')
     expect(source).toContain('时空编年史')
+    expect(source).toContain('PlanningWorkspaceHeader')
+    expect(source).toContain('el-segmented')
   })
 
   it('StateChronicleTab keeps relation graph markers', () => {
@@ -77,10 +79,12 @@ describe('refactored view subcomponents', () => {
 
   it('OutlineView provides one three-pane planning workspace', () => {
     const source = read('views/OutlineView.vue')
+    expect(source).toContain('PlanningSectionNav')
     expect(source).toContain('Splitpanes')
     expect(source).toContain('PlanningEntityTree')
     expect(source).toContain('PlanningCanvas')
     expect(source).toContain('PlanningInspector')
+    expect(source).toContain('PlanningWorkspaceHeader')
   })
 
   it('keeps the existing outline editor available inside planning', () => {
@@ -88,9 +92,10 @@ describe('refactored view subcomponents', () => {
     const source = read('views/OutlineEditor.vue')
     expect(shell).toContain('OutlineEditor')
     expect(shell).not.toContain('OutlineEditorLegacy')
-    expect(source).toContain('OutlineMindmapPane')
+    expect(shell).toContain('OutlineMindmapPane')
     expect(source).toContain('OutlineClassicPane')
     expect(source).toContain('OutlineDialogs')
+    expect(shell).toContain("ref<PlanningViewMode>('editor')")
   })
 
   it('PlanningInspector separates configured facts from current story state', () => {
@@ -102,10 +107,12 @@ describe('refactored view subcomponents', () => {
 
   it('AssetEditor shell wires sidebar, panel, and dialogs', () => {
     const source = read('views/AssetEditor.vue')
+    expect(source).toContain('PlanningSectionNav')
     expect(source).toContain('AssetListSidebar')
     expect(source).toContain('AssetEditorPanel')
     expect(source).toContain('AssetEditorDialogs')
     expect(source).toContain('useAssetEditor')
+    expect(source).toContain('PlanningWorkspaceHeader')
   })
 
   it('AssetEditorPanel keeps source toggle contract', () => {
@@ -183,6 +190,17 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('PluginManagerDialogs')
     expect(source).toContain('usePluginManager')
     expect(source).toContain('PluginAuthorHelpDialog')
+    expect(source).not.toContain('新手可从官方示例插件开始')
+    expect(source).not.toContain('发现尚未信任的本地插件')
+  })
+
+  it('PluginAuthorHelpDialog explains official examples in a dedicated tab', () => {
+    const source = read('components/PluginAuthorHelpDialog.vue')
+    expect(source).toContain('官方示例')
+    expect(source).toContain('hello_guard.py')
+    expect(source).toContain('新手可从官方示例插件开始')
+    expect(source).toContain('信任')
+    expect(source).toContain('启用')
   })
 
   it('PluginGrid keeps status indicator and card actions', () => {
@@ -242,6 +260,10 @@ describe('refactored view subcomponents', () => {
     expect(source).not.toContain('</main>')
     expect(source).not.toContain('低于 6 分不进入终稿')
     expect(source).toContain('自动化生产仅在 L0 硬门未过时阻断')
+    expect(source).toContain('待办审校')
+    expect(source).toContain('声线与校准')
+    expect(source).toContain('指标诊断')
+    expect(source).toContain('activeQualityTab')
   })
 
   it('PublishingCenter unifies preview, platform feedback, and export', () => {
@@ -311,6 +333,7 @@ describe('refactored view subcomponents', () => {
     expect(source).toContain('generation-quality')
     expect(source).toContain('writing-layout')
     expect(source).toContain('system-data')
+    expect(source).toContain('SoftwareUpdateConfig')
     expect(source).toContain('ProjectDataMaintenance')
     expect(source).toContain('advanced-zone')
     expect(source).toContain('to="/plugins"')
@@ -367,12 +390,15 @@ describe('refactored view subcomponents', () => {
     expect(router.replace(/\s/g, '')).toContain("path:'/logs',redirect:{path:'/production',query:{tab:'logs'}}")
   })
 
-  it('Dashboard wires DashboardPipelineBar for quick generation control', () => {
+  it('keeps production controls in ProductionCenter instead of Dashboard', () => {
     const dashboard = read('views/Dashboard.vue')
-    expect(dashboard).toContain('DashboardPipelineBar')
-    expect(dashboard).toContain('tasksStore.startPolling()')
+    expect(dashboard).not.toContain('DashboardPipelineBar')
+    expect(dashboard).not.toContain('tasksStore.startPolling()')
 
     const bar = read('components/dashboard/DashboardPipelineBar.vue')
+    const production = read('views/ProductionCenter.vue')
+    expect(production).toContain('DashboardPipelineBar')
+    expect(production).toContain('tasksStore.startPolling()')
     expect(bar).toContain('生产流水线')
     expect(bar).toContain('开始生产')
     expect(bar).toContain('暂停')

@@ -11,7 +11,8 @@ import {
 } from '@element-plus/icons-vue'
 import type { SplitpanesResizedPayload } from 'splitpanes'
 import { ElMessage } from 'element-plus'
-import { inlineExpand, inlineRewrite } from '../api'
+import { applyAssistantPatch, inlineExpand, inlineRewrite, sendAssistantChat } from '../api'
+import { notifyAiActivity, notifyPipelineFinished } from '../utils/pipelineNotify'
 import ManuscriptChapterTree from '../components/manuscript/ManuscriptChapterTree.vue'
 import ManuscriptEditor from '../components/manuscript/ManuscriptEditor.vue'
 import ManuscriptInspector from '../components/manuscript/ManuscriptInspector.vue'
@@ -129,30 +130,98 @@ function openAiIntent(kind: AiEditKind) {
 async function confirmAiIntent() {
   if (!aiIntent.value || aiLoading.value) return
   aiLoading.value = true
+  const kind = aiIntent.value.kind
+  const chapterId = aiIntent.value.chapterId
+  notifyAiActivity(true, {
+    intent: kind === 'continue' ? '正文续写' : '润色改写',
+    message: kind === 'continue' ? '山山正在推敲后文续写…' : '山山正在润色选中文段…',
+    chapterId,
+  })
   try {
     let replacement = ''
-    if (aiIntent.value.kind === 'continue') {
-      const { data } = await inlineExpand({
-        before_text: editorRef.value?.getTextBeforeCursor() || '',
-        chapter_id: aiIntent.value.chapterId,
-        goal: workspace.value.context.chapter_goal || '',
-      })
-      replacement = data.expanded_text
-    } else {
-      const { data } = await inlineRewrite({
-        text: aiIntent.value.selection.text,
-        instruction: aiIntent.value.instruction,
-        chapter_id: aiIntent.value.chapterId,
-        goal: workspace.value.context.chapter_goal || '',
-      })
-      replacement = data.rewritten_text
+    let patchId: string | undefined
+    let chips: any[] = []
+    let citations: any[] = []
+
+    const skillMap: Record<string, string> = {
+      polish: 'polish',
+      continue: 'continue',
+      rewrite: 'polish',
+      shorten: 'compress',
+      expand: 'expand',
     }
-    aiSuggestion.value = { ...aiIntent.value, replacement }
+    const skillId = skillMap[kind] || 'polish'
+
+    try {
+      const res = await sendAssistantChat({
+        message: `${aiIntent.value.instruction}\n\n选区文本：\n${aiIntent.value.selection.text || ''}`,
+        history: [],
+        skill_id: skillId,
+        editor_context: {
+          chapter_id: chapterId,
+          selected_text: aiIntent.value.selection.text,
+          selection_range: {
+            from_pos: aiIntent.value.selection.from,
+            to_pos: aiIntent.value.selection.to,
+          },
+          cursor_before_text: editorRef.value?.getTextBeforeCursor() || '',
+        },
+      })
+      if (res.data) {
+        if (res.data.patch && res.data.patch.proposed_text) {
+          replacement = res.data.patch.proposed_text
+          patchId = res.data.patch.id
+        } else if (res.data.reply) {
+          replacement = res.data.reply
+        }
+        chips = res.data.chips || []
+        citations = res.data.citations || []
+      }
+      if (!replacement.trim()) {
+        throw new Error('AI 没有返回可写入的正文')
+      }
+    } catch {
+      // Fallback to legacy endpoint if chat endpoint encounters error
+      if (aiIntent.value.kind === 'continue') {
+        const { data } = await inlineExpand({
+          before_text: editorRef.value?.getTextBeforeCursor() || '',
+          chapter_id: aiIntent.value.chapterId,
+          goal: workspace.value.context.chapter_goal || '',
+        })
+        replacement = data.expanded_text
+      } else {
+        const { data } = await inlineRewrite({
+          text: aiIntent.value.selection.text,
+          instruction: aiIntent.value.instruction,
+          chapter_id: aiIntent.value.chapterId,
+          goal: workspace.value.context.chapter_goal || '',
+        })
+        replacement = data.rewritten_text
+      }
+      if (!replacement.trim()) {
+        throw new Error('AI 没有返回可写入的正文')
+      }
+    }
+
+    if (!replacement.trim()) {
+      throw new Error('AI 没有返回可写入的正文')
+    }
+
+    aiSuggestion.value = {
+      ...aiIntent.value,
+      replacement,
+      patchId,
+      chips,
+      citations,
+    }
     aiIntent.value = null
+    notifyPipelineFinished(true)
   } catch (error) {
+    notifyPipelineFinished(false)
     ElMessage.error(error instanceof Error ? error.message : 'AI 建议生成失败')
   } finally {
     aiLoading.value = false
+    notifyAiActivity(false)
   }
 }
 
@@ -166,6 +235,9 @@ function acceptAi() {
   const suggestion = aiSuggestion.value
   if (!suggestion) return
   nextUpdateSource.value = 'ai_accept'
+  if (suggestion.patchId) {
+    applyAssistantPatch(suggestion.patchId).catch(() => {})
+  }
   if (suggestion.kind === 'continue') {
     editorRef.value?.insertAtCursor(suggestion.replacement)
   } else {
@@ -176,7 +248,7 @@ function acceptAi() {
     )
   }
   aiSuggestion.value = null
-  ElMessage.success('建议已采纳，正在自动保存')
+  ElMessage.success('山山建议已采纳，正在自动保存')
 }
 
 function handleEditorUpdate(next: Parameters<typeof updateContent>[0]) {
@@ -406,10 +478,11 @@ onBeforeUnmount(() => {
       aria-label="AI 文本操作"
       @mousedown.prevent
     >
-      <button @click="openAiIntent('rewrite')">改写</button>
+      <span class="shanshan-tag">✨ 山山</span>
       <button @click="openAiIntent('polish')">润色</button>
-      <button @click="openAiIntent('shorten')">精简</button>
       <button @click="openAiIntent('expand')">扩写</button>
+      <button @click="openAiIntent('shorten')">精简</button>
+      <button @click="openAiIntent('rewrite')">改写</button>
     </div>
 
     <button
@@ -585,6 +658,17 @@ onBeforeUnmount(() => {
 .selection-menu button:hover {
   background: var(--color-primary-soft);
   color: var(--color-primary);
+}
+.shanshan-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #e67e22;
+  background: rgba(230, 126, 34, 0.12);
+  border-radius: 4px;
+  margin-right: 2px;
 }
 .continue-button {
   position: absolute;

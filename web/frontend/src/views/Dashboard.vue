@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
-import DashboardPipelineBar from '../components/dashboard/DashboardPipelineBar.vue'
-import { useTasksStore } from '../stores/tasks'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { Refresh } from '@element-plus/icons-vue'
@@ -12,25 +10,35 @@ import { useProjectStore } from '../stores/project'
 import { useProjectSnapshotStore } from '../stores/projectSnapshot'
 import {
   TASK_STATUS_LABELS,
+  blockingIssueAction,
+  blockingIssueDetail,
   type BlockingIssue,
   type SnapshotAction,
 } from '../entities/project/projectSnapshot'
-import { PLANNING_KIND_LABELS, type PlanningWorkspace } from '../entities/planning/planningWorkspace'
-import { getPlanningWorkspace } from '../api'
-import { ref } from 'vue'
+import type { PlanningWorkspace } from '../entities/planning/planningWorkspace'
+import type { OutlineQueueStatus } from '../entities/outline/outlineQueueStatus'
+import { getOutlineQueueStatus, getPlanningWorkspace } from '../api'
 import { resolveSnapshotActionLocation } from '../app/shell/workflowActions'
+import DashboardProgressCard from '../components/dashboard/DashboardProgressCard.vue'
+import DashboardQueueCard from '../components/dashboard/DashboardQueueCard.vue'
+import ProjectProgressDetailsDialog from '../components/dashboard/ProjectProgressDetailsDialog.vue'
 
 const router = useRouter()
 const projectStore = useProjectStore()
 const snapshotStore = useProjectSnapshotStore()
 const { snapshot, status, error } = storeToRefs(snapshotStore)
 const planning = ref<PlanningWorkspace | null>(null)
+const queue = ref<OutlineQueueStatus | null>(null)
+const queueLoading = ref(false)
+const queueError = ref('')
+const detailsVisible = ref(false)
 
 const completed = computed(() => Number(snapshot.value?.chapter_progress.authoritative_completed || 0))
 const target = computed(() => Number(snapshot.value?.outline_progress.target_chapters || 0))
 const progress = computed(() => target.value ? Math.min(100, Math.round(completed.value / target.value * 100)) : 0)
 const activeTaskCount = computed(() => snapshot.value?.active_tasks.length || 0)
 const blockingIssues = computed(() => snapshot.value?.blocking_issues || [])
+const primaryAction = computed(() => snapshot.value?.next_actions.find((action) => action.enabled) || null)
 
 const healthTone = computed(() => {
   if (blockingIssues.value.some((issue) => issue.severity === 'error')) return 'danger'
@@ -49,6 +57,12 @@ function issueTone(issue: BlockingIssue): 'danger' | 'warning' | 'info' {
   return 'info'
 }
 
+function issueStatusLabel(issue: BlockingIssue): string {
+  if (issue.severity === 'error') return '阻塞'
+  if (issue.severity === 'warning') return '提醒'
+  return '信息'
+}
+
 function openAction(action: SnapshotAction) {
   if (!action.enabled) return
   router.push(resolveSnapshotActionLocation(action))
@@ -57,26 +71,24 @@ function openAction(action: SnapshotAction) {
 async function load() {
   const projectId = projectStore.currentProject?.id
   if (!projectId) return
+  queueLoading.value = true
+  queueError.value = ''
   await Promise.all([
     snapshotStore.refresh(projectId, { force: true }),
     getPlanningWorkspace()
       .then(({ data }) => { planning.value = data })
       .catch(() => { planning.value = null }),
+    getOutlineQueueStatus()
+      .then(({ data }) => { queue.value = data as OutlineQueueStatus })
+      .catch((error: unknown) => {
+        queue.value = null
+        queueError.value = error instanceof Error ? error.message : '卷计划暂时无法读取'
+      })
+      .finally(() => { queueLoading.value = false }),
   ])
 }
 
-const tasksStore = useTasksStore()
-
-onMounted(() => {
-  load()
-  tasksStore.startPolling()
-  tasksStore.startRuntimeLogPolling()
-})
-
-onUnmounted(() => {
-  tasksStore.stopPolling()
-  tasksStore.stopRuntimeLogPolling()
-})
+onMounted(load)
 </script>
 
 <template>
@@ -87,7 +99,9 @@ onUnmounted(() => {
   >
     <template #actions>
       <el-button :icon="Refresh" :loading="status === 'loading'" @click="load">刷新</el-button>
-      <el-button type="primary" @click="router.push('/outline')">继续策划</el-button>
+      <el-button v-if="primaryAction" type="primary" @click="openAction(primaryAction)">
+        {{ primaryAction.label }}
+      </el-button>
     </template>
 
     <ErrorState
@@ -99,8 +113,6 @@ onUnmounted(() => {
     />
 
     <template v-else-if="snapshot">
-      <DashboardPipelineBar />
-
       <section class="overview-grid">
         <article class="summary-card health-card">
           <div class="card-heading">
@@ -111,21 +123,23 @@ onUnmounted(() => {
           <p>项阻塞或风险需要处理</p>
         </article>
 
-        <article class="summary-card">
-          <div class="card-heading"><span>正文进度</span><span>{{ progress }}%</span></div>
-          <strong>{{ completed }}<small> / {{ target || '—' }} 章</small></strong>
-          <el-progress :percentage="progress" :show-text="false" />
-        </article>
+        <DashboardProgressCard
+          :chapter-progress="snapshot.chapter_progress"
+          :completed="completed"
+          :target="target"
+          :percentage="progress"
+          :on-open-details="() => { detailsVisible = true }"
+        />
 
-        <article class="summary-card">
-          <div class="card-heading"><span>策划实体</span><span>{{ planning?.entities.length || 0 }}</span></div>
-          <div class="planning-counts">
-            <span v-for="(count, kind) in planning?.counts" :key="kind">
-              {{ PLANNING_KIND_LABELS[kind] || kind }} {{ count }}
-            </span>
-          </div>
-          <p v-if="!planning?.entities.length">尚未建立结构化策划实体</p>
-        </article>
+        <DashboardQueueCard
+          :queue="queue"
+          :loading="queueLoading"
+          :error="queueError"
+          :planning-entity-count="planning?.entities.length || 0"
+          :on-retry="load"
+          :on-open-details="() => { detailsVisible = true }"
+          :on-open-outline="() => router.push('/outline')"
+        />
 
         <article class="summary-card">
           <div class="card-heading"><span>质量状态</span></div>
@@ -139,39 +153,17 @@ onUnmounted(() => {
           <header><h2>当前阻塞</h2><span>{{ blockingIssues.length }}</span></header>
           <div v-if="blockingIssues.length" class="issue-list">
             <div v-for="issue in blockingIssues" :key="`${issue.code}-${issue.chapter_id || ''}`" class="issue-row">
-              <StatusBadge :label="issue.label" :tone="issueTone(issue)" />
-              <p>{{ issue.detail || issue.source }}</p>
+              <StatusBadge :label="issueStatusLabel(issue)" :tone="issueTone(issue)" />
+              <div class="issue-copy">
+                <strong>{{ issue.label }}</strong>
+                <p>{{ blockingIssueDetail(issue) }}</p>
+              </div>
               <el-button
-                v-if="issue.chapter_id || issue.source === 'pipeline'"
                 text
                 type="primary"
-                @click="router.push({ path: '/production', query: { tab: 'reviews', chapter: issue.chapter_id } })"
+                @click="router.push(blockingIssueAction(issue).target)"
               >
-                处理审校
-              </el-button>
-              <el-button
-                v-else-if="issue.code === 'engine' || issue.code === 'config_invalid' || issue.code === 'vector'"
-                text
-                type="primary"
-                @click="router.push('/config')"
-              >
-                前往配置
-              </el-button>
-              <el-button
-                v-else-if="['outline', 'title', 'quota', 'arc_queue'].includes(issue.code)"
-                text
-                type="primary"
-                @click="router.push('/outline')"
-              >
-                前往大纲
-              </el-button>
-              <el-button
-                v-else-if="issue.code === 'assets'"
-                text
-                type="primary"
-                @click="router.push('/state')"
-              >
-                前往设定
+                {{ blockingIssueAction(issue).label }}
               </el-button>
             </div>
           </div>
@@ -206,6 +198,12 @@ onUnmounted(() => {
         </div>
         <p v-else class="empty-copy">当前没有运行中的后台任务。</p>
       </section>
+
+      <ProjectProgressDetailsDialog
+        v-model="detailsVisible"
+        :progress="snapshot.chapter_progress"
+        :queue="queue"
+      />
     </template>
   </PageShell>
 </template>
@@ -238,7 +236,6 @@ onUnmounted(() => {
 .summary-card strong small { color: var(--color-text-muted); font-size: 13px; font-weight: 500; }
 .summary-card p,
 .empty-copy { margin: 0; color: var(--color-text-muted); font-size: 12px; line-height: 1.6; }
-.planning-counts { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: var(--space-4); color: var(--color-text); font-size: 12px; }
 .overview-columns { display: grid; grid-template-columns: 1.15fr .85fr; gap: var(--space-4); margin: var(--space-4) 0; }
 .panel header { margin-bottom: var(--space-4); }
 .panel h2 { margin: 0; color: var(--color-text-strong); font-size: 15px; }
@@ -253,7 +250,9 @@ onUnmounted(() => {
   padding: 9px 0;
   border-bottom: 1px solid var(--color-border-subtle);
 }
-.issue-row p { margin: 0; color: var(--color-text); font-size: 12px; }
+.issue-copy { min-width: 0; display: grid; gap: 3px; }
+.issue-copy strong { color: var(--color-text-strong); font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.issue-row p { margin: 0; color: var(--color-text-muted); font-size: 11.5px; line-height: 1.45; overflow-wrap: anywhere; }
 .action-list button {
   display: flex;
   justify-content: space-between;

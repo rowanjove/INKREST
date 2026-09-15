@@ -446,7 +446,9 @@ def _quality_report_facts(root: Path) -> Dict[str, Any]:
         blocked_by = [str(item) for item in guard.get("blocked_by", [])] if isinstance(guard.get("blocked_by"), list) else []
         ai_flavor = report.get("ai_flavor") if isinstance(report.get("ai_flavor"), dict) else {}
         ai_risk = str(ai_flavor.get("risk_level") or "").lower()
-        failed = report.get("overall_pass") is False or str(guard.get("overall_status") or "").upper() == "FAIL"
+        from novel_agent.quality.decision import derive_quality_decision
+
+        failed = derive_quality_decision(report)["blocking"]
 
         facts["total"] += 1
         if failed:

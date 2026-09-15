@@ -13,7 +13,8 @@ import { PythonBridge } from './agents/python-bridge';
 import { ensurePetWindow, registerPetIpc } from './ipc/pet-ipc';
 import { readPetSettings } from './pet-settings';
 import { createTray } from './tray/tray-manager';
-import { initAutoUpdater } from './updater/auto-updater';
+import { registerUpdaterIpc } from './ipc/updater-ipc';
+import { initAutoUpdater, updaterManager } from './updater/auto-updater';
 import {
   appOrigins,
   assertTrustedSenderUrl,
@@ -258,6 +259,7 @@ app.whenReady().then(async () => {
 
   // 4. IPC handlers
   registerIpcHandlers();
+  registerUpdaterIpc({ assertTrustedSender: assertTrustedIpc });
 
   // 5. Pet assistant window
   const petSettings = readPetSettings();
@@ -279,9 +281,9 @@ app.whenReady().then(async () => {
     });
   }
 
-  // 6. Auto updater (production only)
-  if (!isDev) {
-    initAutoUpdater(mainWindow!);
+  // 6. Auto updater
+  if (mainWindow) {
+    initAutoUpdater(mainWindow);
   }
 
   // 7. Forward Python bridge events to renderer
@@ -328,6 +330,7 @@ app.on('before-quit', (event) => {
     clearInterval(watchdogTimer);
     watchdogTimer = null;
   }
+  updaterManager.destroy();
   bubbleWindow?.destroy();
   petWindow?.destroy();
   const bridge = pythonBridge;

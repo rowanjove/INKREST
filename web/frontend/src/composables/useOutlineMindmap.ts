@@ -1,7 +1,7 @@
 import { nextTick, onMounted, onUnmounted, ref, watch, type ComputedRef, type Ref } from 'vue'
 
 export function useOutlineMindmap(options: {
-  viewMode: Ref<'mindmap' | 'classic'>
+  viewMode: Ref<string> | ComputedRef<string>
   outline: Ref<Record<string, any> | null>
   arcs: ComputedRef<any[]>
 }) {

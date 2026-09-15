@@ -254,12 +254,21 @@ onBeforeUnmount(() => {
   if (statusTimer) window.clearInterval(statusTimer)
 })
 
+const props = withDefaults(
+  defineProps<{
+    bare?: boolean
+  }>(),
+  {
+    bare: false,
+  },
+)
+
 defineExpose({ load })
 </script>
 
 <template>
-  <section id="embedding-config" class="fold-card embedding-section" v-loading="loading">
-    <div class="fold-head" @click="expanded = !expanded">
+  <section id="embedding-config" class="fold-card embedding-section" :class="{ 'is-bare': bare }" v-loading="loading">
+    <div v-if="!bare" class="fold-head" @click="expanded = !expanded">
       <div class="head-left">
         <span class="collapse-arrow" :class="{ open: expanded }">▶</span>
         <div>
@@ -283,7 +292,7 @@ defineExpose({ load })
       </div>
     </div>
 
-    <div v-show="expanded" class="fold-body">
+    <div v-show="bare || expanded" class="fold-body">
       <el-alert
         v-if="readinessAlert"
         :type="readinessAlert.type"
@@ -323,8 +332,10 @@ defineExpose({ load })
           @click="activeTab = 'local'"
         >
           <el-icon class="mode-icon local"><Cpu /></el-icon>
-          <span class="mode-title">本地 BGE</span>
-          <span class="mode-desc">离线 · 约 45MB 模型</span>
+          <div class="mode-text">
+            <span class="mode-title">本地 BGE</span>
+            <span class="mode-desc">离线 · 约 45MB 模型</span>
+          </div>
         </button>
         <button
           type="button"
@@ -333,8 +344,10 @@ defineExpose({ load })
           @click="activeTab = 'cloud'"
         >
           <el-icon class="mode-icon cloud"><Cloudy /></el-icon>
-          <span class="mode-title">云端 API</span>
-          <span class="mode-desc">智谱 / 百炼 / OpenAI</span>
+          <div class="mode-text">
+            <span class="mode-title">云端 API</span>
+            <span class="mode-desc">智谱 / 百炼 / OpenAI</span>
+          </div>
         </button>
         <button
           type="button"
@@ -343,8 +356,10 @@ defineExpose({ load })
           @click="activeTab = 'stub'"
         >
           <el-icon class="mode-icon stub"><Timer /></el-icon>
-          <span class="mode-title">暂不配置</span>
-          <span class="mode-desc">Stub 关键词匹配</span>
+          <div class="mode-text">
+            <span class="mode-title">暂不配置</span>
+            <span class="mode-desc">Stub 关键词匹配</span>
+          </div>
         </button>
       </div>
 
@@ -383,7 +398,7 @@ defineExpose({ load })
               </div>
             </template>
             <template v-else>
-              <el-button type="primary" size="large" @click="handleLocalDeploy">
+              <el-button type="primary" size="default" @click="handleLocalDeploy">
                 一键下载并部署
               </el-button>
               <p v-if="setupState.status === 'failed'" class="fail-hint">
@@ -455,13 +470,11 @@ defineExpose({ load })
         </template>
 
         <template v-else>
-          <div class="panel-intro stub">
-            <p>
+          <div class="stub-inline-row">
+            <p class="stub-text">
               使用轻量关键词匹配，不下载模型。写作与生成不受影响，仅跨章语义去重与向量伏笔召回精度下降。
             </p>
-          </div>
-          <div class="panel-action center">
-            <el-button @click="handleSkipSetup">确认使用 Stub</el-button>
+            <el-button size="small" type="primary" plain @click="handleSkipSetup">确认使用 Stub</el-button>
           </div>
         </template>
       </div>
@@ -525,13 +538,32 @@ defineExpose({ load })
 }
 
 .emb-alert {
-  margin-bottom: 4px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.emb-alert :deep(.el-alert__icon) {
+  font-size: 16px;
+  margin-right: 8px;
+}
+
+.emb-alert :deep(.el-alert__title) {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.emb-alert :deep(.el-alert__description) {
+  font-size: 11px;
+  line-height: 1.4;
+  margin-top: 2px;
 }
 
 .status-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 8px;
 }
 
 @media (max-width: 720px) {
@@ -541,24 +573,26 @@ defineExpose({ load })
 }
 
 .status-cell {
-  padding: 12px 14px;
+  padding: 6px 12px;
   background: var(--color-bg-surface-muted);
-  border: 1px solid #e8edf3;
-  border-radius: 10px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .cell-label {
-  display: block;
+  display: inline-block;
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-subtle);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
+  letter-spacing: 0.02em;
+  margin-bottom: 0;
 }
 
 .cell-value {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--color-text-strong);
 }
@@ -572,8 +606,8 @@ defineExpose({ load })
 }
 
 .section-label {
-  margin: 18px 0 10px;
-  font-size: 12px;
+  margin: 10px 0 6px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--color-text-muted);
 }
@@ -581,7 +615,7 @@ defineExpose({ load })
 .mode-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 8px;
 }
 
 @media (max-width: 640px) {
@@ -592,31 +626,32 @@ defineExpose({ load })
 
 .mode-card {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 14px;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--color-bg-surface);
   cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: all 0.18s ease;
   text-align: left;
 }
 
 .mode-card:hover {
-  border-color: var(--color-border);
+  border-color: var(--color-primary);
 }
 
 .mode-card.active {
-  border-color: var(--primary, #c66f4f);
+  border-color: var(--color-primary);
   box-shadow: 0 0 0 1px rgba(198, 111, 79, 0.25);
   background: var(--color-primary-soft);
 }
 
 .mode-icon {
-  font-size: 22px;
-  margin-bottom: 2px;
+  font-size: 20px;
+  margin-bottom: 0;
+  flex-shrink: 0;
 }
 
 .mode-icon.local {
@@ -631,31 +666,54 @@ defineExpose({ load })
   color: var(--color-warning);
 }
 
+.mode-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .mode-title {
-  font-size: 14px;
-  font-weight: 800;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--color-text-strong);
+  line-height: 1.2;
 }
 
 .mode-desc {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--color-text-muted);
+  line-height: 1.2;
+  margin-top: 2px;
 }
 
 .mode-panel {
-  margin-top: 14px;
-  padding: 18px;
-  border: 1px solid #e8edf3;
-  border-radius: 12px;
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
   background: var(--color-bg-surface-muted);
 }
 
+.stub-inline-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stub-text {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
 .panel-intro {
-  margin-bottom: 14px;
-  padding: 12px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 1.55;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
   color: var(--color-text-muted);
 }
 
@@ -681,14 +739,14 @@ defineExpose({ load })
 .dep-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .dep-chip {
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
   font-weight: 600;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
@@ -705,7 +763,7 @@ defineExpose({ load })
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
+  gap: 8px;
 }
 
 .panel-action.center {
@@ -763,10 +821,19 @@ defineExpose({ load })
   width: 100%;
 }
 
+.cloud-form :deep(.el-form-item) {
+  margin-bottom: 8px;
+}
+
+.cloud-form :deep(.el-form-item__label) {
+  padding-bottom: 2px;
+  font-size: 12px;
+}
+
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 
 @media (max-width: 560px) {
@@ -780,22 +847,22 @@ defineExpose({ load })
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 16px;
-  padding-top: 14px;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px dashed var(--color-border);
 }
 
 .tools-hint {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--color-text-subtle);
-  line-height: 1.5;
-  max-width: 420px;
+  line-height: 1.4;
+  max-width: 520px;
 }
 
 .preset-label {
-  margin: 0 0 8px;
-  font-size: 12px;
+  margin: 0 0 6px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--color-text-muted);
 }
@@ -803,18 +870,18 @@ defineExpose({ load })
 .preset-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .preset-chip {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  padding: 10px 14px;
+  gap: 1px;
+  padding: 6px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: 6px;
   background: var(--color-bg-surface);
   cursor: pointer;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -831,20 +898,20 @@ defineExpose({ load })
 }
 
 .preset-name {
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 700;
   color: var(--color-text-strong);
 }
 
 .preset-model {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--color-text-muted);
 }
 
 .endpoint-hint {
-  margin: -4px 0 12px;
-  font-size: 12px;
+  margin: -2px 0 8px;
+  font-size: 11px;
   color: var(--color-text-muted);
-  line-height: 1.5;
+  line-height: 1.4;
 }
 </style>

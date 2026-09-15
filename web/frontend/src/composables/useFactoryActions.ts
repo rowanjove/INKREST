@@ -1,5 +1,6 @@
 import type { FactoryRiskAction } from '../types/factory'
 import { rerunChapterGate, rewriteChapter } from '../api'
+import { notifyPipelineStarted } from '../utils/pipelineNotify'
 
 export type FactoryNavigate = (path: string) => void
 
@@ -65,11 +66,14 @@ export function resolveFactoryRiskAction(
   resolveFactoryIntent(action.intent, options)
 }
 
+
 export async function submitFactoryRepair(chapterId: string) {
+  notifyPipelineStarted({ chapterId, intent: '章节重写修章' })
   return rewriteChapter(chapterId)
 }
 
 export async function submitFactoryRerunGate(chapterId: string) {
+  notifyPipelineStarted({ chapterId, intent: '质检门禁复检' })
   return rerunChapterGate(chapterId)
 }
 

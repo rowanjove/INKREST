@@ -151,6 +151,31 @@ def test_quality_review_queue_surfaces_malformed_report(tmp_path: Path) -> None:
     assert "quality.json" not in queue["items"][0]["issues"][0]["details"][0]
 
 
+def test_quality_review_queue_labels_high_score_l1_as_advisory(tmp_path: Path) -> None:
+    _seed_project(tmp_path)
+    report = tmp_path / "workspace" / "chapters" / "chapter_009" / "reports" / "quality.json"
+    report.parent.mkdir(parents=True)
+    report.write_text(
+        json.dumps(
+            {
+                "overall_pass": False,
+                "overall_score": 91,
+                "guard_summary": {"overall_status": "WARN", "blocked_by": []},
+                "chapter_score": {"score": 9.1, "keep": True, "blocked_by": []},
+                "checks": {"style": {"pass": False, "level": "fail", "details": ["句式重复"]}},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    item = build_quality_review_queue(tmp_path)["items"][0]
+    assert item["stage"] == "quality_review"
+    assert item["severity"] == "warning"
+    assert item["blocking"] is False
+    assert item["issues"][0]["blocking"] is False
+
+
 def test_production_workspace_uses_snapshot_and_sanitized_task_history(
     tmp_path: Path,
 ) -> None:

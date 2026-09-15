@@ -181,6 +181,51 @@ def test_plugin_navigation_keeps_global_entries_after_opening_a_book(temp_novel_
         ctx._plugin_manager = original_project
 
 
+def test_merged_catalog_keeps_global_web_extension_when_project_has_stale_copy(monkeypatch):
+    global_pm = type(
+        "GlobalManager",
+        (),
+        {
+            "list_plugin_catalog": lambda self: [
+                {
+                    "name": "script_murder",
+                    "plugin_type": "web_extension",
+                    "enabled": True,
+                    "scope": "global",
+                }
+            ]
+        },
+    )()
+    project_pm = type(
+        "ProjectManager",
+        (),
+        {
+            "list_plugin_catalog": lambda self: [
+                {
+                    "name": "script_murder",
+                    "plugin_type": "web_extension",
+                    "enabled": False,
+                    "scope": "project",
+                }
+            ]
+        },
+    )()
+    monkeypatch.setattr(web.context, "_active_project_id", "book-a")
+    monkeypatch.setattr(web.context, "get_global_plugin_manager", lambda: global_pm)
+    monkeypatch.setattr(web.context, "get_plugin_manager", lambda: project_pm)
+
+    catalog = web.context.merged_plugin_catalog()
+
+    assert catalog == [
+        {
+            "name": "script_murder",
+            "plugin_type": "web_extension",
+            "enabled": True,
+            "scope": "global",
+        }
+    ]
+
+
 def test_navigation_api_endpoint(temp_novel_root: Path, monkeypatch):
     pm = PluginManager(temp_novel_root, allow_web_extensions=True)
     pm.initialize()

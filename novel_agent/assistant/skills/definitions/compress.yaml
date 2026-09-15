@@ -1,0 +1,10 @@
+id: compress
+name: 压缩
+command: /压缩
+description: 删减冗余赘述、空洞心理描写与拖沓过场，加快剧情推进节奏。
+produces_patch: true
+system_instruction: |
+  【写作技能：文段精炼压缩】
+  1. 大刀阔斧削减冗长过场、无效动作解说与重复感叹。
+  2. 提炼动作连贯性，改用利落紧凑的句式，增强叙事冲击力。
+  3. 保留所有关键剧情信息点与人物决策转折。

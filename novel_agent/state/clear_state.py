@@ -28,6 +28,9 @@ NARRATIVE_STATE_TABLES: Tuple[str, ...] = (
     "document_revisions",
     "documents",
     "story_search_fts",
+    "hwe_reports",
+    "hwe_issues",
+    "hwe_patches",
 )
 
 # Task queue, cost logs, prompt/asset version history (kept unless include_operational).

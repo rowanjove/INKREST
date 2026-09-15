@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { defineAsyncComponent } from 'vue'
-import { Connection, Lock, Setting } from '@element-plus/icons-vue'
+import { Connection, Lock, Opportunity, Setting } from '@element-plus/icons-vue'
 
-import AgentBridgeConfig from '../AgentBridgeConfig.vue'
 import AppearanceConfig from '../AppearanceConfig.vue'
-import ProjectDataMaintenance from '../ProjectDataMaintenance.vue'
-import EmbeddingConfig from '../EmbeddingConfig.vue'
 import LLMConfig from '../LLMConfig.vue'
 import ModelLibrary from '../ModelLibrary.vue'
-import PetAssistantConfig from '../PetAssistantConfig.vue'
 import PipelineRuntimeConfig from '../PipelineRuntimeConfig.vue'
-import WritingRulesConfig from '../WritingRulesConfig.vue'
 import ConfigTaskGroup from './ConfigTaskGroup.vue'
+
+const AgentBridgeConfig = defineAsyncComponent(() => import('../AgentBridgeConfig.vue'))
+const CommercialCenterConfig = defineAsyncComponent(() => import('../CommercialCenterConfig.vue'))
+const SoftwareUpdateConfig = defineAsyncComponent(() => import('../SoftwareUpdateConfig.vue'))
+const ProjectDataMaintenance = defineAsyncComponent(() => import('../ProjectDataMaintenance.vue'))
+const EmbeddingConfig = defineAsyncComponent(() => import('../EmbeddingConfig.vue'))
+const PetAssistantConfig = defineAsyncComponent(() => import('../PetAssistantConfig.vue'))
+const WritingRulesConfig = defineAsyncComponent(() => import('../WritingRulesConfig.vue'))
+const SidebarQuickActionsConfig = defineAsyncComponent(() => import('./SidebarQuickActionsConfig.vue'))
 
 // Keep the advanced prompt editor out of the main settings route chunk. It is
 // only needed after the user explicitly opens the prompt source section.
@@ -29,7 +33,7 @@ const PromptManager = defineAsyncComponent(() => import('../PromptManager.vue'))
     <details class="advanced-zone">
       <summary><el-icon><Setting /></el-icon>高级：Agent 模型路由</summary>
       <p>仅在不同 Agent 确实需要不同模型时调整；常规写作使用模型库中的全局档位即可。</p>
-      <div id="llm-routing"><LLMConfig /></div>
+      <div id="llm-routing"><LLMConfig bare /></div>
     </details>
   </ConfigTaskGroup>
 
@@ -39,7 +43,7 @@ const PromptManager = defineAsyncComponent(() => import('../PromptManager.vue'))
     title="记忆"
     description="管理跨章召回、语义去重与状态检索所依赖的向量嵌入能力。"
   >
-    <EmbeddingConfig />
+    <EmbeddingConfig bare />
   </ConfigTaskGroup>
 
   <ConfigTaskGroup
@@ -52,7 +56,7 @@ const PromptManager = defineAsyncComponent(() => import('../PromptManager.vue'))
     <details class="advanced-zone">
       <summary><el-icon><Lock /></el-icon>高级：提示词源内容</summary>
       <p>直接修改提示词会影响后续生成结果。仅在理解各阶段输入输出契约后使用。</p>
-      <PromptManager />
+      <PromptManager bare />
     </details>
   </ConfigTaskGroup>
 
@@ -77,13 +81,22 @@ const PromptManager = defineAsyncComponent(() => import('../PromptManager.vue'))
         <strong>插件与权限</strong>
         <p>安装的 Python 插件会在本机进程中运行。启用前请检查来源、权限与内容摘要。</p>
       </div>
-      <router-link class="extension-entry-link" to="/plugins">打开扩展中心</router-link>
+      <router-link class="extension-entry-link" to="/plugins">打开插件中心</router-link>
     </article>
+    <article class="extension-entry">
+      <div class="extension-entry-icon"><el-icon><Opportunity /></el-icon></div>
+      <div>
+        <strong>灵感工坊</strong>
+        <p>开书构思与故事蓝图设计中心，将零散灵感与经典套路梳理为自洽的设定与写作指南。</p>
+      </div>
+      <router-link class="extension-entry-link" to="/inspiration">进入灵感工坊</router-link>
+    </article>
+    <SidebarQuickActionsConfig />
     <PetAssistantConfig />
     <details class="advanced-zone">
       <summary><el-icon><Lock /></el-icon>高级：AI Agent 接入</summary>
       <p>面向本机 CLI、Cursor 等只读诊断集成，普通创作流程无需配置。</p>
-      <AgentBridgeConfig />
+      <AgentBridgeConfig bare />
     </details>
   </ConfigTaskGroup>
 
@@ -91,9 +104,11 @@ const PromptManager = defineAsyncComponent(() => import('../PromptManager.vue'))
     id="system-data"
     eyebrow="06 / System"
     title="系统与数据"
-    description="管理界面外观与当前项目数据。项目重置会先创建可校验备份，并要求输入项目专属确认语。"
+    description="管理商业授权特权、数据保险箱健康自愈、AI 成本预算守卫、在线更新与项目数据维护。"
   >
+    <CommercialCenterConfig />
     <AppearanceConfig />
+    <SoftwareUpdateConfig />
     <ProjectDataMaintenance />
   </ConfigTaskGroup>
 </template>

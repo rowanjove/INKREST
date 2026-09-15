@@ -3,7 +3,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { isMessageBoxDismissal } from '../utils/elementPlusServices'
 import {
   listPlugins,
-  listUntrustedPlugins,
   trustPlugin,
   togglePlugin,
   updatePluginConfig,
@@ -23,7 +22,6 @@ export function usePluginManager() {
   const pluginNav = usePluginNavigationStore()
   const loading = ref(false)
   const pluginsList = ref<PluginInfo[]>([])
-  const untrustedPlugins = ref<string[]>([])
   const searchQuery = ref('')
   const selectedType = ref('')
   const selectedStatus = ref('')
@@ -48,9 +46,8 @@ export function usePluginManager() {
   const fetchPlugins = async () => {
     loading.value = true
     try {
-      const [pluginsRes, untrustedRes] = await Promise.all([listPlugins(), listUntrustedPlugins()])
+      const pluginsRes = await listPlugins()
       pluginsList.value = pluginsRes.data || []
-      untrustedPlugins.value = untrustedRes.data?.plugins || []
     } catch (error: any) {
       ElMessage.error('获取插件列表失败: ' + (error.response?.data?.detail || error.message))
     } finally {
@@ -277,7 +274,6 @@ export function usePluginManager() {
   return {
     loading,
     pluginsList,
-    untrustedPlugins,
     searchQuery,
     selectedType,
     selectedStatus,

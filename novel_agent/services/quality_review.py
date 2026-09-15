@@ -8,6 +8,7 @@ from typing import Any
 
 from novel_agent.services.pipeline_pending import collect_pipeline_alerts_cached
 from novel_agent.services.project_snapshot import build_quality_summary
+from novel_agent.quality.decision import derive_quality_decision
 
 CHECK_LABELS = {
     "continuity_physical": "前后章连续性",
@@ -27,6 +28,7 @@ STAGE_LABELS = {
     "external_review_pending": "等待外审",
     "report_failed": "质量未通过",
     "report_invalid": "报告损坏",
+    "quality_review": "建议优化",
 }
 
 RECOMMENDED_ACTIONS = {
@@ -36,6 +38,7 @@ RECOMMENDED_ACTIONS = {
     "external_review_pending": "external_review",
     "report_failed": "edit_then_gate",
     "report_invalid": "inspect_report",
+    "quality_review": "optional_edit",
 }
 
 
@@ -83,9 +86,13 @@ def _issue(
     score: Any = None,
     level: Any = None,
     details: Any = None,
+    blocking: bool = False,
+    suggestion: str = "",
+    location: str = "chapter",
+    span: Any = None,
 ) -> dict[str, Any]:
     normalized_level = str(level or "fail").lower()
-    severity = "error" if normalized_level in {"fail", "error", "blocked"} else "warning"
+    severity = "error" if blocking else "warning"
     try:
         normalized_score = int(round(float(score))) if score is not None else None
     except (TypeError, ValueError):
@@ -96,7 +103,101 @@ def _issue(
         "severity": severity,
         "score": normalized_score,
         "details": _normalize_details(details),
+        "blocking": blocking,
+        "suggestion": suggestion or (
+            "修改对应正文后重跑门禁。" if blocking else "按证据局部优化；本项不会阻断继续生产。"
+        ),
+        "location": location or "chapter",
+        "span": span,
     }
+
+
+def quality_issues_from_report(report: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return actionable, explicitly blocking/advisory issues for the UI."""
+    guard = report.get("guard_summary")
+    guard = guard if isinstance(guard, dict) else {}
+    blocked_by = {str(value) for value in guard.get("blocked_by", []) if str(value)}
+    checks = report.get("checks")
+    checks = checks if isinstance(checks, dict) else {}
+    issues: list[dict[str, Any]] = []
+    for code, raw_check in checks.items():
+        if not isinstance(raw_check, dict):
+            continue
+        level = str(raw_check.get("level") or "").lower()
+        if raw_check.get("pass") is not False and level not in {"warning", "review", "fail", "error"}:
+            continue
+        findings = raw_check.get("findings")
+        findings = findings if isinstance(findings, list) else []
+        first = next((item for item in findings if isinstance(item, dict)), {})
+        details = list(raw_check.get("details") or []) if isinstance(raw_check.get("details"), list) else []
+        for finding in findings:
+            if isinstance(finding, dict):
+                message = finding.get("message") or finding.get("reason")
+                if message and message not in details:
+                    details.append(message)
+        _merge_issue(
+            issues,
+            _issue(
+                str(code),
+                score=raw_check.get("score"),
+                level=level,
+                details=details,
+                blocking=str(code) in blocked_by,
+                suggestion=str(first.get("suggestion") or raw_check.get("suggestion") or ""),
+                location=str(first.get("location") or raw_check.get("location") or "chapter"),
+                span=first.get("span") or first.get("source_span") or raw_check.get("span"),
+            ),
+        )
+    for code in blocked_by:
+        if not any(item["code"] == code for item in issues):
+            _merge_issue(issues, _issue(code, blocking=True))
+
+    audit = report.get("audit")
+    audit = audit if isinstance(audit, dict) else {}
+    audit_items = audit.get("issues")
+    audit_items = audit_items if isinstance(audit_items, list) else []
+    audit_blocking = str(audit.get("status") or "").strip().lower() in {
+        "error",
+        "incomplete",
+        "unknown",
+    }
+    for index, raw_issue in enumerate(audit_items[:50]):
+        if isinstance(raw_issue, dict):
+            issue_type = str(
+                raw_issue.get("type")
+                or raw_issue.get("rule_id")
+                or raw_issue.get("code")
+                or f"issue_{index + 1}"
+            )
+            details = [
+                str(value)
+                for key in ("message", "reason", "why", "detail", "fix")
+                if (value := raw_issue.get(key))
+            ]
+            level = raw_issue.get("severity") or raw_issue.get("level")
+            suggestion = str(raw_issue.get("fix") or raw_issue.get("suggestion") or "")
+            location = str(raw_issue.get("location") or raw_issue.get("source") or "chapter")
+            span = raw_issue.get("span") or raw_issue.get("source_span")
+        else:
+            issue_type = f"issue_{index + 1}"
+            details = [str(raw_issue)] if raw_issue else []
+            level = "review"
+            suggestion = "根据审校证据人工检查后决定是否优化。"
+            location = "chapter"
+            span = None
+        _merge_issue(
+            issues,
+            _issue(
+                f"audit.{issue_type}",
+                level=level,
+                details=details,
+                blocking=audit_blocking,
+                suggestion=suggestion,
+                location=location,
+                span=span,
+            ),
+        )
+    return issues
 
 
 def _merge_issue(target: list[dict[str, Any]], issue: dict[str, Any]) -> None:
@@ -142,6 +243,7 @@ def build_quality_review_queue(
             "stage": stage,
             "stage_label": STAGE_LABELS.get(stage, "需要处理"),
             "severity": "warning" if stage == "external_review_pending" else "error",
+            "blocking": stage not in {"external_review_pending", "quality_review"},
             "message": str(alert.get("message") or STAGE_LABELS.get(stage) or "需要处理"),
             "overall_score": None,
             "chapter_score": None,
@@ -163,6 +265,9 @@ def build_quality_review_queue(
         chapter_dir = report_path.parent.parent
         chapter_id = chapter_dir.name.removeprefix("chapter_")
         report, readable = _read_json(report_path)
+        checkpoint, _checkpoint_readable = _read_json(chapter_dir / "checkpoint.json")
+        if checkpoint.get("resolved_at") and chapter_id not in items:
+            continue
         if not readable:
             item = items.setdefault(
                 chapter_id,
@@ -191,6 +296,22 @@ def build_quality_review_queue(
             )
             continue
 
+        # A user-level dismissal is persisted on the chapter checkpoint.  Do
+        # not recreate a quality queue item from the unchanged quality.json;
+        # other independent alerts (for example external review) are retained.
+        # Older quality reports only stored an L2 summary while audit.json
+        # retained the actual findings.  Merge that source for compatibility
+        # before deriving status/issues.
+        audit_doc, audit_readable = _read_json(report_path.parent / "audit.json")
+        report_audit = report.get("audit")
+        report_audit = report_audit if isinstance(report_audit, dict) else {}
+        if audit_readable and isinstance(audit_doc.get("issues"), list):
+            if not isinstance(report_audit.get("issues"), list):
+                report_audit = {**report_audit, "issues": audit_doc["issues"]}
+            if not report_audit.get("status") and audit_doc.get("status"):
+                report_audit["status"] = audit_doc["status"]
+            report = {**report, "audit": report_audit}
+
         guard = report.get("guard_summary")
         guard = guard if isinstance(guard, dict) else {}
         checks = report.get("checks")
@@ -198,31 +319,32 @@ def build_quality_review_queue(
         blocked_by = [
             str(value) for value in guard.get("blocked_by", []) if str(value).strip()
         ]
-        failed = (
-            report.get("overall_pass") is False
-            or str(guard.get("overall_status") or "").upper() == "FAIL"
-            or bool(blocked_by)
-        )
-        if not failed and chapter_id not in items:
+        decision = derive_quality_decision(report)
+        needs_attention = decision["status"] in {"blocked", "incomplete", "review"}
+        if not needs_attention and chapter_id not in items:
             continue
+        default_stage = "quality_review" if decision["status"] == "review" else "report_failed"
         item = items.setdefault(
             chapter_id,
             {
                 "chapter_id": chapter_id,
                 "chapter_title": _chapter_title(chapter_dir, chapter_id),
-                "stage": "report_failed",
-                "stage_label": STAGE_LABELS["report_failed"],
-                "severity": "error",
-                "message": "质量检查未通过",
+                "stage": default_stage,
+                "stage_label": STAGE_LABELS[default_stage],
+                "severity": "warning" if decision["status"] == "review" else "error",
+                "message": decision["title"],
                 "overall_score": None,
                 "chapter_score": None,
                 "blocked_by": [],
                 "issues": [],
                 "completed_stages": [],
                 "updated_at": None,
-                "recommended_action": RECOMMENDED_ACTIONS["report_failed"],
+                "recommended_action": RECOMMENDED_ACTIONS[default_stage],
             },
         )
+        item["quality_status"] = decision["status"]
+        item["hard_gate_pass"] = decision["hard_gate_pass"]
+        item["blocking"] = decision["blocking"]
         try:
             item["overall_score"] = int(round(float(report.get("overall_score"))))
         except (TypeError, ValueError):
@@ -235,20 +357,8 @@ def build_quality_review_queue(
                 item["chapter_score"] = item.get("chapter_score")
         if blocked_by:
             item["blocked_by"] = blocked_by
-        for code, raw_check in checks.items():
-            if not isinstance(raw_check, dict) or raw_check.get("pass") is not False:
-                continue
-            _merge_issue(
-                item["issues"],
-                _issue(
-                    str(code),
-                    score=raw_check.get("score"),
-                    level=raw_check.get("level"),
-                    details=raw_check.get("details"),
-                ),
-            )
-        for code in blocked_by:
-            _merge_issue(item["issues"], _issue(code))
+        for issue in quality_issues_from_report(report):
+            _merge_issue(item["issues"], issue)
 
     ordered = sorted(
         items.values(),
@@ -259,9 +369,15 @@ def build_quality_review_queue(
     )
     quality_summary = build_quality_summary(root)
     stage_counts: dict[str, int] = {}
+    blocking_items = 0
+    advisory_items = 0
     for item in ordered:
         stage = str(item["stage"])
         stage_counts[stage] = stage_counts.get(stage, 0) + 1
+        if item.get("blocking") or str(item.get("severity") or "") == "error":
+            blocking_items += 1
+        else:
+            advisory_items += 1
 
     filtered_items = ordered
     if severity_filter:
@@ -293,6 +409,8 @@ def build_quality_review_queue(
         "summary": {
             **quality_summary,
             "open_items": len(ordered),
+            "blocking_items": blocking_items,
+            "advisory_items": advisory_items,
             "stage_counts": stage_counts,
         },
         "items": page_items,

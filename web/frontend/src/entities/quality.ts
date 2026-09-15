@@ -92,6 +92,28 @@ export interface QualityMetrics {
 
 export interface QualityReview {
   chapter_id: string
+  quality_decision?: {
+    status: 'pass' | 'review' | 'blocked' | 'incomplete' | string
+    title: string
+    message: string
+    blocking: boolean
+    hard_gate_pass: boolean
+    audit_complete: boolean
+    keep: boolean
+    blocked_by: string[]
+    next_action: string
+  }
+  issues?: Array<{
+    code: string
+    label: string
+    severity: 'error' | 'warning' | string
+    score?: number | null
+    details?: string[]
+    blocking?: boolean
+    suggestion?: string
+    location?: string
+    span?: unknown
+  }>
   document?: {
     revision?: number
     sha256?: string
@@ -152,3 +174,105 @@ export function l0BlockBanner(review: QualityReview | null | undefined): L0Block
     keep: chapterScore.keep === true,
   }
 }
+
+export interface HWEIssueDetail {
+  rule_id: string
+  family: string
+  confidence: number
+  start: number
+  end: number
+  line: number
+  paragraph: number
+  matched_text: string
+  context_before?: string
+  context_after?: string
+  autofix?: string
+  blocking?: boolean
+  source?: string
+  explainable?: boolean
+}
+
+export interface HWEIssue {
+  type: string
+  issue_layer: 'plan' | 'text' | 'state' | 'risk'
+  severity: 'low' | 'medium' | 'high'
+  audit_class: string
+  text: string
+  why: string
+  fix: string
+  hwe: HWEIssueDetail
+}
+
+export interface HWEScores {
+  naturalness: number
+  rhythm: number
+  narrative_trust: number
+  voice: number
+  freshness: number
+  fidelity: number
+  template_risk: number
+  overall_score: number
+}
+
+export interface HWEReport {
+  chapter_id?: string | null
+  document_revision_id?: string | null
+  engine_version: string
+  ruleset_version: string
+  mode: string
+  char_count: number
+  scores: HWEScores
+  issues: HWEIssue[]
+  issue_counts_by_family: Record<string, number>
+  issue_counts_by_severity: Record<string, number>
+  summary: string
+  created_at: string
+}
+
+export interface ProtectedSpan {
+  kind: string
+  value: string
+  policy: 'exact' | 'semantic_exact' | 'must_preserve'
+  start?: number | null
+  end?: number | null
+}
+
+export interface FidelityResult {
+  passed: boolean
+  violations: string[]
+  preserved_spans: ProtectedSpan[]
+  missing_spans: ProtectedSpan[]
+  edit_ratio: number
+  length_delta: number
+}
+
+export interface PatchPlanItem {
+  patch_id: string
+  rule_ids: string[]
+  family: string
+  start: number
+  end: number
+  radius: 'phrase' | 'sentence' | 'paragraph' | 'dialogue' | 'streak'
+  original_text: string
+  instruction: string
+  risk: 'low' | 'medium' | 'high'
+  protected_spans: ProtectedSpan[]
+}
+
+export interface HWEPatchCandidate {
+  patch_id: string
+  rule_ids: string[]
+  start: number
+  end: number
+  original_text: string
+  candidate_text: string
+  instruction: string
+  fidelity: FidelityResult
+  utility: number
+  quality_gain: number
+  diff_unified: string
+  status: 'pending' | 'accepted' | 'rejected'
+  created_at: string
+}
+
+

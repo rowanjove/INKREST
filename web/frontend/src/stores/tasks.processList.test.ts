@@ -19,6 +19,40 @@ describe('tasks processTasksList', () => {
     listTasksMock.mockResolvedValue({ data: [] } as any)
   })
 
+  it('does not rewind live progress with an older HTTP snapshot', async () => {
+    const store = useTasksStore()
+    store.addProgress({
+      step: 'writer',
+      status: 'done',
+      chapter_id: '001',
+      timestamp: 2_000_000_000_000,
+      task_id: 'task-live',
+    })
+    listTasksMock.mockResolvedValueOnce({
+      data: [
+        {
+          task_id: 'task-live',
+          chapter_id: '001',
+          status: 'running',
+          pipeline_progress: [
+            {
+              step: 'planner',
+              status: 'running',
+              chapter_id: '001',
+              timestamp: 1_000,
+              task_id: 'task-live',
+            },
+          ],
+        },
+      ],
+    } as any)
+
+    await store.refreshTaskList()
+    expect(store.progress.some((entry) => entry.step === 'writer' && entry.status === 'done')).toBe(
+      true,
+    )
+  })
+
   it('keeps isRunning when local progress is running but API list is empty', async () => {
     const store = useTasksStore()
     store.addProgress({
@@ -129,5 +163,29 @@ describe('tasks processTasksList', () => {
     )
     expect(conflictLogs).toHaveLength(1)
     expect(store.lastTaskWarning?.task_id).toBe('task-conflict-1')
+  })
+
+  it('hydrates persisted pipeline history for the latest completed task after restart', async () => {
+    const store = useTasksStore()
+    listTasksMock.mockResolvedValueOnce({
+      data: [{
+        task_id: 'novel-complete',
+        chapter_id: '002',
+        status: 'succeeded',
+        goal: 'Novel: continue',
+        pipeline_progress: [
+          { step: 'writer', status: 'done', chapter_id: '001', timestamp: 1 },
+          { step: 'writer', status: 'done', chapter_id: '002', timestamp: 2 },
+          { step: 'unified_gate', status: 'done', chapter_id: '002', timestamp: 3 },
+        ],
+      }],
+    } as any)
+
+    await store.refreshTaskList()
+
+    expect(store.currentTaskId).toBe('novel-complete')
+    expect(store.currentChapterId).toBe('002')
+    expect(store.isRunning).toBe(false)
+    expect(store.progress).toHaveLength(3)
   })
 })

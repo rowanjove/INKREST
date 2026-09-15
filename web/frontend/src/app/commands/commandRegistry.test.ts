@@ -12,23 +12,25 @@ describe('command registry', () => {
   it('offers only global destinations without a project', () => {
     const commands = buildNavigationCommands(false)
 
-    expect(commands.map((command) => command.label)).toEqual([
+    expect(commands.filter((command) => command.group === '全局').map((command) => command.label)).toEqual([
       '书库',
       '新建作品',
+      '插件',
       '设置',
-      '扩展',
+      '灵感工坊',
     ])
+    expect(commands.some((command) => command.path === '/config#software-update')).toBe(true)
   })
 
   it('keeps core centers and makes the quality center searchable', () => {
     const commands = buildNavigationCommands(true)
 
     expect(commands.filter((command) => command.group === '项目').map((command) => command.label))
-      .toEqual(['概览', '策划', '正文', '生产', '质量', '发布'])
+      .toEqual(['概览', '策划', '生产', '正文', '质量', '发布'])
     expect(searchCommands(commands, '质量')[0]).toMatchObject({ path: '/quality' })
     expect(searchCommands(commands, '模型')).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: '/config#model-library', label: '模型与提供方' }),
+        expect.objectContaining({ path: '/config#models-providers', label: '模型与提供方' }),
       ]),
     )
   })

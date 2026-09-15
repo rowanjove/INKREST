@@ -14,10 +14,12 @@ export function useConfigNavigation() {
 
   const hashSection = () => {
     const raw = (route.hash || '').replace(/^#/, '')
-    const target = CONFIG_SECTION_ALIASES[raw] || raw
-    if (target && CONFIG_SECTIONS.some((s) => s.id === target)) {
-      requestAnimationFrame(() => scrollTo(target))
-    }
+    if (!raw) return
+    const group = CONFIG_SECTION_ALIASES[raw] || raw
+    requestAnimationFrame(() => {
+      const el = document.getElementById(raw) || document.getElementById(group)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
   }
 
   onMounted(hashSection)

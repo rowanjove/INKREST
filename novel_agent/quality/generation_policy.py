@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 VALID_GENERATION_STYLE_MODES = frozenset({"full", "off", "gate_only", "balanced", "auto"})
 
@@ -99,8 +99,32 @@ def should_length_fix_after_audit_rewrite(
     return False
 
 
-def build_writer_anti_ai_block(root_dir: Path) -> str:
+def build_writer_anti_ai_block(
+    root_dir: Path,
+    scene: Optional[Mapping[str, Any]] = None,
+    plan: Optional[Mapping[str, Any]] = None,
+    user_constraints: Optional[Sequence[str]] = None,
+) -> str:
     """Compact writing constraints injected into scene writer context."""
+    try:
+        from novel_agent.human_writing.context_compiler import compile_human_writing_prompt
+
+        hwe_block = compile_human_writing_prompt(
+            root_dir=root_dir,
+            scene=scene,
+            plan=plan,
+            user_constraints=user_constraints,
+        )
+        if hwe_block and hwe_block.strip():
+            return hwe_block
+    except Exception:
+        import logging
+
+        logging.getLogger("novel_agent.quality.generation_policy").warning(
+            "Human writing prompt compile failed; falling back to static anti-AI rules",
+            exc_info=True,
+        )
+
     try:
         from novel_agent.quality.style_rules import load_style_rules_config
 

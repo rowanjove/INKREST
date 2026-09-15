@@ -66,6 +66,8 @@ class SecurityRegressionTests(unittest.TestCase):
         second_dir = self.base_dir / "projects" / "second"
         first_store = SQLiteStateStore(first_dir)
         second_store = SQLiteStateStore(second_dir)
+        web_server.project_manager.register_project("first", {"name": "first"})
+        web_server.project_manager.register_project("second", {"name": "second"})
         first_store.save_reader_feedback("001", 0.91, 0.09, 10)
         second_store.save_reader_feedback("002", 0.12, 0.88, 20)
         web_server._active_project_id = "first"
@@ -550,6 +552,101 @@ class SecurityRegressionTests(unittest.TestCase):
         res = asyncio.run(call_in_loop())
         self.assertIsInstance(res, dict)
         self.assertEqual(res, {"result": "hello"})
+
+    def test_pinned_ip_transport_headers_copy(self):
+        import asyncio
+        import httpx
+        from web.outbound import PinnedEndpoint, PinnedIPTransport, PinnedAsyncIPTransport
+        endpoint = PinnedEndpoint(
+            original_url="https://api.openai.com/v1",
+            hostname="api.openai.com",
+            pinned_ip="104.18.7.192",
+            port=443,
+            scheme="https",
+        )
+        transport = PinnedIPTransport(endpoint)
+        req = httpx.Request("GET", "https://api.openai.com/v1/models", headers={"Authorization": "Bearer test"})
+        with patch.object(httpx.HTTPTransport, "handle_request") as mock_handle:
+            mock_handle.return_value = httpx.Response(200)
+            resp = transport.handle_request(req)
+            self.assertEqual(resp.status_code, 200)
+            mock_handle.assert_called_once()
+            called_req = mock_handle.call_args[0][0]
+            self.assertEqual(called_req.headers["host"], "api.openai.com")
+
+        async_transport = PinnedAsyncIPTransport(endpoint)
+        async def test_async():
+            with patch.object(httpx.AsyncHTTPTransport, "handle_async_request") as mock_async_handle:
+                mock_async_handle.return_value = httpx.Response(200)
+                resp = await async_transport.handle_async_request(req)
+                self.assertEqual(resp.status_code, 200)
+                mock_async_handle.assert_called_once()
+                called_req = mock_async_handle.call_args[0][0]
+                self.assertEqual(called_req.headers["host"], "api.openai.com")
+
+        asyncio.run(test_async())
+
+    def test_model_client_fails_closed_when_pinning_setup_fails(self):
+        from novel_agent.agents.base import OpenAILLM
+
+        client = OpenAILLM(api_key="test", base_url="https://api.example.com/v1")
+        with patch(
+            "web.outbound.model_httpx_transport",
+            side_effect=ValueError("DNS pinning unavailable"),
+        ):
+            with self.assertRaisesRegex(ValueError, "DNS pinning unavailable"):
+                client._get_client()
+
+    def test_context_budget_fails_closed_when_pinning_setup_fails(self):
+        from novel_agent.agents.base import OpenAILLM
+
+        client = OpenAILLM(api_key="test", base_url="https://api.example.com/v1")
+        with patch(
+            "web.outbound.model_httpx_transport",
+            side_effect=ValueError("DNS pinning unavailable"),
+        ):
+            with self.assertRaisesRegex(ValueError, "DNS pinning unavailable"):
+                client.test_context_budget(100)
+
+    def test_image_model_probe_fails_closed_when_pinning_setup_fails(self):
+        from web.model_library import ModelLibrary
+
+        library = ModelLibrary(self.base_dir)
+        with patch(
+            "web.outbound.model_httpx_transport",
+            side_effect=ValueError("DNS pinning unavailable"),
+        ):
+            result = library.test_model(
+                {
+                    "type": "image",
+                    "base_url": "https://api.test/v1",
+                    "api_key": "test",
+                    "model": "image-test",
+                }
+            )
+
+        self.assertFalse(result["success"])
+        self.assertIn("DNS pinning unavailable", result["error"])
+
+    def test_embedding_probe_fails_closed_when_pinning_setup_fails(self):
+        from web.deps import ProjectSession
+        from web.routes.config import EmbeddingTestRequest, test_embedding_config
+
+        request = EmbeddingTestRequest(
+            provider="openai",
+            base_url="https://api.test/v1",
+            api_key="test",
+            model="embedding-test",
+        )
+        session = ProjectSession(project_id=None, root_dir=self.base_dir)
+        with patch(
+            "web.outbound.model_httpx_transport",
+            side_effect=ValueError("DNS pinning unavailable"),
+        ):
+            result = test_embedding_config(request, session)
+
+        self.assertFalse(result["success"])
+        self.assertIn("DNS pinning unavailable", result["error"])
 
 
 if __name__ == "__main__":

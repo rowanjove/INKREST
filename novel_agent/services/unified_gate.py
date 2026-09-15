@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -24,6 +25,118 @@ if TYPE_CHECKING:
     from novel_agent.phases.base import ChapterContext
 
 logger = get_logger("services.unified_gate")
+
+
+def persist_chapter_final_text(chapter_dir: Path, text: str) -> Path:
+    """Write accepted/rewritten chapter text to the on-disk projection."""
+    path = Path(chapter_dir) / "chapter_final.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text or "", encoding="utf-8")
+    return path
+
+
+def apply_compliance_patches(orchestrator: "NovelOrchestrator", ctx: "ChapterContext") -> "ChapterContext":
+    """Deterministically patch sensitive-word hits before LLM rewrite."""
+    from novel_agent.scripts.sensitive_scan import (
+        apply_sensitive_word_patches,
+        load_sensitive_replacements,
+        load_sensitive_words,
+    )
+
+    root = Path(orchestrator.root_dir)
+    words = load_sensitive_words(root / "assets" / "sensitive_words.txt")
+    for issue in (ctx.audit or {}).get("issues") or []:
+        if isinstance(issue, dict) and issue.get("type") == "sensitive_word_hit":
+            hit = str(issue.get("target_text") or "").strip()
+            if hit and hit not in words:
+                words.append(hit)
+    replacements = load_sensitive_replacements(root / "assets" / "sensitive_replacements.json")
+    patched = apply_sensitive_word_patches(ctx.final_text or "", words, replacements)
+    if patched == (ctx.final_text or ""):
+        return ctx
+    persist_chapter_final_text(ctx.chapter_dir, patched)
+    return dataclasses.replace(ctx, final_text=patched)
+
+
+async def refresh_audit_after_patch(
+    orchestrator: "NovelOrchestrator",
+    ctx: "ChapterContext",
+) -> tuple[dict, "ChapterContext"]:
+    """Re-run hard rules and a single auditor pass after text patches."""
+    from novel_agent.quality.audit_persist import split_audit_for_persist
+    from novel_agent.quality.audit_schema import validate_audit_report
+    from novel_agent.quality.hard_rules import run_hard_rule_audit
+    from novel_agent.scripts.sensitive_scan import load_sensitive_words
+
+    state: Dict[str, Any] = {}
+    try:
+        state = orchestrator.state_manager.get_state() or {}
+    except Exception:
+        state = {}
+    plan = ctx.plan or {}
+    target = plan.get("target_chars") or [1200, 2200]
+    if not (isinstance(target, (list, tuple)) and len(target) >= 2):
+        target = [1200, 2200]
+    words = load_sensitive_words(Path(orchestrator.root_dir) / "assets" / "sensitive_words.txt")
+    hard_issues = run_hard_rule_audit(
+        ctx.final_text or "",
+        state,
+        [int(target[0]), int(target[1])],
+        words,
+        ctx.extracted_state or {},
+        plan,
+    )
+
+    audit = dict(ctx.audit or {})
+    auditor = getattr(orchestrator, "auditor", None)
+    used_fresh = False
+    try:
+        if auditor is not None:
+            kwargs = {
+                "state": state,
+                "target_chars": [int(target[0]), int(target[1])],
+                "sensitive_words": words,
+                "plan": plan,
+            }
+            if hasattr(auditor, "aaudit"):
+                fresh = await auditor.aaudit(ctx.final_text or "", **kwargs)
+            else:
+                fresh = auditor.audit(ctx.final_text or "", **kwargs)
+            if isinstance(fresh, dict):
+                validate_audit_report(fresh)
+                status = str(fresh.get("status") or "ok").strip().lower()
+                if status not in {"error", "incomplete", "unknown"}:
+                    audit = fresh
+                    used_fresh = True
+    except Exception as exc:
+        logger.warning("Audit refresh after patch failed: %s", exc)
+
+    if not used_fresh:
+        kept = [
+            item
+            for item in (audit.get("issues") or [])
+            if not (
+                isinstance(item, dict)
+                and str(item.get("type") or "") in {"sensitive_word_hit", "word_count_out_of_bounds"}
+            )
+        ]
+        audit["issues"] = kept + list(hard_issues)
+        if not any(
+            isinstance(item, dict) and item.get("type") == "sensitive_word_hit"
+            for item in audit["issues"]
+        ) and str(audit.get("risk_level") or "") in {"高", "high"}:
+            audit["risk_level"] = "中"
+
+    public, _ = split_audit_for_persist(audit)
+    writer = getattr(orchestrator, "_write_json", None)
+    if callable(writer):
+        writer(ctx.reports_dir / "audit.json", public)
+    else:
+        (ctx.reports_dir / "audit.json").write_text(
+            json.dumps(public, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    return audit, dataclasses.replace(ctx, audit=audit)
 
 
 def _audit_is_incomplete(audit: Dict[str, Any]) -> bool:
@@ -49,12 +162,19 @@ def build_unified_gate_report(
 ) -> Dict[str, Any]:
     audit = audit or {}
     guard = quality_report.get("guard_summary") or {}
+    from novel_agent.quality.decision import derive_quality_decision
+
+    decision = derive_quality_decision(quality_report)
     return {
-        "overall_pass": quality_report.get("overall_pass", True),
+        "overall_pass": decision["status"] in {"pass", "review"},
+        "quality_status": decision["status"],
+        "hard_gate_pass": decision["hard_gate_pass"],
         "incomplete": bool(quality_report.get("incomplete", False)),
         "quality": {
             "mode": quality_report.get("mode"),
             "overall_pass": quality_report.get("overall_pass"),
+            "status": decision["status"],
+            "hard_gate_pass": decision["hard_gate_pass"],
             "overall_score": quality_report.get("overall_score"),
             "chapter_score": quality_report.get("chapter_score") or {},
             "guard_status": guard.get("overall_status"),
@@ -134,6 +254,7 @@ async def _attempt_auto_length_fix(
         emit_progress("length_fix", "skipped", chapter_id=chapter_id)
         return ctx
     ctx = dataclasses.replace(ctx, final_text=revised)
+    persist_chapter_final_text(chapter_dir, revised)
     orchestrator._write_json(
         meta_path,
         {"applied": True, "chars_before": len(text), "chars_after": len(revised)},
@@ -159,12 +280,17 @@ async def run_unified_review_gate(
         ctx = await _attempt_auto_length_fix(
             orchestrator, chapter_id, ctx, chapter_dir, reports_dir
         )
+    before_compliance = ctx.final_text or ""
+    ctx = apply_compliance_patches(orchestrator, ctx)
+    if (ctx.final_text or "") != before_compliance:
+        _, ctx = await refresh_audit_after_patch(orchestrator, ctx)
 
     audit = ctx.audit or {}
     quality_outcome = await orchestrator.chapter_post.write_quality_report(
         chapter_id, ctx.final_text or "", reports_dir, audit=audit
     )
     report = dict(quality_outcome.report)
+    report["audit"] = audit
     audit_rewrite = audit_requires_rewrite(audit, root_dir=orchestrator.root_dir)
 
     if (
@@ -182,13 +308,17 @@ async def run_unified_review_gate(
         )
         if revised and revised.strip() != (ctx.final_text or "").strip():
             ctx = dataclasses.replace(ctx, final_text=revised)
+            persist_chapter_final_text(chapter_dir, revised)
             from novel_agent.quality.style_precheck import write_style_precheck_cache
 
             write_style_precheck_cache(reports_dir, revised, orchestrator.root_dir)
+            audit, ctx = await refresh_audit_after_patch(orchestrator, ctx)
             quality_outcome = await orchestrator.chapter_post.write_quality_report(
-                chapter_id, revised, reports_dir, audit=audit
+                chapter_id, ctx.final_text or "", reports_dir, audit=audit
             )
             report = dict(quality_outcome.report)
+            report["audit"] = audit
+            audit_rewrite = audit_requires_rewrite(audit, root_dir=orchestrator.root_dir)
 
     mode = resolve_quality_mode(orchestrator.root_dir)
     if (
@@ -257,6 +387,9 @@ async def run_unified_review_gate(
 
     if not passed and not block_message:
         block_message = format_quality_block_message(report)
+
+    if (ctx.final_text or "").strip():
+        persist_chapter_final_text(chapter_dir, ctx.final_text or "")
 
     return UnifiedGateOutcome(
         passed=passed,

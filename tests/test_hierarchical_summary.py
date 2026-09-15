@@ -79,9 +79,15 @@ def test_hierarchical_summary_falls_back_to_sqlite_chapter_summaries(tmp_path: P
                 "chosen_title": "无磁盘摘要的书",
                 "macro_outline": [
                     {
+                        "arc_id": "A00",
+                        "arc_name": "序卷",
+                        "start_chapter": 1,
+                        "end_chapter": 3,
+                    },
+                    {
                         "arc_id": "A01",
                         "arc_name": "第一卷",
-                        "start_chapter": 1,
+                        "start_chapter": 4,
                         "end_chapter": 10,
                     }
                 ],
@@ -91,6 +97,11 @@ def test_hierarchical_summary_falls_back_to_sqlite_chapter_summaries(tmp_path: P
     )
     store = SQLiteStateStore(tmp_path)
     store.save_chapter_summary(
+        "002",
+        "序卷收束：旧城灯火熄灭。",
+        tmp_path / "workspace" / "chapters" / "chapter_002" / "chapter_summary.md",
+    )
+    store.save_chapter_summary(
         "006",
         "主角在 SQLite 里记下：铜钥匙已交沈砚。",
         tmp_path / "workspace" / "chapters" / "chapter_006" / "chapter_summary.md",
@@ -98,4 +109,5 @@ def test_hierarchical_summary_falls_back_to_sqlite_chapter_summaries(tmp_path: P
 
     context = assemble_hierarchical_context(tmp_path, target_chapter_id="007")
     assert "铜钥匙已交沈砚" in context["compiled_prompt_block"]
+    assert "旧城灯火熄灭" in context["level1_arc_summary"]
     assert any(item["chapter_id"] in {"006", "6"} for item in context["level2_recent_chapters"])

@@ -47,6 +47,12 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(compressed, "压缩后文本")
 
     def test_orchestrator_generates_chapter_workspace_and_reports(self):
+        config_dir = self.tmpdir / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "pipeline.yaml").write_text(
+            "chapter:\n  quality_mode: report_only\n",
+            encoding="utf-8",
+        )
         llm = StaticLLM(
             responses={
                 "planner": json.dumps(
@@ -650,7 +656,7 @@ class OrchestratorTests(unittest.TestCase):
         quality_path = self.tmpdir / "workspace" / "chapters" / f"chapter_{chapter_id}" / "reports" / "quality.json"
         self.assertTrue(quality_path.exists())
         quality = json.loads(quality_path.read_text(encoding="utf-8"))
-        self.assertEqual(quality["mode"], "report_only")
+        self.assertEqual(quality["mode"], "block_on_fail")
         self.assertIn("style", quality["checks"])
 
 

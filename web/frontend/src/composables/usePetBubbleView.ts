@@ -1,4 +1,5 @@
 import { nextTick, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { usePetStore } from '../stores/pet'
 import { abortTask } from '../api'
 import { SHANSHAN_SUGGESTED_QUESTIONS } from '../constants/shanshanCopy'
@@ -15,6 +16,7 @@ export type PetAction = {
 }
 
 export function usePetBubbleView() {
+  const router = useRouter()
   const pet = usePetStore()
   const avatar = new URL('../assets/pet/shanshan/ui/bubble_avatar.png', import.meta.url).href
 
@@ -34,7 +36,11 @@ export function usePetBubbleView() {
   }
 
   function navigate(route: string) {
-    window.electronAPI?.navigateMain?.(route)
+    if (window.electronAPI?.navigateMain) {
+      window.electronAPI.navigateMain(route)
+    } else if (router) {
+      void router.push(route)
+    }
   }
 
   function handleStatusCardClick() {

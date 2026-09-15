@@ -1,0 +1,9 @@
+{
+  "id": "pos_stock_metaphor_01",
+  "category": "imagery",
+  "text": "林默喉结滚动，倒吸一口凉气，空气仿佛凝固了一般，后背更是瞬间被冷汗浸湿。",
+  "expected_rules": [
+    "HWE.IMAGERY.STOCK_METAPHOR"
+  ],
+  "description": "陈腐微动作与套路比喻堆砌"
+}

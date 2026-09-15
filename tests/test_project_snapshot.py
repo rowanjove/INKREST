@@ -155,9 +155,49 @@ def test_next_actions_does_not_navigate_readiness_issues_to_reviews() -> None:
     targets = {a["id"]: a["target"] for a in actions}
 
     assert "resolve_blocking_issues" not in targets
-    assert targets.get("configure_model") == "/config"
+    assert targets.get("configure_model") == "/config#models-providers"
     assert targets.get("complete_outline") == "/outline"
-    assert targets.get("complete_assets") == "/state"
+    assert targets.get("complete_assets") == "/assets"
+
+
+def test_next_actions_cover_data_and_corrupt_outline_blockers() -> None:
+    from novel_agent.services.project_snapshot import _next_actions
+
+    actions = _next_actions(
+        {"ok": False},
+        [
+            {"code": "legacy_schema", "source": "tasks", "label": "旧数据库"},
+            {"code": "outline_invalid", "source": "outline", "label": "大纲损坏"},
+        ],
+        [],
+        {"chosen_title": "测试作品"},
+    )
+    targets = {action["id"]: action["target"] for action in actions}
+
+    assert targets["repair_project_data"] == "/config#system-data"
+    assert targets["complete_outline"] == "/outline"
+    assert "continue_writing" not in targets
+
+
+def test_next_actions_give_unknown_blockers_a_diagnostic_path() -> None:
+    from novel_agent.services.project_snapshot import _next_actions
+
+    actions = _next_actions(
+        {"ok": False},
+        [{"code": "future_blocker", "source": "future", "label": "未来阻塞"}],
+        [],
+        {"chosen_title": "测试作品"},
+    )
+
+    assert actions == [
+        {
+            "id": "inspect_blocking_issue",
+            "label": "检查阻塞详情",
+            "kind": "navigate",
+            "target": "/config#system-data",
+            "enabled": True,
+        }
+    ]
 
 
 def test_next_actions_routes_pipeline_alerts_to_reviews() -> None:

@@ -1,0 +1,11 @@
+chapter:
+  default_target_chars:
+  - 2000
+  - 3000
+  default_scene_target_chars:
+  - 400
+  - 800
+runtime:
+  max_workers: 4
+  retry_attempts: 1
+  interactive: false

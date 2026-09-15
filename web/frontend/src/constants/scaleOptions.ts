@@ -91,3 +91,11 @@ export function longFormScaleHint(scale: string): string | null {
   }
   return null
 }
+
+export function designScaleUpperLimit(scale?: string, targetChapters?: number): number {
+  if (!scale) return Number(targetChapters || 0) || 20
+  const opt = findScaleOption(scale)
+  if (!opt) return Number(targetChapters || 0) || 20
+  const scaleMax = opt.scale === 'infinite' ? opt.target_chapters : opt.max_chapters
+  return Math.max(scaleMax, Number(targetChapters || 0)) || 20
+}

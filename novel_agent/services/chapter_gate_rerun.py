@@ -78,6 +78,10 @@ async def run_gate_only_rerun(
     )
     ctx = gate.ctx
 
+    persist_path = chapter_dir / "chapter_final.txt"
+    if (ctx.final_text or "").strip():
+        persist_path.write_text(ctx.final_text or "", encoding="utf-8")
+
     if gate.blocked:
         orchestrator._rollback_checkpoint_stages(
             chapter_dir,
@@ -101,18 +105,33 @@ async def run_gate_only_rerun(
             final_path=chapter_dir / "chapter_final.txt",
             audit=ctx.audit or {},
             warnings=list(ctx.warnings) + [gate.block_message],
+            final_text=ctx.final_text or "",
         )
+
+    post_complete = False
+    post_phase = dict(getattr(orchestrator, "phases", ()) or {}).get("post_audit")
+    if post_phase is not None:
+        try:
+            if hasattr(post_phase, "aexecute"):
+                ctx, approved = await post_phase.aexecute(ctx)
+            else:
+                ctx, approved = post_phase.execute(ctx)
+            post_complete = bool(approved)
+        except Exception:
+            post_complete = False
 
     checkpoint_path = chapter_dir / "checkpoint.json"
     if checkpoint_path.is_file():
         try:
             cp = json.loads(checkpoint_path.read_text(encoding="utf-8"))
             cp["resolved_at"] = datetime.now().isoformat()
-            cp["last_stage"] = "unified_gate"
             completed: List[str] = list(cp.get("completed_stages") or [])
             if "unified_gate" not in completed and "audit" in completed:
                 completed.append("unified_gate")
+            if post_complete and "post_audit" not in completed:
+                completed.append("post_audit")
             cp["completed_stages"] = completed
+            cp["last_stage"] = "post_audit" if post_complete else "unified_gate"
             checkpoint_path.write_text(
                 json.dumps(cp, ensure_ascii=False, indent=2), encoding="utf-8"
             )
@@ -125,6 +144,7 @@ async def run_gate_only_rerun(
         dismiss_batch_retry(orchestrator.root_dir, chapter_id)
     except Exception:
         pass
+    maybe_clear_quality_batch_pause(orchestrator.root_dir)
 
     emit_progress("unified_gate", "done", chapter_id=chapter_id)
     return ChapterResult(
@@ -132,4 +152,57 @@ async def run_gate_only_rerun(
         final_path=chapter_dir / "chapter_final.txt",
         audit=ctx.audit or {},
         warnings=list(ctx.warnings),
+        final_text=ctx.final_text or "",
     )
+
+
+def should_retry_gate_only(root_dir: Path, chapter_id: str) -> bool:
+    """True when a blocked chapter already has text and should re-run the gate first."""
+    cid = str(chapter_id or "").strip()
+    if not cid:
+        return False
+    chapter_dir = Path(root_dir) / "workspace" / "chapters" / f"chapter_{cid}"
+    if not _read_text(chapter_dir / "chapter_final.txt"):
+        return False
+    checkpoint = _read_json(chapter_dir / "checkpoint.json")
+    last_stage = str(checkpoint.get("last_stage") or "")
+    return last_stage in {"quality_blocked", "approval_rejected"}
+
+
+_CLEARABLE_PAUSE_REASONS = frozenset(
+    {
+        "quality_blocked",
+        "circuit_breaker",
+        "batch_skip_limit",
+        "chapter_retry_exhausted",
+    }
+)
+
+
+def maybe_clear_quality_batch_pause(root_dir: Path) -> bool:
+    """Clear a quality/circuit pause when no blocking chapter alerts remain."""
+    from novel_agent.services.arc_queue import clear_batch_pause_for_resume, load_arc_progress
+    from novel_agent.services.pipeline_pending import (
+        collect_pipeline_alerts_cached,
+        invalidate_pipeline_alerts_cache,
+    )
+
+    try:
+        invalidate_pipeline_alerts_cache(root_dir)
+    except Exception:
+        pass
+    alerts = collect_pipeline_alerts_cached(root_dir)
+    blocking = [
+        item
+        for item in alerts
+        if str(item.get("last_stage") or "") in {"quality_blocked", "approval_rejected"}
+    ]
+    if blocking:
+        return False
+    progress = load_arc_progress(root_dir)
+    if progress.get("status") != "paused":
+        return False
+    if str(progress.get("pause_reason") or "") not in _CLEARABLE_PAUSE_REASONS:
+        return False
+    clear_batch_pause_for_resume(root_dir)
+    return True

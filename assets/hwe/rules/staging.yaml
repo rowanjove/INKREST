@@ -1,0 +1,123 @@
+# HWE Rules: Staging (表演性与虚假深刻)
+rules:
+  - id: "HWE.STAGING.BINARY_CONTRAST"
+    version: 1
+    title: "机械式否定翻转"
+    family: "staging"
+    scope: ["sentence", "paragraph"]
+    detector_type: "regex"
+    patterns:
+      - "不是(?P<neg>[^，。！？]{2,25})，?而是(?P<pos>[^，。！？]{2,25})"
+      - "不只是(?P<neg>[^，。！？]{2,25})，?更是(?P<pos>[^，。！？]{2,25})"
+      - "不仅是(?P<neg>[^，。！？]{2,25})，?更是(?P<pos>[^，。！？]{2,25})"
+      - "并非(?P<neg>[^，。！？]{2,25})，?而是(?P<pos>[^，。！？]{2,25})"
+    severity: "medium"
+    confidence: 0.95
+    thresholds:
+      single_hit: "report"
+      per_1000_chars: 2
+      consecutive_hits: 2
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: true
+    why: "AI 写作极度依赖‘不是 A，而是 B’来制造虚假的思辨感和戏剧张力，高频出现会破坏叙事自然流淌感。"
+    suggestion: "直接陈述人物的真实认知或采取具体动作，打破对称翻转句式。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["blader/humanizer", "hardikpandya/stop-slop", "petergyang/no-ai-slop"]
+
+  - id: "HWE.STAGING.FAUX_INSIGHT"
+    version: 1
+    title: "虚假深刻论断"
+    family: "staging"
+    scope: ["sentence", "paragraph"]
+    detector_type: "regex"
+    patterns:
+      - "真正的问题在于"
+      - "很多人(?:不|并没)有意识到的是"
+      - "关键(?:的?并不是|并不在)于"
+      - "核心逻辑在于"
+      - "在某种意义上说"
+    severity: "medium"
+    confidence: 0.90
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: false
+    why: "议论文、自媒体或模型说教常见的分析腔调，出现在小说叙述中会产生严重的作者越位和出戏感。"
+    suggestion: "融入具体情节矛盾或人物内省，避免用社论分析腔对读者说教。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["stop-slop", "no-ai-slop"]
+
+  - id: "HWE.STAGING.DRAMATIC_REVEAL"
+    version: 1
+    title: "报幕式戏剧揭示"
+    family: "staging"
+    scope: ["sentence", "paragraph"]
+    detector_type: "regex"
+    patterns:
+      - "答案只有(?:一个|一种)[:：]?"
+      - "真相[是便][：:]"
+      - "更可怕的是[，,]"
+      - "有一点是肯定的[，,]"
+      - "最致命的(?:在于|是)[，,]"
+    severity: "medium"
+    confidence: 0.88
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: true
+    why: "预设观众席的舞台报幕腔，强行用旁白推高悬疑，削弱了故事本身的发现感。"
+    suggestion: "让读者通过现场证据和人物反应自行推导出结论，删去提示性报幕词。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["worldwonderer/oh-story-claudecode", "KKKKhazix/human-writing"]
+
+  - id: "HWE.STAGING.FAKE_PROFOUND_ENDING"
+    version: 1
+    title: "章末空洞升华哲理"
+    family: "staging"
+    scope: ["paragraph", "chapter"]
+    detector_type: "narration"
+    patterns:
+      - "(?:直到这一刻|到了这个时候|在这一瞬).{0,15}(?:才明白|才真正明白|才懂得).{0,30}(?:没有回头路|宿命|人生|深渊)"
+      - "(?:或许|也许).{0,10}(?:这就是).{0,20}(?:代价|命运|注定|意义)"
+    severity: "high"
+    confidence: 0.85
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: false
+    why: "模型极度热衷在章节末尾用抽象宏大的金句升华主题，缺乏实际剧情信息量，且造成章尾模式化。"
+    suggestion: "章末尽量落在悬念动作、物理场景转换或戛然而止的动作细节上，删去总结感叹。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["oh-story-claudecode", "qu-ai-wei"]
+
+  - id: "HWE.STAGING.IMPORTANCE_PUFFERY"
+    version: 1
+    title: "无实据的重要性拔高"
+    family: "staging"
+    scope: ["sentence"]
+    detector_type: "regex"
+    patterns:
+      - "注定会改变(?:一切|整个人生|整个格局)"
+      - "意义极其重大"
+      - "具有不可估量的价值"
+      - "开启了全新的篇章"
+    severity: "low"
+    confidence: 0.85
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: false
+    why: "空洞宏大的形容词吹捧，缺乏具体场景与剧情证据支撑。"
+    suggestion: "用具体会发生的变化、利益损失或危机表现其重要性。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["hardikpandya/stop-slop"]

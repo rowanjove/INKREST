@@ -34,6 +34,12 @@ class TestAgentEmbeddingLifecycle(unittest.TestCase):
             pass
 
     def test_end_to_end_embedding_lifecycle(self):
+        config_dir = self.tmpdir / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "pipeline.yaml").write_text(
+            "chapter:\n  quality_mode: report_only\n",
+            encoding="utf-8",
+        )
         # 1. 设置 LLM 输出，使其包含 character_behaviors 提取以及正常 plan 与 audit
         llm = StaticLLM(
             responses={

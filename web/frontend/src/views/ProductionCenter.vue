@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Refresh, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -8,15 +8,18 @@ import {
   dismissPipelineAlert,
   rerunChapterGate,
   resumeChapterAudit,
+  resumeTask,
   rewriteBatchChapters,
   setChapterExternalReview,
 } from '../api'
+import { notifyPipelineStarted } from '../utils/pipelineNotify'
 import ProductionActionDialog from '../components/production/ProductionActionDialog.vue'
 import ProductionCostPanel from '../components/production/ProductionCostPanel.vue'
 import ProductionLogsPanel from '../components/production/ProductionLogsPanel.vue'
 import ProductionReviewWorkspace from '../components/production/ProductionReviewWorkspace.vue'
 import ProductionSummaryStrip from '../components/production/ProductionSummaryStrip.vue'
 import ProductionTaskWorkspace from '../components/production/ProductionTaskWorkspace.vue'
+import DashboardPipelineBar from '../components/dashboard/DashboardPipelineBar.vue'
 import { useNovelBatchRun } from '../composables/useNovelBatchRun'
 import { useProductionWorkspace } from '../composables/useProductionWorkspace'
 import {
@@ -26,6 +29,7 @@ import {
   type ProductionTask,
 } from '../entities/production/production'
 import ErrorState from '../shared/ui/ErrorState.vue'
+import { useTasksStore } from '../stores/tasks'
 
 const route = useRoute()
 const router = useRouter()
@@ -39,6 +43,7 @@ const {
   load,
 } = useProductionWorkspace()
 const { openDialog: openBatchDialog } = useNovelBatchRun()
+const tasksStore = useTasksStore()
 const actionIntent = ref<ProductionActionIntent | null>(null)
 const actionLoading = ref(false)
 
@@ -79,7 +84,18 @@ async function runSequential(
   chapterIds: string[],
   action: (chapterId: string) => Promise<unknown>,
 ) {
-  for (const chapterId of chapterIds) await action(chapterId)
+  const failures: Array<{ chapterId: string; message: string }> = []
+  for (const chapterId of chapterIds) {
+    try {
+      await action(chapterId)
+    } catch (reason: any) {
+      failures.push({
+        chapterId,
+        message: reason?.response?.data?.detail || reason?.message || '请求失败',
+      })
+    }
+  }
+  return failures
 }
 
 async function confirmAction() {
@@ -87,24 +103,38 @@ async function confirmAction() {
   if (!intent || actionLoading.value) return
   actionLoading.value = true
   try {
+    let failures: Array<{ chapterId: string; message: string }> = []
     if (intent.kind === 'cancel_task' && intent.taskId) {
       await abortTask(intent.taskId)
+    } else if (intent.kind === 'resume_task' && intent.taskId) {
+      notifyPipelineStarted({ intent: '恢复任务' })
+      await resumeTask(intent.taskId)
     } else if (intent.kind === 'resume_audit') {
-      await runSequential(intent.chapterIds, resumeChapterAudit)
+      notifyPipelineStarted({ intent: '重跑审计' })
+      failures = await runSequential(intent.chapterIds, resumeChapterAudit)
     } else if (intent.kind === 'rerun_gate') {
-      await runSequential(intent.chapterIds, rerunChapterGate)
+      notifyPipelineStarted({ intent: '复检门禁' })
+      failures = await runSequential(intent.chapterIds, rerunChapterGate)
     } else if (intent.kind === 'rewrite') {
+      notifyPipelineStarted({ intent: '重写章节' })
       await rewriteBatchChapters(intent.chapterIds)
     } else if (intent.kind === 'external_passed') {
-      await runSequential(intent.chapterIds, (chapterId) =>
+      failures = await runSequential(intent.chapterIds, (chapterId) =>
         setChapterExternalReview(chapterId, { status: 'external_passed' }),
       )
     } else if (intent.kind === 'dismiss') {
-      await runSequential(intent.chapterIds, dismissPipelineAlert)
+      failures = await runSequential(intent.chapterIds, dismissPipelineAlert)
     }
-    ElMessage.success(`${intent.label}已提交`)
     actionIntent.value = null
     await load()
+    if (failures.length) {
+      const succeeded = Math.max(0, intent.chapterIds.length - failures.length)
+      ElMessage.warning(
+        `${intent.label}：${succeeded} 章成功，${failures.length} 章失败；第 ${failures[0]!.chapterId} 章：${failures[0]!.message}`,
+      )
+    } else {
+      ElMessage.success(`${intent.label}已提交`)
+    }
   } catch (reason: any) {
     ElMessage.error(
       reason?.response?.data?.detail || reason?.message || `${intent.label}失败`,
@@ -134,6 +164,16 @@ watch(
   },
   { immediate: true },
 )
+
+onMounted(() => {
+  tasksStore.startPolling()
+  tasksStore.startRuntimeLogPolling()
+})
+
+onUnmounted(() => {
+  tasksStore.stopPolling()
+  tasksStore.stopRuntimeLogPolling()
+})
 </script>
 
 <template>
@@ -142,12 +182,12 @@ watch(
       <div>
         <small>PRODUCTION CONTROL</small>
         <h1>生产中心</h1>
-        <p>运行、审校修复、费用与日志共享同一个项目快照和任务历史。</p>
+        <p>启动、暂停、恢复与返修都在这里完成；任务历史、费用和日志按需查看。</p>
       </div>
       <div class="header-actions">
         <el-button :icon="Refresh" :loading="loading" @click="load()">刷新</el-button>
-        <el-button type="primary" :icon="VideoPlay" @click="openBatchDialog">
-          继续生产
+        <el-button v-if="activeTab !== 'control'" type="primary" :icon="VideoPlay" @click="activeTab = 'control'">
+          返回控制台
         </el-button>
       </div>
     </header>
@@ -185,15 +225,19 @@ watch(
       />
 
       <nav class="production-tabs" aria-label="生产中心分区">
-        <button :class="{ active: activeTab === 'runs' }" @click="activeTab = 'runs'">
-          运行
-          <span>{{ workspace.tasks.length }}</span>
+        <button :class="{ active: activeTab === 'control' }" @click="activeTab = 'control'">
+          控制台
+          <span>{{ batchPaused ? '暂停' : '就绪' }}</span>
         </button>
         <button :class="{ active: activeTab === 'reviews' }" @click="activeTab = 'reviews'">
           审校修复
           <span :class="{ danger: workspace.reviews.summary.open_items }">
             {{ workspace.reviews.summary.open_items }}
           </span>
+        </button>
+        <button :class="{ active: activeTab === 'runs' }" @click="activeTab = 'runs'">
+          任务历史
+          <span>{{ workspace.tasks.length }}</span>
         </button>
         <button :class="{ active: activeTab === 'costs' }" @click="activeTab = 'costs'">
           费用
@@ -205,8 +249,9 @@ watch(
       </nav>
 
       <main class="production-canvas">
+        <DashboardPipelineBar v-if="activeTab === 'control'" />
         <ProductionTaskWorkspace
-          v-if="activeTab === 'runs'"
+          v-else-if="activeTab === 'runs'"
           :tasks="workspace.tasks"
           :events="workspace.events"
           :logs="workspace.task_logs"
@@ -275,7 +320,8 @@ watch(
 .production-tabs button.active { color: var(--color-primary); background: var(--color-primary-soft); }
 .production-tabs button span { min-width: 18px; padding: 2px 6px; border-radius: 999px; background: var(--color-bg-surface-muted); color: var(--color-text-muted); font-size: 11.5px; font-weight: 600; text-align: center; }
 .production-tabs button span.danger { background: var(--color-alert-danger-bg); color: var(--color-danger); }
-.production-canvas { flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-bg-surface); box-shadow: var(--shadow-sm); }
+.production-canvas { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-bg-surface); box-shadow: var(--shadow-sm); }
+.production-canvas :deep(.dashboard-pipeline-bar) { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
 @media (max-width: 900px) {
   .production-page { padding: 10px; }
   .production-header p { display: none; }

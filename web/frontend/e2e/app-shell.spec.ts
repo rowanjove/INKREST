@@ -16,9 +16,9 @@ test.describe('V2 application shell', () => {
     await page.goto('/create')
 
     const primary = page.getByRole('navigation', { name: '全局导航' })
-    const utility = page.getByRole('navigation', { name: '全局入口' })
+    const utility = page.getByRole('navigation', { name: '全局设置' })
     await expect(primary.getByRole('button')).toHaveText(['书库', '新建作品'])
-    await expect(utility.getByRole('button')).toHaveText(['设置', '扩展'])
+    await expect(utility.getByRole('button')).toHaveText(['设置'])
   })
 
   test('hydrates deep links and keeps six project centers', async ({ page, request }) => {
@@ -27,8 +27,8 @@ test.describe('V2 application shell', () => {
     await expect(navigation.getByRole('button')).toHaveText([
       '概览',
       '策划',
-      '正文',
       '生产',
+      '正文',
       '质量',
       '发布',
     ])

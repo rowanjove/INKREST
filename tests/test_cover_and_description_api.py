@@ -156,6 +156,30 @@ class CoverAndDescriptionApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("private", response.json()["detail"].lower())
 
+    def test_generate_cover_fails_closed_when_dns_pinning_is_unavailable(self):
+        client = TestClient(web_app)
+        model_lib = web_server.ModelLibrary(self.tmpdir / "projects" / self.pid)
+        model_lib.save_model("flux-test", {
+            "name": "Flux Image Model",
+            "provider": "openai",
+            "base_url": "https://api.test/v1",
+            "api_key": "test-key",
+            "model": "flux-schnell",
+            "type": "image",
+        })
+
+        with patch(
+            "web.outbound.model_httpx_transport",
+            side_effect=ValueError("DNS pinning unavailable"),
+        ):
+            response = client.post(
+                f"/api/projects/{self.pid}/generate-cover",
+                json={"model_id": "flux-test", "prompt": "cat sketch"},
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("DNS pinning unavailable", response.json()["detail"])
+
     def test_generate_cover_rejects_oversized_base64_image(self):
         client = TestClient(web_app)
         model_lib = web_server.ModelLibrary(self.tmpdir / "projects" / self.pid)

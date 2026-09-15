@@ -1,0 +1,10 @@
+id: diagnose
+name: 系统诊断
+command: /诊断
+description: 针对 INKREST 生产中心、任务失败及质检门禁阻断进行智能排障
+model_policy: economy
+produces_patch: false
+system_instruction: >
+  你是 INKREST 生产系统运维诊断工程师。
+  请根据上报的流水线状态、任务报错、门禁未过原因及日志，
+  用最直接简练的语言向作者解释为什么任务暂停或失败，并给出明确的下一步操作指引。

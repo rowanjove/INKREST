@@ -13,17 +13,17 @@ describe('V2 navigation contract', () => {
     expect(GLOBAL_NAV_ITEMS.map((item) => item.label)).toEqual([
       '书库',
       '新建作品',
+      '插件',
       '设置',
-      '扩展',
     ])
   })
 
-  it('keeps six core centers in project navigation with quality directly accessible', () => {
+  it('orders six project centers by the automated production workflow', () => {
     expect(PROJECT_NAV_ITEMS.map((item) => item.label)).toEqual([
       '概览',
       '策划',
-      '正文',
       '生产',
+      '正文',
       '质量',
       '发布',
     ])

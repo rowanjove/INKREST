@@ -132,3 +132,78 @@ def test_synthetic_20_gate_recovers_and_revisions_stay_unified(tmp_path: Path):
     active = next(item for item in versions if item.get("is_active") in (1, True))
     assert document is not None
     assert active["revision"] == document["revision"]
+
+
+def test_synthetic_20_blocked_chapter_recovers_then_skips_on_continue(tmp_path: Path):
+    from novel_agent.orchestrator_batch import chapter_pipeline_complete
+    from novel_agent.services.arc_queue import (
+        filter_briefs_for_resume,
+        record_novel_batch_paused,
+        load_arc_progress,
+    )
+    from novel_agent.services.batch_retry_queue import (
+        prioritize_retry_briefs,
+        record_batch_retry,
+    )
+    from novel_agent.services.chapter_gate_rerun import maybe_clear_quality_batch_pause
+    from web.tasks import TaskManager
+
+    store = _prepare_book(tmp_path)
+    chapter_dir = tmp_path / "workspace" / "chapters" / "chapter_012"
+    reports = chapter_dir / "reports"
+    reports.mkdir(parents=True)
+    (chapter_dir / "plan.json").write_text(
+        json.dumps({"chapter_title": "第十二章", "chapter_goal": "取信离开"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (reports / "audit.json").write_text(
+        json.dumps({"status": "ok", "risk_level": "低", "issues": []}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (chapter_dir / "chapter_final.txt").write_text(ACTION_PROSE, encoding="utf-8")
+    (chapter_dir / "checkpoint.json").write_text(
+        json.dumps(
+            {
+                "chapter_id": "012",
+                "last_stage": "quality_blocked",
+                "completed_stages": ["generation", "audit"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    record_batch_retry(tmp_path, chapter_id="012", reason="quality_or_gate_failure")
+    record_novel_batch_paused(tmp_path, reason="quality_blocked", last_chapter="012")
+
+    orch = NovelOrchestrator(PipelineConfig(root_dir=tmp_path, llm=StaticLLM(responses={})))
+    recovered = asyncio.run(run_gate_only_rerun(orch, "012"))
+    maybe_clear_quality_batch_pause(tmp_path)
+
+    assert recovered.chapter_id == "012"
+    assert chapter_pipeline_complete(tmp_path, "012") is True
+    assert load_arc_progress(tmp_path).get("status") != "paused"
+
+    briefs = [{"chapter_id": f"{n:03d}"} for n in range(12, 16)]
+    remaining = filter_briefs_for_resume(briefs, lambda cid: chapter_pipeline_complete(tmp_path, cid))
+    remaining = prioritize_retry_briefs(tmp_path, remaining)
+    assert [row["chapter_id"] for row in remaining] == ["013", "014", "015"]
+
+    manager = TaskManager(tmp_path)
+    repo = manager.task_repository
+    repo.create_task(
+        task_id="synth-continue",
+        project_id=tmp_path.name,
+        task_type=TaskType.NOVEL_CONTINUE,
+        payload={"goal": "继续写书"},
+    )
+    claimed = repo.claim_task("synth-continue")
+    repo.start_task("synth-continue", claimed.claim_token)
+    repo.finish_task(
+        "synth-continue",
+        claimed.claim_token,
+        status=TaskStatus.PAUSED,
+        reason="quality_blocked",
+    )
+    manager._update_task_status("synth-continue", "running")
+    row = repo.get_task("synth-continue")
+    assert row is not None
+    assert row.status is TaskStatus.RUNNING

@@ -1,0 +1,65 @@
+# HWE Rules: Dialogue (对话自然度与去工具人化)
+rules:
+  - id: "HWE.DIALOGUE.EXPOSITION_DIALOGUE"
+    version: 1
+    title: "知情人互交说明性台词"
+    family: "dialogue"
+    scope: ["dialogue"]
+    detector_type: "dialogue"
+    patterns:
+      - "(?:正如你所知道的|就像我们之前说的|你我都清楚|别忘了，在这个世界上)[，,]"
+      - "按理说，作为一名.{2,8}，我"
+    severity: "medium"
+    confidence: 0.86
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: true
+    why: "人物把双方都知道的设定大段念出来给读者听（俗称‘女仆与管家对话’），角色沦为念设定的工具人。"
+    suggestion: "通过争执、冲突或隐瞒展现设定，而不是借人物之口朗读设定说明书。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["worldwonderer/oh-story-claudecode", "Anbeeld/WRITING.md"]
+
+  - id: "HWE.DIALOGUE.QUESTION_ANSWER_CHAIN"
+    version: 1
+    title: "机械一问一答对簿流水账"
+    family: "dialogue"
+    scope: ["dialogue", "paragraph"]
+    detector_type: "dialogue"
+    patterns: []
+    severity: "medium"
+    confidence: 0.84
+    thresholds:
+      consecutive_qa_rounds: 3
+    fiction_policy:
+      auto_block: false
+    why: "两名角色像被程序写好的问答机器人：A问B答、A再问B再答，毫无打断、防御、转移话题或潜台词交锋。"
+    suggestion: "加入答非所问、反问、借动作沉默回避或打断对方台词。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["KKKKhazix/human-writing", "adewale/anti-slop-writing"]
+
+  - id: "HWE.DIALOGUE.VOICE_COLLAPSE"
+    version: 1
+    title: "对话全员同质化/过分书面礼貌"
+    family: "dialogue"
+    scope: ["dialogue"]
+    detector_type: "dialogue"
+    patterns:
+      - "请问能否请你"
+      - "非常感谢你的提醒"
+      - "这确实是一个值得深思的问题"
+    severity: "low"
+    confidence: 0.85
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: true
+    why: "角色说话带有 AI 客服助理式的过度客套、完美语序和完整主谓宾，缺乏市井感或性格粗糙度。"
+    suggestion: "增加口语短促感、省略成分、角色专属俚语或不耐烦语调。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["blader/humanizer", "MrGeDiao/shuorenhua"]

@@ -1,0 +1,9 @@
+{
+  "id": "pos_binary_contrast_01",
+  "category": "staging",
+  "text": "这不是一次普通的谈话，而是一场关乎生死存亡的残酷博弈。",
+  "expected_rules": [
+    "HWE.STAGING.BINARY_CONTRAST"
+  ],
+  "description": "典型非黑即白否定翻转思辨腔"
+}

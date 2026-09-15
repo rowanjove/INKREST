@@ -1,26 +1,16 @@
 <script setup lang="ts">
 defineProps<{
   outline: Record<string, any>
-  title: string
-  logline: string
   genre: string
   targetChapters: number
   protagonist: Record<string, any>
   promises: any[]
-  arcs: any[]
-  displayIndex: (index: string | number) => number
 }>()
 </script>
 
 <template>
   <div class="classic-layout">
     <section class="main-panel">
-      <div class="title-block">
-        <span>{{ outline?.chosen_title ? '最终书名' : '候选书名' }}</span>
-        <h2>{{ title }}</h2>
-        <p class="logline-clamp">{{ logline }}</p>
-      </div>
-
       <div class="info-grid">
         <article>
           <span>题材</span>
@@ -60,22 +50,6 @@ defineProps<{
       <el-empty v-else description="暂无" :image-size="48" />
     </aside>
 
-    <section class="arc-panel">
-      <div class="section-head">
-        <h3>卷纲 / 阶段</h3>
-        <span>{{ arcs.length }} 阶段</span>
-      </div>
-      <div v-if="arcs.length" class="arc-scroll">
-        <div class="arc-list">
-          <article v-for="(arc, index) in arcs" :key="index" class="arc-card">
-            <span>Phase {{ displayIndex(index) }}</span>
-            <strong>{{ arc.title || arc.name || `阶段 ${displayIndex(index)}` }}</strong>
-            <p>{{ arc.summary || arc.description || arc.goal || arc }}</p>
-          </article>
-        </div>
-      </div>
-      <el-empty v-else description="暂无阶段" :image-size="48" />
-    </section>
   </div>
 </template>
 
@@ -85,13 +59,11 @@ defineProps<{
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 240px;
-  grid-template-rows: minmax(0, 1fr) auto;
   gap: 10px;
 }
 
 .main-panel,
-.side-panel,
-.arc-panel {
+.side-panel {
   border: 1px solid #e1e7ef;
   border-radius: 8px;
   background: var(--color-bg-surface);
@@ -117,43 +89,17 @@ defineProps<{
   overflow: hidden;
 }
 
-.arc-panel {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  max-height: 168px;
-  display: flex;
-  flex-direction: column;
-}
-
-.title-block span,
-.info-grid span,
-.arc-card span {
+.info-grid span {
   color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 700;
 }
 
-.title-block h2 {
-  margin: 2px 0 0;
-  color: #111827;
-  font-size: 18px;
-  line-height: 1.25;
-}
-
-.logline-clamp,
-.text-clamp,
-.arc-card p {
+.text-clamp {
   color: var(--color-text-muted);
   line-height: 1.5;
   margin: 0;
   font-size: 13.5px;
-}
-
-.logline-clamp {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .info-grid {
@@ -231,65 +177,14 @@ defineProps<{
   font-weight: 650;
 }
 
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: var(--color-text-muted);
-  font-size: 12px;
-  flex-shrink: 0;
-  margin-bottom: 6px;
-}
-
-.arc-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.arc-list {
-  display: flex;
-  gap: 10px;
-  padding-bottom: 4px;
-}
-
-.arc-card {
-  flex: 0 0 220px;
-  padding: 10px;
-  border: 1px solid #e5eaf2;
-  border-radius: 8px;
-  background: var(--color-bg-surface);
-}
-
-.arc-card strong {
-  display: block;
-  margin: 4px 0;
-  color: #111827;
-  font-size: 13px;
-}
-
-.arc-card p {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
 @media (max-width: 1280px) {
   .classic-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
   }
 
   .side-panel {
     grid-column: 1;
-    grid-row: 2;
     max-height: 100px;
-  }
-
-  .arc-panel {
-    grid-row: 3;
   }
 
   .info-grid {

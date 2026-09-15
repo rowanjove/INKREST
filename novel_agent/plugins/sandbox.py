@@ -19,6 +19,16 @@ _TRUSTED_HOOK_MODULE_PREFIXES = (
     "test_plugin_sandbox",
     "tests.",
 )
+_UNTRUSTED_HOOK_MODULE_PREFIXES = (
+    "novel_agent.plugins.local.",
+)
+
+
+def _is_trusted_hook_module(module: str) -> bool:
+    name = module or ""
+    if any(name.startswith(prefix) for prefix in _UNTRUSTED_HOOK_MODULE_PREFIXES):
+        return False
+    return any(name.startswith(prefix) for prefix in _TRUSTED_HOOK_MODULE_PREFIXES)
 
 _KEEP_ENV_KEYS = frozenset(
     {
@@ -51,7 +61,7 @@ _STRIP_ENV_FRAGMENTS = ("TOKEN", "KEY", "SECRET", "PASSWORD", "PASSWD", "CREDENT
 
 def _assert_trusted_hook_callable(fn: Callable[..., Any]) -> None:
     module = getattr(fn, "__module__", "") or ""
-    if not any(module.startswith(prefix) for prefix in _TRUSTED_HOOK_MODULE_PREFIXES):
+    if not _is_trusted_hook_module(module):
         raise RuntimeError(f"Untrusted sandbox hook module: {module or '<unknown>'}")
 
 
@@ -59,7 +69,7 @@ class _RestrictedUnpickler(pickle.Unpickler):
     """Safely unpickle callables, blocking arbitrary code execution during deserialization."""
 
     def find_class(self, module: str, name: str) -> Any:
-        if any(module.startswith(prefix) for prefix in _TRUSTED_HOOK_MODULE_PREFIXES):
+        if _is_trusted_hook_module(module):
             return super().find_class(module, name)
         raise pickle.UnpicklingError(f"Global '{module}.{name}' is forbidden in sandbox unpickler")
 
@@ -96,7 +106,7 @@ def run_callable_in_process(
         blob = pickle.dumps(fn)
     except Exception:
         module = getattr(fn, "__module__", "") or ""
-        if any(module.startswith(prefix) for prefix in _TRUSTED_HOOK_MODULE_PREFIXES):
+        if _is_trusted_hook_module(module):
             from novel_agent.plugins.hook_runner import call_hook_with_timeout
 
             return call_hook_with_timeout(fn, timeout_seconds, default)
@@ -125,7 +135,7 @@ def run_callable_in_process(
     payload_text = str(payload)
     if "forbidden" in payload_text.lower() or "UnpicklingError" in payload_text:
         module = getattr(fn, "__module__", "") or ""
-        if any(module.startswith(prefix) for prefix in _TRUSTED_HOOK_MODULE_PREFIXES):
+        if _is_trusted_hook_module(module):
             from novel_agent.plugins.hook_runner import call_hook_with_timeout
 
             return call_hook_with_timeout(fn, timeout_seconds, default)

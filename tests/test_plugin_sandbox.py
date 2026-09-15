@@ -88,3 +88,12 @@ def test_unpicklable_untrusted_hook_does_not_run_in_process() -> None:
     local_hook.__module__ = "evil_plugin.hooks"
     with pytest.raises(RuntimeError, match="not picklable"):
         run_callable_in_process(local_hook, timeout_seconds=1.0)
+
+
+def test_installed_plugin_module_prefix_is_not_trusted() -> None:
+    def local_hook() -> str:
+        return "secret"
+
+    local_hook.__module__ = "novel_agent.plugins.local.evil"
+    with pytest.raises(RuntimeError, match="not picklable"):
+        run_callable_in_process(local_hook, timeout_seconds=1.0)

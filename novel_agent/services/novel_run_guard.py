@@ -299,10 +299,18 @@ def build_readiness_report(root: Path, *, dry_run: bool = False) -> Dict[str, An
     chromadb_available = False
     embedding_backend_hint = ""
     try:
-        from novel_agent.control.factory_policy import load_project_factory_mode
+        from novel_agent.control.factory_policy import (
+            load_project_factory_mode,
+            read_explicit_factory_mode,
+        )
         from novel_agent.state.yaml_mirror import check_yaml_mirror_drift
 
         factory_mode = load_project_factory_mode(root)
+        if read_explicit_factory_mode(root) is None:
+            warnings.append(
+                f"未保存工厂模式，界面默认显示「{factory_mode}」，"
+                "实际按只报告门禁运行，失败不会自动拦截。"
+            )
         yaml_mirror_warnings = check_yaml_mirror_drift(root)
         warnings.extend(yaml_mirror_warnings)
     except Exception:

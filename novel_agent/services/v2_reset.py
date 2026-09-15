@@ -36,6 +36,9 @@ _RESET_ROOTS = (
     "build",
 )
 _EXCLUDED_PARTS = frozenset({"logs", "plugins", "__pycache__"})
+_DELETE_BACKUP_EXCLUDED_PARTS = frozenset(
+    {"logs", "__pycache__", "build", "dist", "dist-desktop", "node_modules"}
+)
 _SENSITIVE_NAMES = frozenset(
     {
         ".env",
@@ -151,20 +154,29 @@ def _ensure_idle(project_root: Path) -> None:
         )
 
 
-def _is_excluded(relative: Path) -> bool:
+def _is_excluded(
+    relative: Path,
+    *,
+    excluded_parts: frozenset[str] = _EXCLUDED_PARTS,
+) -> bool:
     lowered_parts = tuple(part.lower() for part in relative.parts)
     name = relative.name.lower()
     return (
-        any(part in _EXCLUDED_PARTS for part in lowered_parts)
+        any(part in excluded_parts for part in lowered_parts)
         or name in _SENSITIVE_NAMES
         or name.startswith(".env.")
         or name.endswith(".log")
     )
 
 
-def _iter_backup_files(project_root: Path) -> list[tuple[Path, Path]]:
+def _iter_backup_files(
+    project_root: Path,
+    *,
+    include_all: bool = False,
+) -> list[tuple[Path, Path]]:
     files: list[tuple[Path, Path]] = []
-    candidates = [project_root / name for name in _BACKUP_ROOTS]
+    candidates = [project_root] if include_all else [project_root / name for name in _BACKUP_ROOTS]
+    excluded_parts = _DELETE_BACKUP_EXCLUDED_PARTS if include_all else _EXCLUDED_PARTS
 
     for candidate in candidates:
         if not candidate.exists() or candidate.is_symlink():
@@ -176,13 +188,17 @@ def _iter_backup_files(project_root: Path) -> list[tuple[Path, Path]]:
                 for name in directories
                 if not (current_path / name).is_symlink()
                 and not _is_excluded(
-                    (current_path / name).relative_to(project_root)
+                    (current_path / name).relative_to(project_root),
+                    excluded_parts=excluded_parts,
                 )
             ]
             for filename in filenames:
                 source = current_path / filename
                 relative = source.relative_to(project_root)
-                if source.is_symlink() or _is_excluded(relative):
+                if source.is_symlink() or _is_excluded(
+                    relative,
+                    excluded_parts=excluded_parts,
+                ):
                     continue
                 if source.is_file():
                     files.append((source, relative))
@@ -267,10 +283,14 @@ def _verify_backup_manifest(
             raise V2ResetError(f"Backup member hash mismatch: {path}")
 
 
-def list_backup_inventory(project_root: Path) -> dict[str, Any]:
+def list_backup_inventory(
+    project_root: Path,
+    *,
+    include_all: bool = False,
+) -> dict[str, Any]:
     """Stream-friendly backup inventory with explicit size/file caps."""
 
-    files = _iter_backup_files(Path(project_root))
+    files = _iter_backup_files(Path(project_root), include_all=include_all)
     total_bytes = 0
     oversized: list[str] = []
     for source, relative in files:
@@ -299,11 +319,14 @@ def list_backup_inventory(project_root: Path) -> dict[str, Any]:
     }
 
 
-def create_v2_backup(
+def _create_verified_backup(
     *,
     projects_root: Path,
     project_root: Path,
     project_id: str,
+    include_all: bool,
+    backup_namespace: str,
+    manifest_format: str,
 ) -> BackupResult:
     """Create and verify a secrets-excluding archive without modifying the project."""
 
@@ -315,12 +338,12 @@ def create_v2_backup(
     with _RESET_LOCK:
         _ensure_idle(project)
         created = datetime.now(UTC)
-        backup_dir = projects.parent / "backups" / "v2-reset"
+        backup_dir = projects.parent / "backups" / backup_namespace
         backup_dir.mkdir(parents=True, exist_ok=True)
         stamp = created.strftime("%Y%m%dT%H%M%S%fZ")
         target = backup_dir / f"{project_id}-{stamp}.zip"
-        files = _iter_backup_files(project)
-        list_backup_inventory(project)
+        files = _iter_backup_files(project, include_all=include_all)
+        list_backup_inventory(project, include_all=include_all)
         descriptor, temporary_name = tempfile.mkstemp(
             dir=backup_dir,
             prefix=f".{project_id}-",
@@ -361,7 +384,7 @@ def create_v2_backup(
                     "manifest.json",
                     json.dumps(
                         {
-                            "format": "novel-agent-v2-backup",
+                            "format": manifest_format,
                             "version": 1,
                             "project_id": project_id,
                             "created_at": created.isoformat(),
@@ -395,6 +418,40 @@ def create_v2_backup(
             file_count=len(files),
             created_at=created.isoformat(),
         )
+
+
+def create_v2_backup(
+    *,
+    projects_root: Path,
+    project_root: Path,
+    project_id: str,
+) -> BackupResult:
+    """Back up reset-owned runtime roots before a V2 reset."""
+    return _create_verified_backup(
+        projects_root=projects_root,
+        project_root=project_root,
+        project_id=project_id,
+        include_all=False,
+        backup_namespace="v2-reset",
+        manifest_format="novel-agent-v2-backup",
+    )
+
+
+def create_project_deletion_backup(
+    *,
+    projects_root: Path,
+    project_root: Path,
+    project_id: str,
+) -> BackupResult:
+    """Back up all recoverable project data before deleting the project."""
+    return _create_verified_backup(
+        projects_root=projects_root,
+        project_root=project_root,
+        project_id=project_id,
+        include_all=True,
+        backup_namespace="project-delete",
+        manifest_format="novel-agent-project-deletion-backup",
+    )
 
 
 def _remove_checked(path: Path, *, parent: Path) -> None:

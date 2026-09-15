@@ -22,6 +22,35 @@ from novel_agent.plugins.base import (
     CommandSpec,
 )
 from novel_agent.plugins.manager import PluginManager, EventBus
+from novel_agent.plugins.lifecycle import PluginState, PluginDiagnostics
+from novel_agent.plugins.contributions import (
+    ContributionRegistry,
+    CommandContribution,
+    ViewContribution,
+    ValidatorContribution,
+    PipelineHookContribution,
+    ExporterContribution,
+    PromptEnhancerContribution,
+)
+from novel_agent.plugins.hooks import (
+    HookRegistry,
+    HookContract,
+    hookspec,
+    hookimpl,
+    HookError,
+    HookExecutionError,
+    HookTimeoutError,
+)
+from novel_agent.plugins.services import ServiceRegistry, ServiceNotFoundError
+from novel_agent.plugins.resolver import (
+    DependencyResolver,
+    ResolverError,
+    CircularDependencyError,
+    MissingDependencyError,
+)
+from novel_agent.plugins.capability_broker import CapabilityBroker, PermissionDeniedError
+from novel_agent.plugins.legacy_adapter import LegacyPluginAdapter
+from novel_agent.plugins.activation import ActivationManager
 
 __all__ = [
     "PluginBase",
@@ -47,4 +76,30 @@ __all__ = [
     "CommandSpec",
     "PluginManager",
     "EventBus",
+    "PluginState",
+    "PluginDiagnostics",
+    "ActivationManager",
+    "ContributionRegistry",
+    "CommandContribution",
+    "ViewContribution",
+    "ValidatorContribution",
+    "PipelineHookContribution",
+    "ExporterContribution",
+    "PromptEnhancerContribution",
+    "HookRegistry",
+    "HookContract",
+    "hookspec",
+    "hookimpl",
+    "HookError",
+    "HookExecutionError",
+    "HookTimeoutError",
+    "ServiceRegistry",
+    "ServiceNotFoundError",
+    "DependencyResolver",
+    "ResolverError",
+    "CircularDependencyError",
+    "MissingDependencyError",
+    "CapabilityBroker",
+    "PermissionDeniedError",
+    "LegacyPluginAdapter",
 ]

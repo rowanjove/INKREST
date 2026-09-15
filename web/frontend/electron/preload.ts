@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type { PetSettings } from './pet-settings';
+import type { UpdateSettings } from './updater/update-settings';
+import type { UpdaterStatusSnapshot } from './updater/auto-updater';
 
 type BackendState = 'online' | 'offline' | 'restarting';
 
@@ -49,6 +51,16 @@ export interface ElectronAPI {
   onError: (callback: (data: unknown) => void) => () => void;
   getBackendStatus: () => Promise<BackendStatusSnapshot>;
   onBackendStatus: (callback: (status: BackendStatusSnapshot) => void) => () => void;
+
+  // Software updater
+  getUpdateSettings: () => Promise<UpdateSettings>;
+  updateUpdateSettings: (patch: Partial<UpdateSettings>) => Promise<UpdateSettings>;
+  getUpdateStatus: () => Promise<UpdaterStatusSnapshot>;
+  checkForUpdates: () => Promise<void>;
+  downloadUpdate: () => Promise<void>;
+  quitAndInstall: () => Promise<void>;
+  openReleasePage: (url?: string) => Promise<void>;
+  onUpdateStatus: (callback: (status: UpdaterStatusSnapshot) => void) => () => void;
 }
 
 const electronAPI: ElectronAPI = {
@@ -104,6 +116,20 @@ const electronAPI: ElectronAPI = {
       callback(parseBackendStatusSnapshot(status));
     ipcRenderer.on('backend:status', handler);
     return () => ipcRenderer.removeListener('backend:status', handler);
+  },
+
+  // Software updater
+  getUpdateSettings: () => ipcRenderer.invoke('updater:getSettings'),
+  updateUpdateSettings: (patch) => ipcRenderer.invoke('updater:updateSettings', patch),
+  getUpdateStatus: () => ipcRenderer.invoke('updater:getStatus'),
+  checkForUpdates: () => ipcRenderer.invoke('updater:checkForUpdates'),
+  downloadUpdate: () => ipcRenderer.invoke('updater:downloadUpdate'),
+  quitAndInstall: () => ipcRenderer.invoke('updater:quitAndInstall'),
+  openReleasePage: (url) => ipcRenderer.invoke('updater:openReleasePage', url),
+  onUpdateStatus: (callback) => {
+    const handler = (_event: IpcRendererEvent, status: UpdaterStatusSnapshot) => callback(status);
+    ipcRenderer.on('updater:status', handler);
+    return () => ipcRenderer.removeListener('updater:status', handler);
   },
 };
 

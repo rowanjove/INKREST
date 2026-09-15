@@ -31,14 +31,12 @@ defineProps<{
 
 <template>
 <!-- Global Chapter Filter Slider -->
-        <el-card class="filter-card" style="margin-bottom: 20px; margin-top: 10px;">
-          <template #header>
-            <div class="card-header-flex">
-              <span style="font-weight: bold; font-size: 15px">章节范围过滤</span>
-              <span style="font-size: 13px; color: #909399">当前显示：第 {{ chapterRange[0] }} 章 至 第 {{ chapterRange[1] }} 章</span>
-            </div>
-          </template>
-          <div style="padding: 0 10px 10px 10px">
+        <section class="state-filter-panel">
+          <div class="card-header-flex">
+            <strong>章节范围</strong>
+            <span>第 {{ chapterRange[0] }} 章 至第 {{ chapterRange[1] }} 章</span>
+          </div>
+          <div class="state-filter-slider">
             <el-slider
               v-model="chapterRange"
               range
@@ -47,10 +45,10 @@ defineProps<{
               :marks="sliderMarks"
             />
           </div>
-        </el-card>
+        </section>
 
         <!-- State Tabs -->
-        <el-tabs v-model="activeTab" type="border-card" class="state-tabs">
+        <el-tabs v-model="activeTab" class="state-tabs">
           
           <!-- Characters Tab -->
           <el-tab-pane label="人物图鉴" name="characters">
@@ -206,9 +204,22 @@ defineProps<{
   align-items: center;
 }
 
+.card-header-flex strong { color: var(--color-text-strong); font-size: 14px; }
+.card-header-flex span { color: var(--color-text-muted); font-size: 12px; }
+.state-filter-panel {
+  margin-bottom: var(--space-4);
+  padding: var(--space-4) var(--space-5) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+}
+.state-filter-slider { padding: var(--space-2) var(--space-2) 0; }
+
 .state-tabs{
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  padding: 0 var(--space-4) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
 }
 
 .pagination-container{

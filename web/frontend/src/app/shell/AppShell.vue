@@ -13,6 +13,9 @@ const CommandPalette = defineAsyncComponent(() => import('../commands/CommandPal
 const DiagnosticsDrawer = defineAsyncComponent(
   () => import('../diagnostics/DiagnosticsDrawer.vue'),
 )
+const InAppPetAssistant = defineAsyncComponent(
+  () => import('../../components/pet/InAppPetAssistant.vue'),
+)
 
 const props = defineProps<{
   backendStatus: BackendStatus
@@ -92,6 +95,7 @@ onBeforeUnmount(() => {
       :backend-status="backendStatus"
       :backend-unreachable="backendUnreachable"
     />
+    <InAppPetAssistant />
   </div>
 </template>
 

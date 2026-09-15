@@ -127,9 +127,8 @@ defineEmits<{
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   background: var(--color-bg-surface);
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 
 .editor-toolbar {
@@ -171,7 +170,7 @@ defineEmits<{
 
 .editor-toolbar p {
   margin: 4px 0 0;
-  color: #7b8494;
+  color: var(--color-text-muted);
   font-size: 13px;
 }
 
@@ -193,14 +192,14 @@ defineEmits<{
   gap: 10px;
   padding: 14px;
   border-right: 1px solid var(--color-border-subtle);
-  background: #fbfcfe;
+  background: var(--color-bg-surface-muted);
 }
 
 .inspector-card {
   display: grid;
   gap: 6px;
   padding: 12px;
-  border: 1px solid #e5eaf2;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-bg-surface);
 }
@@ -212,7 +211,7 @@ defineEmits<{
 }
 
 .inspector-card strong {
-  color: #111827;
+  color: var(--color-text-strong);
   font-size: 14px;
 }
 
@@ -228,7 +227,7 @@ defineEmits<{
 .block-list button {
   overflow: hidden;
   padding: 6px 8px;
-  border: 1px solid #e5eaf2;
+  border: 1px solid var(--color-border);
   border-radius: 7px;
   background: var(--color-bg-surface-muted);
   color: var(--color-text-muted);

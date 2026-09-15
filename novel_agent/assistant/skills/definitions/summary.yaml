@@ -1,0 +1,11 @@
+id: summary
+name: 章节摘要
+command: /总结
+description: 生成当前章节正文的结构化摘要与事实记录
+model_policy: economy
+produces_patch: false
+system_instruction: >
+  请对当前章节正文提取精炼的结构化摘要：
+  1. 发生了什么关键事件（200字内）；
+  2. 哪些人物的状态或关系发生了变化；
+  3. 获得了什么道具或发现了什么新秘密。

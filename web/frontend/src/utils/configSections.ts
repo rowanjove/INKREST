@@ -12,9 +12,18 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
 export const CONFIG_SECTION_ALIASES: Record<string, string> = {
   appearance: 'system-data',
   models: 'models-providers',
+  'model-library': 'models-providers',
   'embedding-config': 'memory',
   'pipeline-runtime': 'generation-quality',
   'llm-routing': 'models-providers',
   'writing-rules': 'writing-layout',
   'agent-bridge': 'extensions',
+  'software-update': 'system-data',
+  updater: 'system-data',
+  'system-readiness': 'system-data',
+  'commercial-center': 'system-data',
+  commercial: 'system-data',
+  license: 'system-data',
+  recovery: 'system-data',
+  budget: 'system-data',
 }

@@ -15,11 +15,13 @@ class SQLiteWriteQueue:
 
     @classmethod
     def get_instance(cls, db_path: Path):
-        db_path_str = str(db_path.resolve())
+        canonical = str(Path(db_path).resolve())
+        if sys.platform == "win32":
+            canonical = canonical.lower()
         with cls._lock:
-            if db_path_str not in cls._instances:
-                cls._instances[db_path_str] = cls(db_path)
-            return cls._instances[db_path_str]
+            if canonical not in cls._instances:
+                cls._instances[canonical] = cls(Path(canonical) if sys.platform == "win32" else db_path)
+            return cls._instances[canonical]
 
     def __init__(self, db_path: Path):
         self.db_path = db_path
@@ -124,6 +126,7 @@ class SchemaMixin:
     """Contains schema initialization and dynamic migration logic for SQLiteStateStore."""
     db_path: Path
 
+    @db_write_lock
     def _init_schema(self) -> None:
         with safe_connection(self.db_path) as conn:
             conn.executescript(
@@ -489,6 +492,72 @@ class SchemaMixin:
                   updated_at datetime default current_timestamp
                 );
                 create unique index if not exists idx_reader_feedback_chapter_id on reader_feedback(chapter_id);
+
+                -- Human Writing Engine (HWE) tables
+                create table if not exists hwe_reports (
+                  id text primary key,
+                  chapter_id text,
+                  document_revision_id text,
+                  engine_version text not null default '1.0.0',
+                  ruleset_version text not null default '',
+                  mode text not null default 'assist',
+                  char_count integer not null default 0,
+                  overall_score real not null default 100.0,
+                  template_risk real not null default 0.0,
+                  scores_json text not null default '{}',
+                  issue_counts_by_family text not null default '{}',
+                  issue_counts_by_severity text not null default '{}',
+                  summary text not null default '',
+                  created_at datetime default current_timestamp
+                );
+                create index if not exists idx_hwe_reports_chapter
+                  on hwe_reports(chapter_id, created_at desc);
+
+                create table if not exists hwe_issues (
+                  id text primary key,
+                  report_id text not null,
+                  chapter_id text,
+                  rule_id text not null,
+                  family text not null,
+                  severity text not null,
+                  confidence real not null default 0.0,
+                  start_pos integer not null,
+                  end_pos integer not null,
+                  matched_text text not null default '',
+                  why text not null default '',
+                  fix text not null default '',
+                  status text not null default 'open',
+                  resolution_note text default '',
+                  created_at datetime default current_timestamp
+                );
+                create index if not exists idx_hwe_issues_report on hwe_issues(report_id);
+                create index if not exists idx_hwe_issues_chapter_status on hwe_issues(chapter_id, status);
+                create index if not exists idx_hwe_issues_rule on hwe_issues(rule_id);
+
+                create table if not exists hwe_patches (
+                  id text primary key,
+                  report_id text,
+                  chapter_id text,
+                  target_start integer not null,
+                  target_end integer not null,
+                  original_text text not null,
+                  patched_text text not null,
+                  issues_addressed text not null default '[]',
+                  status text not null default 'applied',
+                  created_at datetime default current_timestamp
+                );
+                create index if not exists idx_hwe_patches_chapter on hwe_patches(chapter_id, created_at desc);
+
+                create table if not exists hwe_preferences (
+                  id text primary key,
+                  project_id text not null default '',
+                  preference_key text not null,
+                  rule_id text default '',
+                  value_json text not null default '{}',
+                  updated_at datetime default current_timestamp,
+                  unique(project_id, preference_key, rule_id)
+                );
+                create index if not exists idx_hwe_preferences_proj on hwe_preferences(project_id, preference_key);
                 """
             )
             self._ensure_marker_columns(conn)
@@ -597,7 +666,11 @@ class SchemaMixin:
         }
         for name, declaration in v2_columns.items():
             if name not in columns:
-                conn.execute(f"alter table tasks add column {name} {declaration}")
+                try:
+                    conn.execute(f"alter table tasks add column {name} {declaration}")
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column" not in str(exc).lower():
+                        raise
         conn.execute(
             """
             create index if not exists idx_tasks_project_status
@@ -632,14 +705,21 @@ class SchemaMixin:
         }
         for name, declaration in additions.items():
             if name not in columns:
-                conn.execute(f"alter table llm_cost_log add column {name} {declaration}")
+                try:
+                    conn.execute(f"alter table llm_cost_log add column {name} {declaration}")
+                except sqlite3.OperationalError as extra_exc:
+                    if "duplicate column" not in str(extra_exc).lower():
+                        raise
         conn.execute(
             "create index if not exists idx_llm_cost_call_id on llm_cost_log(call_id)"
         )
-        conn.execute(
-            "create unique index if not exists uq_llm_cost_call_id "
-            "on llm_cost_log(call_id) where call_id is not null and call_id != ''"
-        )
+        try:
+            conn.execute(
+                "create unique index if not exists uq_llm_cost_call_id "
+                "on llm_cost_log(call_id) where call_id is not null and call_id != ''"
+            )
+        except (sqlite3.OperationalError, sqlite3.IntegrityError):
+            pass
         conn.execute(
             "create index if not exists idx_llm_cost_project_created "
             "on llm_cost_log(project_id, created_at)"
@@ -653,7 +733,11 @@ class SchemaMixin:
             }
             for name in ("deadline_chapter", "reveal_chapter", "pressure_level", "related_characters", "user_priority", "plan_chapter"):
                 if name not in columns:
-                    if name == "user_priority":
-                        conn.execute(f"alter table {table} add column {name} integer default 0")
-                    else:
-                        conn.execute(f"alter table {table} add column {name} text")
+                    try:
+                        if name == "user_priority":
+                            conn.execute(f"alter table {table} add column {name} integer default 0")
+                        else:
+                            conn.execute(f"alter table {table} add column {name} text")
+                    except sqlite3.OperationalError as extra_exc:
+                        if "duplicate column" not in str(extra_exc).lower():
+                            raise

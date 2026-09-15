@@ -125,16 +125,25 @@ def assemble_hierarchical_context(
         elif end_ch < ch_num:
             completed_arcs.append(arc)
 
+    sqlite_summaries = _sqlite_chapter_summaries(root)
+
     l1_parts = []
     if completed_arcs:
         past_summaries = []
         for arc in completed_arcs[-3:]:
             name = arc.get("arc_name") or arc.get("title") or f"第{arc.get('arc_id', '')}卷"
-            goal = arc.get("goal") or arc.get("summary") or ""
+            goal = str(arc.get("goal") or arc.get("summary") or "").strip()
+            if not goal:
+                start_ch, end_ch = _arc_chapter_span(arc)
+                rolled = []
+                for number in range(start_ch, end_ch + 1):
+                    text = _lookup_summary(sqlite_summaries, str(number))
+                    if text:
+                        rolled.append(text[:80])
+                if rolled:
+                    goal = "；".join(rolled[-3:])
             past_summaries.append(f"• {name}（已完结）: {goal[:100]}")
         l1_parts.append("前序分卷里程碑:\n" + "\n".join(past_summaries))
-
-    sqlite_summaries = _sqlite_chapter_summaries(root)
 
     if current_arc_info:
         curr_name = (

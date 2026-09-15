@@ -33,14 +33,50 @@ export async function waitForQueueTask(
     throw error
   }
 
+  const throwWithoutAbort = (message: string, name: string) => {
+    const error = new Error(message)
+    error.name = name
+    throw error
+  }
+
+  const waitBeforePoll = async () => {
+    if (delay) {
+      await delay(1000, signal)
+      return
+    }
+    await new Promise<void>((resolve, reject) => {
+      if (signal.aborted) {
+        const error = new Error('同步卷队列已取消')
+        error.name = 'CanceledError'
+        reject(error)
+        return
+      }
+      let timer: ReturnType<typeof setTimeout>
+      const onAbort = () => {
+        clearTimeout(timer)
+        const error = new Error('同步卷队列已取消')
+        error.name = 'CanceledError'
+        reject(error)
+      }
+      timer = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort)
+        resolve()
+      }, 1000)
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+  }
+
   while (true) {
     if (now() - startedAt > budgetMs) {
-      await abortAndThrow('同步卷队列超时，请到日志中心查看详情。')
+      throwWithoutAbort(
+        '同步卷队列仍在后台运行，请到生产中心或日志查看进度，不要重复提交。',
+        'QueueWaitTimeoutError',
+      )
     }
     if (signal.aborted) {
       await abortAndThrow('同步卷队列已取消', 'CanceledError')
     }
-    let data: { status?: string; error?: string; status_reason?: string }
+    let data: { status?: string; error?: string; status_reason?: string } = {}
     try {
       const response = await client.getTask(taskId, {
         signal,
@@ -51,7 +87,11 @@ export async function waitForQueueTask(
       if (signal.aborted || error?.name === 'CanceledError') {
         await abortAndThrow('同步卷队列已取消', 'CanceledError')
       }
-      await abortAndThrow('同步卷队列超时，请到日志中心查看详情。')
+      // A single HTTP timeout/disconnect does not mean the backend task has
+      // failed. Keep polling inside the total budget; only the total-budget
+      // branch above is allowed to abort server-side work.
+      await waitBeforePoll()
+      continue
     }
     const status = String(data.status || '').toLowerCase()
     if (status === 'succeeded' || status === 'completed') return { data }
@@ -65,26 +105,6 @@ export async function waitForQueueTask(
       error.name = 'CanceledError'
       throw error
     }
-    if (delay) {
-      await delay(1000, signal)
-      continue
-    } else {
-      await new Promise<void>((resolve, reject) => {
-        if (signal.aborted) {
-          const error = new Error('同步卷队列已取消')
-          error.name = 'CanceledError'
-          reject(error)
-          return
-        }
-        const timer = setTimeout(resolve, 1000)
-        const onAbort = () => {
-          clearTimeout(timer)
-          const error = new Error('同步卷队列已取消')
-          error.name = 'CanceledError'
-          reject(error)
-        }
-        signal.addEventListener('abort', onAbort, { once: true })
-      })
-    }
+    await waitBeforePoll()
   }
 }

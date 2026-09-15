@@ -31,6 +31,9 @@ def __getattr__(name: str):
     if name == "preset_manager":
         from web.preset_manager import PresetManager
         return PresetManager(BASE_DIR)
+    import web.helpers as ws_helpers
+    if hasattr(ws_helpers, name):
+        return getattr(ws_helpers, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -179,7 +182,11 @@ def merged_plugin_catalog() -> list:
         return global_cat
     by_name = {item.get("name"): item for item in global_cat}
     for item in get_plugin_manager().list_plugin_catalog():
-        by_name[item.get("name")] = item
+        name = item.get("name")
+        existing = by_name.get(name)
+        if existing and existing.get("plugin_type") == "web_extension":
+            continue
+        by_name[name] = item
     return [item for item in by_name.values() if item]
 
 
@@ -203,3 +210,35 @@ def merged_plugin_navigation() -> dict:
             merged["project_sidebar"].append(item)
             seen_proj.add(item.get("id"))
     return merged
+
+
+def merged_plugin_frontends() -> dict:
+    """Return a safe, static frontend manifest derived from trusted navigation data."""
+    navigation = merged_plugin_navigation()
+    pages_by_plugin: dict[str, dict] = {}
+    for surface, items in navigation.items():
+        for item in items or []:
+            plugin_id = str(item.get("plugin_id") or "")
+            view_id = str(item.get("view") or "")
+            if not plugin_id or not view_id:
+                continue
+            record = pages_by_plugin.setdefault(
+                plugin_id,
+                {
+                    "plugin_id": plugin_id,
+                    "name": item.get("plugin_name") or plugin_id,
+                    "scope": "global" if surface == "library_sidebar" else "project",
+                    "icon": item.get("icon") or "extensions",
+                    "pages": [],
+                },
+            )
+            record["pages"].append(
+                {
+                    "id": view_id,
+                    "title": item.get("title") or view_id,
+                    "surface": surface,
+                    "path": item.get("path"),
+                    "entry": f"/api/plugins/{plugin_id}/views/{view_id}/document",
+                }
+            )
+    return {"plugins": list(pages_by_plugin.values())}

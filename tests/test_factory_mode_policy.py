@@ -66,6 +66,13 @@ class FactoryModePolicyTests(unittest.TestCase):
         self.assertNotIn("quality_mode", effects)
         self.assertNotIn("factory_mode", effects)
 
+    def test_readiness_warns_when_factory_mode_is_implicit(self):
+        self._write_outline("medium")
+        report = build_readiness_report(self.tmpdir)
+        self.assertTrue(
+            any("未保存工厂模式" in str(item) for item in report.get("warnings") or [])
+        )
+
     def test_newbie_auto_explicit_sets_block_on_fail(self):
         self._write_meta("newbie_auto")
         self._write_pipeline(chapter={"quality_mode": "report_only"})

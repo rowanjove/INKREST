@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePetEdgeDock } from './usePetEdgeDock'
 import { usePetStore } from '../stores/pet'
 
@@ -11,6 +11,22 @@ export function usePetWindowInteraction() {
   const activePointerId = ref<number | null>(null)
   const pokeText = ref<string>('')
   const isPoked = ref<boolean>(false)
+
+  watch(
+    () => pet.edgeAlertMessage,
+    (msg) => {
+      if (msg) {
+        pokeText.value = msg
+        isPoked.value = true
+        if (pokeClearTimer) window.clearTimeout(pokeClearTimer)
+        pokeClearTimer = window.setTimeout(() => {
+          pokeText.value = ''
+          isPoked.value = false
+          pokeClearTimer = null
+        }, 4200)
+      }
+    },
+  )
 
   let clickTimer: number | null = null
   let hideTimer: number | null = null

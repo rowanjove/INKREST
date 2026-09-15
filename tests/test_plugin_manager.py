@@ -1,8 +1,11 @@
+import io
+import json
 import shutil
 import tempfile
 import unittest
 import uuid
-from unittest.mock import patch
+import zipfile
+from unittest.mock import MagicMock, patch
 from pathlib import Path
 
 import yaml
@@ -20,7 +23,7 @@ from novel_agent.plugins.base import (
     PluginType,
     QualityGuardPlugin,
 )
-from web.routes.plugins import _reload_plugin_manager
+from web.routes.plugins import _manager_for, _reload_plugin_manager
 from web.app import app as web_app
 from web.app import _mounted_web_extensions, _require_enabled_web_extension, mount_plugin_web_extensions
 
@@ -281,6 +284,65 @@ PLUGIN_CLASS = TestHook
 
         self.assertNotIn("project_web", pm.plugins)
 
+    def test_web_extension_routes_to_global_manager_when_catalogs_overlap(self):
+        project_pm = MagicMock()
+        project_pm.plugins = {}
+        project_pm.list_plugin_catalog.return_value = [
+            {"name": "script_murder", "plugin_type": "web_extension"}
+        ]
+        global_pm = MagicMock()
+        global_pm.plugins = {}
+        global_pm.list_plugin_catalog.return_value = [
+            {"name": "script_murder", "plugin_type": "web_extension"}
+        ]
+
+        with (
+            patch("web.routes.plugins.get_plugin_manager", return_value=project_pm),
+            patch("web.routes.plugins.get_global_plugin_manager", return_value=global_pm),
+        ):
+            self.assertIs(_manager_for("script_murder"), global_pm)
+
+    def test_install_web_extension_uses_global_manager_with_active_project(self):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr(
+                "inkrest.plugin.json",
+                json.dumps(
+                    {
+                        "id": "script_murder",
+                        "version": "1.0.0",
+                        "display_name": "墨局",
+                        "plugin_type": "web_extension",
+                        "entry": "plugin:ScriptMurderPlugin",
+                    }
+                ),
+            )
+            package.writestr("plugin.py", "PLUGIN_CLASS = object\n")
+
+        project_pm = MagicMock()
+        global_pm = MagicMock()
+        global_pm.install_from_zip.return_value = {
+            "id": "script_murder",
+            "version": "1.0.0",
+            "display_name": "墨局",
+            "plugin_type": "web_extension",
+            "trusted": False,
+        }
+        client = TestClient(web_app)
+        with (
+            patch("web.routes.plugins.get_plugin_manager", return_value=project_pm),
+            patch("web.routes.plugins.get_global_plugin_manager", return_value=global_pm),
+            patch("web.routes.plugins._reload_plugin_manager"),
+        ):
+            response = client.post(
+                "/api/plugins/install",
+                files={"file": ("script_murder.zip", archive.getvalue(), "application/zip")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        global_pm.install_from_zip.assert_called_once()
+        project_pm.install_from_zip.assert_not_called()
+
     def test_reload_preserves_enabled_plugin_state(self):
         pm = PluginManager(self.temp_dir)
         pm.initialize()
@@ -342,10 +404,11 @@ PLUGIN_CLASS = TestHook
         self.assertEqual(ctx.exception.status_code, 404)
 
     def test_web_extension_route_can_be_mounted_after_reload(self):
-        route_path = f"/api/test-web-extension-{uuid.uuid4().hex}"
-        router = APIRouter()
+        route_path = f"/api/ext/test_dynamic/ping-{uuid.uuid4().hex}"
+        router = APIRouter(prefix="/api/ext/test_dynamic")
+        suffix = route_path.rsplit("/", 1)[-1]
 
-        @router.get(route_path)
+        @router.get(f"/{suffix}")
         def endpoint():
             return {"status": "ok"}
 
@@ -367,10 +430,11 @@ PLUGIN_CLASS = TestHook
             _mounted_web_extensions.pop("test_dynamic", None)
 
     def test_web_extension_route_requires_access_token_outside_api_prefix(self):
-        route_path = f"/extension-{uuid.uuid4().hex}"
-        router = APIRouter()
+        suffix = uuid.uuid4().hex
+        route_path = f"/api/ext/test_token_guard/{suffix}"
+        router = APIRouter(prefix="/api/ext/test_token_guard")
 
-        @router.get(route_path)
+        @router.get(f"/{suffix}")
         def endpoint():
             return {"status": "ok"}
 

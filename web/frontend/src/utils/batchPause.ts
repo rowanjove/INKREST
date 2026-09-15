@@ -24,3 +24,12 @@ export function formatBatchPauseReason(pauseReason?: string | null): string {
   const reason = String(pauseReason || 'circuit_breaker')
   return BATCH_PAUSE_LABELS[reason] || reason
 }
+
+export type ProductionResumeAction = 'resume' | 'observe' | 'start'
+
+export function productionResumeAction(status?: string | null): ProductionResumeAction {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (normalized === 'paused') return 'resume'
+  if (['pending', 'claimed', 'running'].includes(normalized)) return 'observe'
+  return 'start'
+}

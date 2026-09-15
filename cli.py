@@ -362,6 +362,175 @@ def calibrate_prose_cmd(args: argparse.Namespace) -> None:
         print(f"sample_count={profile.get('sample_count')}")
 
 
+def hwe_scan_cmd(args: argparse.Namespace) -> None:
+    """Execute HWE local prose scan from text or file."""
+    from novel_agent.human_writing.engine import HumanWritingEngine
+
+    text = ""
+    if getattr(args, "text", None):
+        text = args.text
+    elif getattr(args, "file", None):
+        path = Path(args.file)
+        if not path.exists():
+            print(f"Error: file not found: {path}", file=sys.stderr)
+            sys.exit(1)
+        text = path.read_text(encoding="utf-8")
+    else:
+        print("Error: either --text or --file must be specified", file=sys.stderr)
+        sys.exit(1)
+
+    engine = HumanWritingEngine()
+    chapter_id = getattr(args, "chapter", None)
+    report = engine.scan_text(text, chapter_id=chapter_id)
+
+    root_dir = Path(getattr(args, "root_dir", None) or getattr(args, "root", None) or ".")
+    if getattr(args, "save", False) and (root_dir / "data").exists():
+        store = SQLiteStateStore(root_dir)
+        store.save_hwe_report(report, chapter_id=chapter_id or "cli_scan")
+
+    fmt = getattr(args, "format", "table")
+    if fmt == "json":
+        print(json.dumps(report.model_dump(), ensure_ascii=False, indent=2))
+    else:
+        print("=== HWE 1.0 Prose Quality Scan Report ===")
+        print(f"Characters: {report.char_count} | Issues: {len(report.issues)}")
+        print(f"Overall Score: {report.scores.overall_score}/100 | Template Risk: {report.scores.template_risk}/100")
+        print(
+            f"Dimensions: 自然度={report.scores.naturalness} | 句式节奏={report.scores.rhythm} | "
+            f"描写新鲜度={report.scores.freshness} | 对白声线={report.scores.voice} | "
+            f"叙事克制={report.scores.narrative_trust}"
+        )
+        print(f"Summary: {report.summary}")
+        if report.issues:
+            print("\nIssues:")
+            for idx, issue in enumerate(report.issues, start=1):
+                print(f"  {idx}. [{issue.hwe.rule_id}] ({issue.severity}) @ {issue.hwe.start}-{issue.hwe.end}: {issue.hwe.matched_text}")
+                print(f"     Why: {issue.why}")
+                print(f"     Fix: {issue.fix}")
+
+
+def hwe_eval_cmd(args: argparse.Namespace) -> None:
+    """Execute HWE Eval Lab benchmark suite."""
+    from novel_agent.human_writing.eval import HWEEvalRunner
+
+    fixtures_dir = Path(args.fixtures_dir) if getattr(args, "fixtures_dir", None) else None
+    runner = HWEEvalRunner(fixtures_dir=fixtures_dir)
+    report = runner.run_eval()
+
+    fmt = getattr(args, "format", "table")
+    if fmt == "json":
+        print(json.dumps(report.model_dump(), ensure_ascii=False, indent=2))
+    else:
+        print("=== HWE 1.0 Benchmark Suite Results ===")
+        print(f"Total Cases: {report.metrics.total_cases} (Pos: {report.metrics.positive_cases}, Neg: {report.metrics.negative_cases})")
+        print(f"Precision: {report.metrics.precision:.4f} | Recall: {report.metrics.recall:.4f} | F1: {report.metrics.f1_score:.4f}")
+        print(f"False Positive Rate (FPR): {report.metrics.false_positive_rate * 100:.2f}% (Target < 5%: {'PASS' if report.fpr_target_met else 'FAIL'})")
+        print(f"Average Latency: {report.metrics.avg_latency_ms:.2f} ms")
+
+    if getattr(args, "assert_fpr", False) and not report.fpr_target_met:
+        print(f"Error: FPR target failed ({report.metrics.false_positive_rate * 100:.2f}% >= 5.0%)", file=sys.stderr)
+        sys.exit(1)
+
+
+def hwe_rebuild_memory_cmd(args: argparse.Namespace) -> None:
+    """Rebuild longform expression saturation and sliding window diagnostics."""
+    from novel_agent.human_writing.memory import (
+        extract_expression_entries_v2,
+        analyze_sliding_windows,
+        detect_chapter_ending_fingerprint_repetition,
+    )
+
+    root_dir = Path(getattr(args, "novel_root", None) or getattr(args, "root_dir", None) or getattr(args, "root", None) or ".")
+    chapters_dir = root_dir / "workspace" / "chapters"
+
+    chapter_texts: List[str] = []
+    if chapters_dir.exists():
+        for ch_dir in sorted(chapters_dir.glob("chapter_*")):
+            final_file = ch_dir / "chapter_final.txt"
+            if final_file.exists():
+                chapter_texts.append(final_file.read_text(encoding="utf-8"))
+
+    if not chapter_texts and (root_dir / "data" / "novel.sqlite").exists():
+        try:
+            store = SQLiteStateStore(root_dir)
+            if hasattr(store, "list_manuscript_documents"):
+                docs = store.list_manuscript_documents()
+                chapter_texts = [d["plain_text"] for d in docs if d.get("plain_text")]
+        except Exception:
+            pass
+
+    all_entries = []
+    for idx, text in enumerate(chapter_texts, start=1):
+        entries = extract_expression_entries_v2(text, chapter_id=str(idx))
+        all_entries.append(entries)
+
+    history_mappings = []
+    for entries in (all_entries[:-1] if len(all_entries) > 1 else all_entries):
+        for e in entries:
+            history_mappings.append(e.to_dict())
+
+    curr_entries = all_entries[-1] if all_entries else []
+    diagnostics = analyze_sliding_windows(
+        curr_entries,
+        history_mappings,
+        current_chapter_id=str(len(chapter_texts)) if chapter_texts else "1",
+    )
+    curr_text = chapter_texts[-1] if chapter_texts else ""
+    preceding = [(str(i), txt) for i, txt in enumerate(chapter_texts[:-1], start=1)]
+    ending_repeats = [i.text for i in detect_chapter_ending_fingerprint_repetition(curr_text, preceding)]
+
+    saturated = [d for d in diagnostics if d.is_saturated]
+
+    fmt = getattr(args, "format", "table")
+    payload = {
+        "total_chapters": len(chapter_texts),
+        "saturation_warning_count": len(saturated),
+        "ending_repeats": ending_repeats,
+        "diagnostics": [
+            {
+                "expression": d.expression,
+                "kind": d.kind,
+                "window_3_count": d.window_3_count,
+                "window_10_count": d.window_10_count,
+                "whole_book_count": d.whole_book_count,
+                "is_saturated": d.is_saturated,
+                "evidence_chapters": d.evidence_chapters,
+            }
+            for d in diagnostics
+        ],
+    }
+
+    if fmt == "json":
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print("=== HWE Longform Expression Memory Analysis ===")
+        print(f"Analyzed {len(chapter_texts)} chapters across sliding windows (3 / 10 / Whole).")
+        print(f"Saturation Warnings: {len(saturated)}")
+        for d in saturated[:5]:
+            print(f"  - [{d.kind}] '{d.expression}' (w3: {d.window_3_count}, w10: {d.window_10_count}, whole: {d.whole_book_count}) chapters: {d.evidence_chapters}")
+        if ending_repeats:
+            print(f"Ending Fingerprint Repeats: {len(ending_repeats)}")
+
+
+def plugin_cmd(args: argparse.Namespace) -> None:
+    from novel_agent.plugins.cli import plugin_init, plugin_validate, plugin_pack, plugin_test
+
+    sub = getattr(args, "plugin_subcommand", "")
+    if sub == "init":
+        p = plugin_init(args.name, ptype=args.ptype, dest_dir=Path(args.dest))
+        print(f"Created plugin scaffold at: {p.resolve()}")
+    elif sub == "validate":
+        res = plugin_validate(Path(args.target))
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+    elif sub == "pack":
+        out = Path(args.output) if args.output else None
+        p = plugin_pack(Path(args.source), output_zip=out)
+        print(f"Packaged plugin archive at: {p.resolve()}")
+    elif sub == "test":
+        res = plugin_test(Path(args.source))
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+
+
 def _normalize_argv(argv):
     if not argv:
         return ["--help"]
@@ -375,6 +544,11 @@ def _normalize_argv(argv):
         "query-timeline",
         "compress-assets",
         "calibrate-prose",
+        "agent",
+        "hwe-scan",
+        "hwe-eval",
+        "hwe-rebuild-memory",
+        "plugin",
     }
     if argv[0] in commands:
         return argv
@@ -505,6 +679,49 @@ def main() -> None:
     health = agent_sub.add_parser("health", help="API health (HTTP only)")
     health.set_defaults(func=agent_health_cmd)
 
+    hwe_scan_parser = subparsers.add_parser("hwe-scan", help="Scan prose for AI writing slop and style issues")
+    hwe_scan_parser.add_argument("--file", default=None, help="File path to scan")
+    hwe_scan_parser.add_argument("--text", default=None, help="Prose text string to scan")
+    hwe_scan_parser.add_argument("--chapter", default=None, help="Chapter ID")
+    hwe_scan_parser.add_argument("--root-dir", default=None, help="Project root directory")
+    hwe_scan_parser.add_argument("--root", default=None, help="Project root directory")
+    hwe_scan_parser.add_argument("--format", choices=["table", "json"], default="table", help="Output format")
+    hwe_scan_parser.add_argument("--save", action="store_true", help="Save scan report to SQLite database")
+
+    hwe_eval_parser = subparsers.add_parser("hwe-eval", help="Run Eval Lab benchmark suite")
+    hwe_eval_parser.add_argument("--fixtures-dir", default=None, help="Custom fixtures directory")
+    hwe_eval_parser.add_argument("--format", choices=["table", "json"], default="table", help="Output format")
+    hwe_eval_parser.add_argument("--assert-fpr", action="store_true", help="Fail if False Positive Rate >= 5%")
+
+    hwe_mem_parser = subparsers.add_parser("hwe-rebuild-memory", help="Rebuild longform expression memory and diagnostics")
+    hwe_mem_parser.add_argument("--novel-root", default=None, help="Workspace root")
+    hwe_mem_parser.add_argument("--root-dir", default=None, help="Workspace root")
+    hwe_mem_parser.add_argument("--root", default=None, help="Workspace root")
+    hwe_mem_parser.add_argument("--format", choices=["table", "json"], default="table", help="Output format")
+    hwe_mem_parser.add_argument("--save", action="store_true", help="Save memory state")
+
+    plugin_parser = subparsers.add_parser("plugin", help="Inkrest plugin developer suite")
+    plugin_sub = plugin_parser.add_subparsers(dest="plugin_subcommand", required=True)
+
+    # plugin init
+    init_p = plugin_sub.add_parser("init", help="Scaffold a new plugin")
+    init_p.add_argument("name", help="Plugin identifier/name")
+    init_p.add_argument("--type", dest="ptype", choices=["pipeline_hook", "command", "web_extension"], default="pipeline_hook", help="Plugin type")
+    init_p.add_argument("--dest", default="plugins", help="Destination parent directory")
+
+    # plugin validate
+    val_p = plugin_sub.add_parser("validate", help="Validate plugin manifest")
+    val_p.add_argument("target", help="Plugin directory or .zip file path")
+
+    # plugin pack
+    pack_p = plugin_sub.add_parser("pack", help="Package a plugin into a zip archive")
+    pack_p.add_argument("source", help="Plugin directory")
+    pack_p.add_argument("--output", default=None, help="Output zip file path")
+
+    # plugin test
+    test_p = plugin_sub.add_parser("test", help="Test plugin contract using Mock Test Host")
+    test_p.add_argument("source", help="Plugin directory")
+
     args = parser.parse_args(argv)
 
     if args.command == "run-chapter":
@@ -527,6 +744,14 @@ def main() -> None:
         calibrate_prose_cmd(args)
     elif args.command == "agent":
         args.func(args)
+    elif args.command == "hwe-scan":
+        hwe_scan_cmd(args)
+    elif args.command == "hwe-eval":
+        hwe_eval_cmd(args)
+    elif args.command == "hwe-rebuild-memory":
+        hwe_rebuild_memory_cmd(args)
+    elif args.command == "plugin":
+        plugin_cmd(args)
     else:
         parser.print_help()
 

@@ -11,20 +11,35 @@ import {
   apiErrorMessage,
   ensureNovelQueue,
 } from '../api'
+import { notifyAiActivity, notifyPipelineFinished } from '../utils/pipelineNotify'
 import { useTasksStore } from '../stores/tasks'
+import { useProjectStore } from '../stores/project'
+import { designScaleUpperLimit } from '../constants/scaleOptions'
 import { useOutlineMindmap } from './useOutlineMindmap'
+
+const sharedOutline = ref<Record<string, any> | null>(null)
+const sharedOutlineRevision = ref<{ revision: number; digest: string } | null>(null)
+const sharedProject = ref<any>(null)
+const sharedArcQueueStale = ref<{ stale?: boolean; message?: string } | null>(null)
 
 export function useOutlineView() {
   const tasksStore = useTasksStore()
+  const projectStore = useProjectStore()
   const loading = ref(false)
   const submitting = ref(false)
-  const outline = ref<Record<string, any> | null>(null)
-  const outlineRevision = ref<{ revision: number; digest: string } | null>(null)
-  const project = ref<any>(null)
+  const outline = sharedOutline
+  const outlineRevision = sharedOutlineRevision
+  const project = sharedProject
   const dialogVisible = ref(false)
   const editDialogVisible = ref(false)
 
-  const viewMode = ref<'mindmap' | 'classic'>('classic')
+  const viewMode = ref<'mindmap' | 'classic'>('mindmap')
+
+  const designUpperLimit = computed(() => {
+    const proj = projectStore.projects.find(p => p.id === project.value?.id) || project.value || projectStore.currentProject
+    const scaleKey = proj?.scale || proj?.scale_profile?.scale || ''
+    return designScaleUpperLimit(scaleKey, proj?.target_chapters)
+  })
 
   const form = ref({
     theme: '',
@@ -58,7 +73,7 @@ export function useOutlineView() {
   const newGuard = ref('')
   const customTitle = ref('')
 
-  const arcQueueStale = ref<{ stale?: boolean; message?: string } | null>(null)
+  const arcQueueStale = sharedArcQueueStale
   const arcSyncLoading = ref(false)
 
   const genreGenes = computed(() => outline.value?.genre_genes || {})
@@ -110,6 +125,7 @@ export function useOutlineView() {
     try {
       await ensureNovelQueue()
       await markArcQueueSynced()
+      arcQueueStale.value = { stale: false }
       await loadArcStale()
       ElMessage.success('卷队列已按当前大纲同步')
     } catch (error: any) {
@@ -132,7 +148,7 @@ export function useOutlineView() {
       outline.value = outlineData && Object.keys(outlineData).length ? outlineData : null
       form.value.theme = outline.value?.core_theme || projectData?.name || ''
       form.value.genre = outline.value?.genre_positioning || projectData?.genre || ''
-      form.value.target_chapters = projectData?.target_chapters || 20
+      form.value.target_chapters = outline.value?.target_chapters || designUpperLimit.value
 
       if (viewMode.value === 'mindmap' && outline.value) {
         scheduleConnectionUpdate()
@@ -143,12 +159,23 @@ export function useOutlineView() {
     }
   }
 
+  const openGenerateDialog = () => {
+    if (!outline.value) {
+      form.value.target_chapters = designUpperLimit.value
+    }
+    dialogVisible.value = true
+  }
+
   const submitOutline = async () => {
     if (!form.value.theme.trim()) {
       ElMessage.warning('先填写主题或核心卖点')
       return
     }
     submitting.value = true
+    notifyAiActivity(true, {
+      intent: '生成大纲',
+      message: '山山正在推演全书大纲与分卷设定…',
+    })
     try {
       const { data } = await generateOutline(form.value)
       outline.value = data
@@ -164,9 +191,12 @@ export function useOutlineView() {
       }
       await loadArcStale()
       scheduleConnectionUpdate()
+      notifyPipelineFinished(true)
     } catch (error: any) {
+      notifyPipelineFinished(false)
       ElMessage.error(error?.response?.data?.detail || error.message || '大纲生成失败')
     } finally {
+      notifyAiActivity(false)
       submitting.value = false
     }
   }
@@ -323,12 +353,14 @@ export function useOutlineView() {
     arcs,
     promises,
     targetChapters,
+    designUpperLimit,
     displayIndex,
     connections,
     setNodeRef,
     load,
     syncArcQueue,
     submitOutline,
+    openGenerateDialog,
     openEditDialog,
     selectChosenTitle,
     saveOutlineBasics,

@@ -4,6 +4,7 @@ import { Loading, Warning } from '@element-plus/icons-vue'
 
 import { closePluginViewSession, createPluginViewSession, fetchPluginViewDocument } from '../../api'
 import { usePluginNavigationStore } from '../../stores/pluginNavigation'
+import { useTheme } from '../../composables/useTheme'
 import { PluginRpcBridge } from './pluginRpc'
 import { wrapPluginViewHtml } from './pluginViewDocument'
 
@@ -15,6 +16,7 @@ const props = defineProps<{
 }>()
 
 const pluginNav = usePluginNavigationStore()
+const { resolvedTheme } = useTheme()
 
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 const loading = ref(true)
@@ -31,9 +33,13 @@ function getThemeTokens() {
   const style = getComputedStyle(document.documentElement)
   return {
     isDark,
-    primaryColor: style.getPropertyValue('--color-primary').trim() || '#c66f4f',
-    bgCard: style.getPropertyValue('--color-bg-card').trim() || '#1c1c20',
-    textPrimary: style.getPropertyValue('--color-text-primary').trim() || '#f0f0f2',
+    primaryColor: style.getPropertyValue('--color-primary').trim() || (isDark ? '#d4845f' : '#c66f4f'),
+    bgApp: style.getPropertyValue('--color-bg-app').trim() || (isDark ? '#0c1118' : '#f6f4f1'),
+    bgSurface: style.getPropertyValue('--color-bg-surface').trim() || (isDark ? '#141b24' : '#ffffff'),
+    bgCard: style.getPropertyValue('--color-bg-surface').trim() || (isDark ? '#141b24' : '#ffffff'),
+    textPrimary: style.getPropertyValue('--color-text').trim() || (isDark ? '#e2e8f0' : '#1f2937'),
+    textMuted: style.getPropertyValue('--color-text-muted').trim() || (isDark ? '#94a3b8' : '#697386'),
+    border: style.getPropertyValue('--color-border').trim() || (isDark ? '#2a3646' : '#e1e7ef'),
   }
 }
 
@@ -66,7 +72,13 @@ async function startSession() {
   viewTitle.value = ''
 
   try {
-    const res = await createPluginViewSession(props.pluginId, props.viewId, props.projectId)
+    const effectiveProjectId = props.surface === 'project_sidebar' ? props.projectId : undefined
+    const res = await createPluginViewSession(
+      props.pluginId,
+      props.viewId,
+      effectiveProjectId,
+      pluginNav.contextRevision,
+    )
     if (generation !== sessionGeneration.value) {
       try {
         await closePluginViewSession(props.pluginId, props.viewId, res.data.session_id)
@@ -140,11 +152,18 @@ async function retrySession() {
 watch(
   () => [props.pluginId, props.viewId, props.projectId],
   async () => {
+    pluginNav.incrementRevision()
     sessionGeneration.value += 1
     await teardownSession('project_change')
     await startSession()
   },
 )
+
+watch(resolvedTheme, () => {
+  if (bridge) {
+    bridge.sendTheme(getThemeTokens())
+  }
+})
 
 onMounted(() => {
   void startSession()
@@ -179,7 +198,7 @@ onBeforeUnmount(() => {
       <iframe
         ref="iframeRef"
         class="plugin-sandboxed-iframe"
-        sandbox="allow-scripts allow-forms"
+        sandbox="allow-scripts allow-forms allow-modals"
         title="Plugin view"
       />
     </div>
@@ -189,18 +208,22 @@ onBeforeUnmount(() => {
 <style scoped>
 .plugin-view-host {
   width: 100%;
-  min-height: 520px;
+  height: 100%;
+  min-height: 100%;
   position: relative;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  background: var(--color-bg-app);
 }
 
 .host-frame-wrapper {
   position: relative;
   width: 100%;
-  min-height: 520px;
+  height: 100%;
   flex: 1;
   display: flex;
+  background: var(--color-bg-app);
 }
 
 .host-loading {
@@ -211,7 +234,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  background: var(--color-bg-card);
+  background: var(--color-bg-app);
   color: var(--color-text-muted);
   font-size: 14px;
   z-index: 2;
@@ -224,9 +247,10 @@ onBeforeUnmount(() => {
 
 .plugin-sandboxed-iframe {
   width: 100%;
-  height: 560px;
+  height: 100%;
+  min-height: 100%;
   border: none;
-  background: transparent;
+  background: var(--color-bg-app);
   flex: 1;
 }
 

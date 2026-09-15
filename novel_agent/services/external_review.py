@@ -58,6 +58,9 @@ def set_external_review_status(
         chapters[chapter_id] = {
             "status": st,
             "note": note,
+            # Setting a status starts a fresh review item.  A prior dismissal
+            # must not hide the newly-pending external review.
+            "dismissed_at": None,
             "updated_at": datetime.now().isoformat(),
         }
     _save(root, data)
@@ -71,9 +74,23 @@ def get_external_review_status(root: Path, chapter_id: str) -> str:
 def list_pending_external(root: Path) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for cid, row in sorted(_load(root).get("chapters", {}).items()):
-        if row.get("status") == "pending_external":
+        if row.get("status") == "pending_external" and not row.get("dismissed_at"):
             out.append({"chapter_id": cid, **row})
     return out
+
+
+def dismiss_external_review(root: Path, chapter_id: str) -> bool:
+    """Hide one pending external-review alert while preserving its status."""
+    data = _load(root)
+    row = data.setdefault("chapters", {}).get(str(chapter_id))
+    if not isinstance(row, dict) or row.get("status") != "pending_external":
+        return False
+    if row.get("dismissed_at"):
+        return True
+    row["dismissed_at"] = datetime.now().isoformat()
+    row["updated_at"] = datetime.now().isoformat()
+    _save(root, data)
+    return True
 
 
 def count_pending_external(root: Path) -> int:

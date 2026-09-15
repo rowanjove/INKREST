@@ -26,15 +26,18 @@ def resolve_quality_mode(root_dir: Path) -> str:
     factory_mode = factory_effect(root_dir, "quality_mode")
     if isinstance(factory_mode, str) and factory_mode in VALID_QUALITY_MODES:
         return factory_mode
-    raw = load_pipeline_settings(root_dir).get("chapter", {}).get("quality_mode", "report_only")
-    mode = str(raw or "report_only").strip()
-    return mode if mode in VALID_QUALITY_MODES else "report_only"
+    raw = load_pipeline_settings(root_dir).get("chapter", {}).get("quality_mode", "block_on_fail")
+    mode = str(raw or "block_on_fail").strip()
+    return mode if mode in VALID_QUALITY_MODES else "block_on_fail"
 
 
 def quality_gate_blocks(report: Dict[str, Any], mode: str) -> bool:
     """Return True when the chapter should not proceed to post_audit persistence."""
     if mode != "block_on_fail":
         return False
+    decision = report.get("quality_decision")
+    if isinstance(decision, dict):
+        return str(decision.get("status") or "") in {"blocked", "incomplete"}
     audit = report.get("audit") or {}
     if isinstance(audit, dict) and str(audit.get("status") or "ok").lower() in {
         "error",

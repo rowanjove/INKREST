@@ -351,6 +351,8 @@ def test_embedding_config(
             
     else:
         import httpx
+        from web.outbound import model_httpx_transport
+
         api_key = req.api_key
         base_url = req.base_url
         model = req.model
@@ -359,7 +361,8 @@ def test_embedding_config(
             return {"success": False, "error": "在线向量检索需要配置 API Key。"}
             
         if provider == "zhipu":
-            test_url = "https://open.bigmodel.cn/api/paas/v4/embeddings"
+            root = _validated_model_base_url("https://open.bigmodel.cn/api/paas/v4")
+            test_url = f"{root}/embeddings"
             test_key = api_key
             test_model = "text-embedding-3"
         elif provider in ("dashscope", "bailian"):
@@ -380,7 +383,11 @@ def test_embedding_config(
         payload = {"model": test_model, "input": ["test"]}
         
         try:
-            with httpx.Client(timeout=30.0) as client:
+            client_kwargs: Dict[str, Any] = {"timeout": 30.0}
+            transport = model_httpx_transport(root, async_mode=False)
+            if transport is not None:
+                client_kwargs["transport"] = transport
+            with httpx.Client(**client_kwargs) as client:
                 resp = client.post(test_url, headers=headers, json=payload)
                 if resp.status_code == 200:
                     return {"success": True, "message": f"在线向量检索接口 ({provider}) 测试成功！通道已握手。"}

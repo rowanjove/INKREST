@@ -92,6 +92,9 @@ export interface ChatMessage {
   content: string
   actions?: Array<{ type: string; label: string; payload?: any }>
   suggestions?: string[]
+  chips?: Array<{ type: string; label: string; id: string }>
+  citations?: Array<{ source_type: string; source_id: string; title: string; snippet?: string }>
+  patch?: any
   streaming?: boolean
   timestamp: number
 }
@@ -155,6 +158,21 @@ export const usePetStore = defineStore('pet', () => {
   const diagnoseResult = ref<DiagnoseResult | null>(null)
   const diagnoseLoading = ref(false)
 
+  // ---- Realtime AI Activity & Edge Alert State ----
+  const aiActivityActive = ref(false)
+  const aiActivityMessage = ref('')
+  const edgeAlertMessage = ref('')
+  let edgeAlertTimer: number | null = null
+
+  function triggerEdgeAlert(msg: string) {
+    edgeAlertMessage.value = msg
+    if (edgeAlertTimer) window.clearTimeout(edgeAlertTimer)
+    edgeAlertTimer = window.setTimeout(() => {
+      edgeAlertMessage.value = ''
+      edgeAlertTimer = null
+    }, 4500)
+  }
+
   const novelBatchPaused = computed(() => Boolean(context.value?.novel_batch?.paused))
 
   const factoryState = computed(() => context.value?.factory?.factory_status?.state)
@@ -168,8 +186,7 @@ export const usePetStore = defineStore('pet', () => {
     if (factoryState.value === 'planning') return formatFactoryState('planning')
     if (state.value === 'working') return '正在生成'
     if (state.value === 'success') return '任务完成'
-    if (state.value === 'error') return '遇到错误'
-    if (state.value === 'question') return '疑惑'
+    if (state.value === 'error' || state.value === 'question') return '疑惑'
     if (state.value === 'offline') return '后端离线'
     if (state.value === 'dragging') return '移动中'
     if (state.value.startsWith('hide-')) return '已贴边隐藏'
@@ -185,6 +202,9 @@ export const usePetStore = defineStore('pet', () => {
   })
 
   const statusDetail = computed(() => {
+    if (aiActivityActive.value) {
+      return aiActivityMessage.value || '山山正在落笔创作中…'
+    }
     const factoryBrief = context.value?.factory?.operator_brief
     if (factoryBrief?.summary && (factoryState.value === 'blocked' || factoryState.value === 'planning')) {
       return factoryBrief.summary
@@ -242,6 +262,7 @@ export const usePetStore = defineStore('pet', () => {
   }
 
   function steadyStateForContext(next: AssistantContext | null): PetState {
+    if (aiActivityActive.value) return 'working'
     if (isRecentPipelineStart() && next?.backend_health === 'ok') return 'working'
     return mapContextToState(next)
   }
@@ -260,18 +281,19 @@ export const usePetStore = defineStore('pet', () => {
     }
   }
 
-  function flashTransientState(next: AssistantContext, flash: 'success' | 'error') {
+  function flashTransientState(next: AssistantContext, flash: 'success' | 'question' | 'error') {
     if (isHiddenAtEdge.value) return
     if (flash === 'success' && !settings.value.notifyOnTaskComplete) {
       state.value = mapContextToState(next)
       return
     }
-    if (flash === 'error' && !settings.value.notifyOnTaskError) {
+    const isErrorOrQuestion = flash === 'error' || flash === 'question'
+    if (isErrorOrQuestion && !settings.value.notifyOnTaskError) {
       state.value = mapContextToState(next)
       return
     }
     clearFlashTimer()
-    state.value = flash
+    state.value = isErrorOrQuestion ? 'question' : flash
     flashTimer = window.setTimeout(() => {
       state.value = mapContextToState(context.value)
       flashTimer = null
@@ -281,15 +303,9 @@ export const usePetStore = defineStore('pet', () => {
   function applyContextState(next: AssistantContext) {
     const remoteRunning = isPipelineRunning(next)
     const recentStart = isRecentPipelineStart()
-    const running = remoteRunning || recentStart
+    const running = remoteRunning || recentStart || aiActivityActive.value
     const activeFailed = countActiveFailed(next)
     const steady = steadyStateForContext(next)
-
-    if (isHiddenAtEdge.value) {
-      wasPipelineRunning = remoteRunning
-      lastActiveFailedCount = activeFailed
-      return
-    }
 
     if (flashTimer) {
       wasPipelineRunning = running
@@ -298,22 +314,38 @@ export const usePetStore = defineStore('pet', () => {
     }
 
     if (running) {
-      if (remoteRunning) {
+      if (remoteRunning || aiActivityActive.value) {
         wasPipelineRunning = true
       }
-      state.value = steady
+      if (!isHiddenAtEdge.value) {
+        state.value = steady
+      }
     } else if (wasPipelineRunning) {
       wasPipelineRunning = false
       const batchPaused = Boolean(next.novel_batch?.paused)
       if (activeFailed > 0 || batchPaused) {
-        flashTransientState(next, 'error')
+        if (!isHiddenAtEdge.value) {
+          flashTransientState(next, 'question')
+        } else {
+          triggerEdgeAlert('咦？遇到卡点啦，快来帮帮我～')
+        }
       } else {
-        flashTransientState(next, 'success')
+        if (!isHiddenAtEdge.value) {
+          flashTransientState(next, 'success')
+        } else {
+          triggerEdgeAlert('写完啦！快来看看～')
+        }
       }
     } else if (activeFailed > lastActiveFailedCount) {
-      flashTransientState(next, 'error')
+      if (!isHiddenAtEdge.value) {
+        flashTransientState(next, 'question')
+      } else {
+        triggerEdgeAlert('咦？遇到卡点啦～')
+      }
     } else {
-      state.value = steady
+      if (!isHiddenAtEdge.value) {
+        state.value = steady
+      }
     }
 
     lastActiveFailedCount = activeFailed
@@ -343,6 +375,13 @@ export const usePetStore = defineStore('pet', () => {
 
   async function loadSettings() {
     if (!window.electronAPI?.getPetSettings) {
+      try {
+        const cached = localStorage.getItem('inkrest_pet_settings')
+        if (cached) {
+          settings.value = { ...defaultSettings, ...JSON.parse(cached) }
+          return settings.value
+        }
+      } catch {}
       settings.value = { ...defaultSettings }
       return settings.value
     }
@@ -353,6 +392,9 @@ export const usePetStore = defineStore('pet', () => {
   async function updateSettings(patch: Partial<PetSettings>) {
     if (!window.electronAPI?.updatePetSettings) {
       settings.value = { ...settings.value, ...patch }
+      try {
+        localStorage.setItem('inkrest_pet_settings', JSON.stringify(settings.value))
+      } catch {}
       return settings.value
     }
     settings.value = await window.electronAPI.updatePetSettings(patch)
@@ -417,14 +459,52 @@ export const usePetStore = defineStore('pet', () => {
     }
   }
 
+  function handleAiActiveEvent(event: any) {
+    const detail = event?.detail || event?.data || {}
+    aiActivityActive.value = true
+    aiActivityMessage.value = detail.message || detail.intent || '山山正在落笔创作中…'
+    if (!isHiddenAtEdge.value && !flashTimer) {
+      state.value = 'working'
+    }
+  }
+
+  function handleAiIdleEvent() {
+    aiActivityActive.value = false
+    aiActivityMessage.value = ''
+    if (!isHiddenAtEdge.value && !flashTimer) {
+      state.value = steadyStateForContext(context.value)
+    }
+    void refreshContext()
+  }
+
+  function handlePipelineFinishedEvent(event: any) {
+    aiActivityActive.value = false
+    aiActivityMessage.value = ''
+    const detail = event?.detail || event?.data || {}
+    const isSuccess = detail.success !== false
+    if (!isHiddenAtEdge.value) {
+      flashTransientState(context.value || ({} as any), isSuccess ? 'success' : 'question')
+    } else {
+      triggerEdgeAlert(isSuccess ? '写完啦！快来看看～' : '咦？好像卡住了，快来帮帮我～')
+    }
+    void refreshContext()
+  }
+
   function bindPipelineChannel() {
     if (pipelineChannel || typeof BroadcastChannel === 'undefined') return
     pipelineChannel = new BroadcastChannel('inkrest-pipeline')
     pipelineChannel.onmessage = (event) => {
-      if (event.data?.type === 'started' || event.data?.type === 'pulse') {
+      const type = event.data?.type
+      if (event.data?.type === 'started' || type === 'pulse') {
         markPipelineActivityStarted()
+        void refreshContext()
+      } else if (type === 'ai-active') {
+        handleAiActiveEvent(event)
+      } else if (type === 'ai-idle') {
+        handleAiIdleEvent()
+      } else if (type === 'finished') {
+        handlePipelineFinishedEvent(event)
       }
-      void refreshContext()
     }
   }
 
@@ -438,6 +518,9 @@ export const usePetStore = defineStore('pet', () => {
     petPollingActive = true
     syncIgnoredFailedTasks()
     window.addEventListener('storage', syncIgnoredFailedTasks)
+    window.addEventListener('inkrest-ai-active', handleAiActiveEvent)
+    window.addEventListener('inkrest-ai-idle', handleAiIdleEvent)
+    window.addEventListener('inkrest-pipeline-finished', handlePipelineFinishedEvent)
     bindPipelineChannel()
     subscribePolling(PET_POLL_KEY, refreshContext, 1800)
   }
@@ -446,6 +529,9 @@ export const usePetStore = defineStore('pet', () => {
     if (!petPollingActive) return
     petPollingActive = false
     window.removeEventListener('storage', syncIgnoredFailedTasks)
+    window.removeEventListener('inkrest-ai-active', handleAiActiveEvent)
+    window.removeEventListener('inkrest-ai-idle', handleAiIdleEvent)
+    window.removeEventListener('inkrest-pipeline-finished', handlePipelineFinishedEvent)
     unbindPipelineChannel()
     clearFlashTimer()
     unsubscribePolling(PET_POLL_KEY)
@@ -470,10 +556,23 @@ export const usePetStore = defineStore('pet', () => {
       '作者加油，今天的大纲灵感理顺了吗？',
       '文思泉涌的话，正文页走起～',
     ],
+    docked: [
+      '被你发现啦～暗中盯稿中！',
+      '我在边边看你写呢，继续加油呀～',
+      '探头～有什么需要山山帮忙的吗？',
+      '嘘～边边位置采光好，正在暗中观察！',
+    ],
     working: [
       '正在全力生成中，字斟句酌呢！',
       '别急别急，这章流水线正写着～',
       '流水线正在运转，稍候片刻就能看稿了。',
+      '文思泉涌，正在落笔中～',
+    ],
+    question: [
+      '哎呀，这一章门禁好像卡住了，快点开我看看排障建议吧！',
+      '任务有点小异常，去生产中心审校队列瞅瞅？',
+      '遇到报错莫慌，山山帮你理一理原因。',
+      '咦？剧情卡住了，快点开我看看出了什么状况～',
     ],
     error: [
       '哎呀，这一章门禁好像卡住了，快点开我看看排障建议吧！',
@@ -491,13 +590,21 @@ export const usePetStore = defineStore('pet', () => {
 
   function getPokeReactionLine(): string {
     const current = state.value
-    const category = current.startsWith('hide-') ? 'idle' : current in SHANSHAN_POKE_MAP ? current : 'idle'
+    if (current.startsWith('hide-')) {
+      const lines = SHANSHAN_POKE_MAP.docked || SHANSHAN_POKE_MAP.idle
+      return lines[Math.floor(Math.random() * lines.length)]!
+    }
+    if (current === 'working' || aiActivityActive.value) {
+      const lines = SHANSHAN_POKE_MAP.working
+      return lines[Math.floor(Math.random() * lines.length)]!
+    }
+    const category = current in SHANSHAN_POKE_MAP ? current : 'idle'
     const lines = SHANSHAN_POKE_MAP[category] || SHANSHAN_POKE_MAP.idle
     const idx = Math.floor(Math.random() * lines.length)
-    return lines[idx]
+    return lines[idx]!
   }
 
-  async function sendChatMessage(message: string) {
+  async function sendChatMessage(message: string, editorContext?: any, skillId?: string) {
     if (!message.trim() || chatLoading.value) return
     chatLoading.value = true
 
@@ -519,13 +626,16 @@ export const usePetStore = defineStore('pet', () => {
       content: '',
       actions: [],
       suggestions: [],
+      chips: [],
+      citations: [],
+      patch: null,
       streaming: true,
       timestamp: Date.now()
     })
 
     try {
       await sendAssistantChatStream(
-        { message, history: apiHistory },
+        { message, history: apiHistory, editor_context: editorContext, skill_id: skillId },
         (chunk: string) => {
           if (chatHistory.value[assistantMsgIdx]) {
             chatHistory.value[assistantMsgIdx].content += chunk
@@ -536,16 +646,27 @@ export const usePetStore = defineStore('pet', () => {
             chatHistory.value[assistantMsgIdx].content = result.reply || chatHistory.value[assistantMsgIdx].content
             chatHistory.value[assistantMsgIdx].actions = result.actions || []
             chatHistory.value[assistantMsgIdx].suggestions = result.suggestions || []
+            chatHistory.value[assistantMsgIdx].chips = result.chips || []
+            chatHistory.value[assistantMsgIdx].citations = result.citations || []
+            chatHistory.value[assistantMsgIdx].patch = result.patch || null
             chatHistory.value[assistantMsgIdx].streaming = false
           }
         },
         async (streamErr) => {
           try {
-            const { data } = await sendAssistantChat({ message, history: apiHistory })
+            const { data } = await sendAssistantChat({
+              message,
+              history: apiHistory,
+              editor_context: editorContext,
+              skill_id: skillId,
+            })
             if (chatHistory.value[assistantMsgIdx]) {
               chatHistory.value[assistantMsgIdx].content = data.reply
               chatHistory.value[assistantMsgIdx].actions = data.actions || []
               chatHistory.value[assistantMsgIdx].suggestions = data.suggestions || []
+              chatHistory.value[assistantMsgIdx].chips = data.chips || []
+              chatHistory.value[assistantMsgIdx].citations = data.citations || []
+              chatHistory.value[assistantMsgIdx].patch = data.patch || null
               chatHistory.value[assistantMsgIdx].streaming = false
             }
           } catch (fallbackErr: any) {
@@ -555,6 +676,12 @@ export const usePetStore = defineStore('pet', () => {
               )
               chatHistory.value[assistantMsgIdx].streaming = false
             }
+          }
+        },
+        (contextMeta) => {
+          if (chatHistory.value[assistantMsgIdx] && contextMeta) {
+            if (contextMeta.chips) chatHistory.value[assistantMsgIdx].chips = contextMeta.chips
+            if (contextMeta.citations) chatHistory.value[assistantMsgIdx].citations = contextMeta.citations
           }
         }
       )
@@ -696,5 +823,9 @@ export const usePetStore = defineStore('pet', () => {
     isHiddenAtEdge,
     setHiddenAtEdge,
     getPokeReactionLine,
+    aiActivityActive,
+    aiActivityMessage,
+    edgeAlertMessage,
+    triggerEdgeAlert,
   }
 })

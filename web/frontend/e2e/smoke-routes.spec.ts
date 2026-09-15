@@ -43,7 +43,7 @@ test.describe('route smoke coverage', () => {
   })
 
   test('planning canvas nodes remain visible and selectable', async ({ page, request }) => {
-    await openWithActiveProject(page, request, '/outline')
+    await openWithActiveProject(page, request, '/outline?view=cards')
     const outlineNode = page.locator('.vue-flow__node[data-id="A01"]')
     await expect(outlineNode).toBeVisible({ timeout: 15_000 })
     await outlineNode.click()

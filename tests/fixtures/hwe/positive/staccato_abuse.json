@@ -1,0 +1,9 @@
+{
+  "id": "pos_staccato_abuse_01",
+  "category": "rhythm",
+  "text": "风声急。刀光现。鲜血落。心跳快。夜色深。",
+  "expected_rules": [
+    "HWE.RHYTHM.STACCATO_ABUSE"
+  ],
+  "description": "连续短句机械碎切连击"
+}

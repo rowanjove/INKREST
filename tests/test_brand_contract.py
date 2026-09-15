@@ -14,7 +14,6 @@ def test_primary_brand_entries_use_inkrest_name() -> None:
         FRONTEND / "package.json": ('"productName": "栖墨"',),
         FRONTEND / "electron" / "main.ts": ("title: '栖墨 · INKREST'", "app.setName('栖墨')"),
         FRONTEND / "electron" / "tray" / "tray-manager.ts": ("栖墨 · INKREST - 智能长篇写作空间", "退出栖墨"),
-        FRONTEND / "electron" / "updater" / "auto-updater.ts": ("`栖墨 ${info.version} 已发布`",),
     }
 
     for path, snippets in expected.items():

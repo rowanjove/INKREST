@@ -713,6 +713,17 @@ class HistoryRepositoryMixin(HistoryLegacySearchMixin):
                 )
 
     @db_write_lock
+    def drop_chapter_index_rows(self, chapter_ids: List[str]) -> None:
+        """Remove chapters index rows only. Does not touch documents or narrative state."""
+        if not chapter_ids:
+            return
+        cids = [str(x) for x in chapter_ids]
+        with safe_connection(self.db_path) as conn:
+            with conn:
+                for chapter_id in cids:
+                    conn.execute("delete from chapters where id = ?", (chapter_id,))
+
+    @db_write_lock
     def delete_chapters_index(self, chapter_ids: List[str]) -> None:
         if not chapter_ids:
             return

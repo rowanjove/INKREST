@@ -119,7 +119,7 @@ class ModelLibrary:
             raise HTTPException(500, f"无法读取 models.json：{exc}") from exc
         if not isinstance(data, dict):
             raise HTTPException(500, "models.json 根节点必须是 JSON 对象。")
-        data.setdefault("slots", _default_slots())
+        slots = data.setdefault("slots", _default_slots())
         models = data.setdefault("models", {})
         changed = False
         project_config = self.root_dir / "config" / "models.json"
@@ -363,6 +363,8 @@ class ModelLibrary:
 
         if cfg.get("type") == "image":
             import httpx
+            from web.outbound import model_httpx_transport
+
             root = _validated_model_base_url(cfg.get("base_url") or "https://api.openai.com/v1")
             url = f"{root}/images/generations"
             headers = {
@@ -375,7 +377,19 @@ class ModelLibrary:
                 "n": 1
             }
             try:
-                with httpx.Client(proxy=cfg.get("proxy") or None, timeout=float(cfg.get("timeout", 30))) as client:
+                client_kwargs: Dict[str, Any] = {
+                    "proxy": cfg.get("proxy") or None,
+                    "timeout": float(cfg.get("timeout", 30)),
+                }
+                transport = model_httpx_transport(root, async_mode=False)
+                if transport is not None:
+                    if cfg.get("proxy"):
+                        raise ValueError(
+                            "Model proxy cannot be combined with DNS pinning; "
+                            "remove proxy or use a trusted local endpoint"
+                        )
+                    client_kwargs["transport"] = transport
+                with httpx.Client(**client_kwargs) as client:
                     resp = client.post(url, headers=headers, json=body)
                     if resp.status_code == 200:
                         res_data = resp.json()

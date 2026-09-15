@@ -6,7 +6,6 @@ import { getConfig, listModels, updateConfig } from '../api'
 const config = ref<any>({})
 const libraryModels = ref<any[]>([])
 const expanded = ref(false)
-const savingTiers = ref(false)
 const overrideDialogVisible = ref(false)
 const editingRole = ref('')
 const overrideModelRef = ref('')
@@ -64,27 +63,6 @@ const reasoningModelId = computed(
   () => config.value.llm?.reasoning_model_id || dailyModelId.value,
 )
 
-const dailySlotLabel = computed(() => {
-  const m = libraryModels.value.find((item: any) => item.id === dailyModelId.value)
-  return m ? `${m.name || m.id} (${m.model})` : dailyModelId.value ? `未在模型库 (${dailyModelId.value})` : '未设置 — 请到模型库选择日常档'
-})
-
-const reasoningSlotLabel = computed(() => {
-  const m = libraryModels.value.find((item: any) => item.id === reasoningModelId.value)
-  return m ? `${m.name || m.id} (${m.model})` : reasoningModelId.value ? `未在模型库 (${reasoningModelId.value})` : '未设置 — 请到模型库选择逻辑档'
-})
-
-const backupSlotLabel = computed(() => {
-  const ids: string[] = config.value.llm?.fallback_model_ids || []
-  if (!ids.length) return '无'
-  return ids
-    .map((id) => {
-      const m = libraryModels.value.find((item: any) => item.id === id)
-      return m ? m.name || m.id : id
-    })
-    .join(' → ')
-})
-
 const routeCount = computed(() => Object.keys(config.value.llm?.overrides || {}).length)
 
 const modelLabel = (modelId: string) => {
@@ -97,21 +75,6 @@ const getTierLabel = (row: any) => getTier(row) === 'reasoning' ? '逻辑档' : 
 const getTierModelId = (row: any) => getTier(row) === 'reasoning' ? reasoningModelId.value : dailyModelId.value
 const getOverride = (roleKey: string) => config.value.llm?.overrides?.[roleKey]
 const getOverrideModelRef = (roleKey: string) => getOverride(roleKey)?.model_ref || ''
-
-const saveTiers = async () => {
-  savingTiers.value = true
-  try {
-    const llm = ensureLlmConfig()
-    llm.role_tiers = Object.fromEntries(agentRoles.map(row => [row.key, getTier(row)]))
-    await updateConfig({ llm: ensureLlmConfig() })
-    ElMessage.success('Agent 档位映射已保存')
-    await loadConfig()
-  } catch (error: any) {
-    ElMessage.error(error.message || '保存失败')
-  } finally {
-    savingTiers.value = false
-  }
-}
 
 const openOverrideDialog = (roleKey: string) => {
   editingRole.value = roleKey
@@ -150,6 +113,15 @@ const removeOverride = async (roleKey: string) => {
   }
 }
 
+const props = withDefaults(
+  defineProps<{
+    bare?: boolean
+  }>(),
+  {
+    bare: false,
+  },
+)
+
 onMounted(async () => {
   await Promise.all([loadConfig(), loadModels()])
 })
@@ -157,8 +129,8 @@ defineExpose({ loadConfig, loadModels })
 </script>
 
 <template>
-  <section class="fold-card">
-    <div class="fold-head" @click="expanded = !expanded">
+  <section class="fold-card" :class="{ 'is-bare': bare }">
+    <div v-if="!bare" class="fold-head" @click="expanded = !expanded">
       <div class="head-left">
         <span class="collapse-arrow" :class="{ open: expanded }">▶</span>
         <div>
@@ -166,35 +138,10 @@ defineExpose({ loadConfig, loadModels })
           <p>日常档处理高频写作，逻辑档处理规划与校验；已单独路由 {{ routeCount }} 个 Agent。</p>
         </div>
       </div>
-      <el-button class="fold-action" size="small" type="primary" @click.stop="expanded = !expanded">
-        {{ expanded ? '收起' : '编辑配置' }}
-      </el-button>
     </div>
 
-    <div v-show="expanded" class="fold-body">
-      <div class="tier-grid tier-grid-readonly">
-        <div class="tier-card">
-          <strong>日常档</strong>
-          <span>正文、润色、摘要等高频任务</span>
-          <p class="tier-model-line">{{ dailySlotLabel }}</p>
-        </div>
-        <div class="tier-card reasoning">
-          <strong>逻辑档</strong>
-          <span>规划、审核、连续性与状态提取</span>
-          <p class="tier-model-line">{{ reasoningSlotLabel }}</p>
-        </div>
-        <div class="tier-card backup">
-          <strong>备用</strong>
-          <span>主模型失败时按顺序 fallback</span>
-          <p class="tier-model-line">{{ backupSlotLabel }}</p>
-        </div>
-      </div>
-      <p class="hint tier-hint">日常档 / 逻辑档 / 备用请在上方 <strong>模型库</strong> 每张卡片或编辑弹窗里设置；此处仅展示当前全局档位。</p>
-      <div class="tier-actions">
-        <el-button type="primary" :loading="savingTiers" @click="saveTiers">保存 Agent 档位映射</el-button>
-      </div>
-
-      <p class="hint">每个 Agent 默认继承所属档位；确有需要时，可继续为单个 Agent 指定独立模型。</p>
+    <div v-show="bare || expanded" class="fold-body">
+      <p class="hint" style="margin-bottom: 12px;">每个 Agent 默认继承所属档位（可在上方模型库设置）；确有需要时，可继续为单个 Agent 指定独立模型。</p>
       <el-table :data="agentRoles" size="small" stripe>
         <el-table-column prop="label" label="角色" width="180" />
         <el-table-column prop="key" label="标识" width="170" />
@@ -246,37 +193,5 @@ defineExpose({ loadConfig, loadModels })
 .hint,
 .muted {
   color: var(--color-text-muted);
-}
-
-.tier-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.tier-card {
-  display: grid;
-  gap: 8px;
-  padding: 14px;
-  border: 1px solid #d8e3f2;
-  border-radius: 10px;
-  background: #f7fbff;
-}
-
-.tier-card.reasoning {
-  border-color: #ead8b2;
-  background: #fffaf0;
-}
-
-.tier-card span {
-  color: var(--color-text-muted);
-  font-size: 12px;
-}
-
-.tier-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 14px;
 }
 </style>

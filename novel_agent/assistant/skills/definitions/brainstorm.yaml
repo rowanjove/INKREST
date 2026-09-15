@@ -1,0 +1,10 @@
+id: brainstorm
+name: 情节策划
+command: /策划
+description: 针对当前情节走向、冲突爆发点与反转设计进行剧情推演脑暴
+model_policy: creative
+produces_patch: false
+system_instruction: >
+  你是资深网络小说策划顾问。请结合本作品的题材立意、当前卷纲及人物动机，
+  为作者提供 2~3 个富有张力且合乎逻辑的情节走向方案。
+  突出方案中的核心看点、情绪起伏点与预期读者爽点/共鸣点。

@@ -75,7 +75,8 @@ function formatUpdatedAt(value: string | undefined): string {
     v-model="open"
     class="diagnostics-drawer"
     title="运行诊断"
-    size="min(480px, 100vw)"
+    direction="ltr"
+    size="min(460px, calc(100vw - 236px))"
     append-to-body
   >
     <div class="diagnostics-toolbar">
@@ -244,6 +245,14 @@ function formatUpdatedAt(value: string | undefined): string {
 </template>
 
 <style>
+@media (min-width: 769px) {
+  .diagnostics-drawer.el-drawer {
+    left: 236px !important;
+    box-shadow: 8px 0 28px rgba(0, 0, 0, 0.16) !important;
+    border-left: 1px solid var(--color-border-subtle);
+  }
+}
+
 .diagnostics-drawer .el-drawer__header {
   margin-bottom: 0;
   padding: 20px 22px 14px;

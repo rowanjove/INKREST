@@ -162,11 +162,26 @@ function formatTime(value: string | null | undefined) {
             中止任务
           </el-button>
           <el-button
+            v-if="selected.recovery_action === 'resume'"
+            type="primary"
+            @click="emit('action', 'resume_task', selected)"
+          >
+            恢复任务
+          </el-button>
+          <el-button
             v-if="selected.recovery_action === 'resume_audit'"
             type="warning"
             @click="emit('action', 'resume_audit', selected)"
           >
             从审校检查点恢复
+          </el-button>
+          <el-button
+            v-if="selected.recovery_action === 'open_writer' && selected.chapter_id"
+            type="danger"
+            plain
+            @click="emit('action', 'rewrite', selected)"
+          >
+            重新生产本章
           </el-button>
         </div>
 

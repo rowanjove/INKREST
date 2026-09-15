@@ -1,0 +1,9 @@
+{
+  "id": "pos_over_explanation_01",
+  "category": "narration",
+  "text": "林默咬紧牙关。这分明意味着他在害怕，内心的恐慌难以抑制。",
+  "expected_rules": [
+    "HWE.NARRATION.OVER_EXPLANATION"
+  ],
+  "description": "作者越位直白解释情绪与替读者总结"
+}

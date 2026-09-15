@@ -5,6 +5,7 @@ const e2ePython =
 
 export default defineConfig({
   testDir: './e2e',
+  globalTeardown: './e2e/global-teardown.ts',
   workers: 1,
   timeout: 60_000,
   use: {

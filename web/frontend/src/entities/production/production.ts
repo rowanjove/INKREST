@@ -1,10 +1,11 @@
 import type { ProjectSnapshot, TaskStatus, TaskType } from '../project/projectSnapshot'
 
-export type ProductionTab = 'runs' | 'reviews' | 'costs' | 'logs'
+export type ProductionTab = 'control' | 'runs' | 'reviews' | 'costs' | 'logs'
 export type ProductionTaskFilter = 'all' | 'active' | 'failed' | 'finished'
 export type ProductionReviewFilter = 'all' | 'error' | 'warning' | 'external'
 export type ProductionActionKind =
   | 'cancel_task'
+  | 'resume_task'
   | 'resume_audit'
   | 'rerun_gate'
   | 'rewrite'
@@ -33,7 +34,7 @@ export interface ProductionTask {
   failure_message: string | null
   /** Soft notices on successful/paused runs (e.g. manuscript conflicts). */
   warnings: string[]
-  recovery_action: 'cancel' | 'resume_audit' | 'open_writer' | 'none'
+  recovery_action: 'cancel' | 'resume' | 'resume_audit' | 'open_writer' | 'none'
   heartbeat_at: string | null
   lease_expires_at: string | null
   created_at: string
@@ -313,7 +314,13 @@ export function resolveReviewActionTargets(
         return ['quality_blocked', 'report_failed'].includes(item.stage)
       }
       if (kind === 'rewrite') {
-        return ['quality_blocked', 'report_failed', 'batch_retry'].includes(item.stage)
+        return [
+          'quality_blocked',
+          'approval_rejected',
+          'report_failed',
+          'report_invalid',
+          'batch_retry',
+        ].includes(item.stage)
       }
       if (kind === 'resume_audit') {
         return [
@@ -346,6 +353,12 @@ export function createProductionActionIntent(
       confirmLabel: '确认中止',
       tone: 'danger',
     },
+    resume_task: {
+      label: '恢复生产任务',
+      description: '将从保存的检查点恢复同一任务，不会新建全书连写。',
+      confirmLabel: '确认恢复',
+      tone: 'primary',
+    },
     resume_audit: {
       label: '重试审校',
       description: `将对${scope}从可恢复检查点继续审校，不会自动改写未确认的正文。`,
@@ -371,10 +384,10 @@ export function createProductionActionIntent(
       tone: 'primary',
     },
     dismiss: {
-      label: '标记问题已处理',
-      description: `将从待处理队列移除${scope}；正文和质量报告不会被删除。`,
-      confirmLabel: '确认已处理',
-      tone: 'primary',
+      label: '忽略并移出待处理',
+      description: `将从待处理队列移除${scope}，但不会修复正文或质量报告，并可能解除批量暂停。仅在你已人工确认风险时使用。`,
+      confirmLabel: '确认忽略',
+      tone: 'warning',
     },
   }
   return {

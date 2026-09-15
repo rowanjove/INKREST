@@ -22,6 +22,10 @@ describe('task-based settings sections', () => {
       'pipeline-runtime': 'generation-quality',
       'writing-rules': 'writing-layout',
       'agent-bridge': 'extensions',
+      'software-update': 'system-data',
+      updater: 'system-data',
+      'model-library': 'models-providers',
+      'system-readiness': 'system-data',
     })
   })
 })

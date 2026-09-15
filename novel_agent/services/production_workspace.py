@@ -61,12 +61,6 @@ STEP_LABELS = {
     "plugin_hook": "插件钩子",
 }
 
-_ACTIVE = {
-    TaskStatus.PENDING,
-    TaskStatus.CLAIMED,
-    TaskStatus.RUNNING,
-    TaskStatus.PAUSED,
-}
 _AUDIT_STEPS = {
     "auditor",
     "rewriter",
@@ -137,9 +131,14 @@ def _task_view(task: TaskRecord) -> dict[str, Any]:
     )
     step = str(checkpoint.get("step") or progress.get("step") or "")
     resumable_from = str(checkpoint.get("resumable_from") or "")
-    if task.status in _ACTIVE:
+    if task.status is TaskStatus.PAUSED:
+        # A paused task is still active for the chapter. Resume that durable
+        # task in place; creating a second audit task would be rejected as a
+        # duplicate active chapter run.
+        recovery_action = "resume"
+    elif task.status in {TaskStatus.PENDING, TaskStatus.CLAIMED, TaskStatus.RUNNING}:
         recovery_action = "cancel"
-    elif task.status in {TaskStatus.FAILED, TaskStatus.PAUSED} and (
+    elif task.status is TaskStatus.FAILED and (
         resumable_from or step in _AUDIT_STEPS
     ):
         recovery_action = "resume_audit"

@@ -21,6 +21,53 @@ interface ElectronBackendStatus {
   state: 'online' | 'offline' | 'restarting';
 }
 
+// Legacy ids remain readable for migration, but the main process accepts and
+// applies only the official GitHub channel.
+type ElectronUpdateSourceId = 'github' | 'ghproxy' | 'mirror' | 'custom';
+
+interface ElectronUpdateSettings {
+  autoCheck: boolean;
+  autoDownload: boolean;
+  sourceId: ElectronUpdateSourceId;
+  customSourceUrl: string;
+  checkPrerelease: boolean;
+  lastCheckedAt: number | null;
+}
+
+type ElectronUpdaterState =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error';
+
+interface ElectronUpdateInfo {
+  version: string;
+  releaseDate?: string;
+  releaseNotes?: string;
+  files?: Array<{ url?: string; size?: number }>;
+}
+
+interface ElectronUpdateProgress {
+  percent: number;
+  bytesPerSecond: number;
+  transferred: number;
+  total: number;
+}
+
+interface ElectronUpdaterStatusSnapshot {
+  state: ElectronUpdaterState;
+  currentVersion: string;
+  updateInfo?: ElectronUpdateInfo;
+  progress?: ElectronUpdateProgress;
+  error?: string;
+  sourceId: ElectronUpdateSourceId;
+  effectiveFeedUrl: string;
+  isPortable: boolean;
+}
+
 interface ElectronAPI {
   getPetSettings: () => Promise<ElectronPetSettings>;
   updatePetSettings: (
@@ -48,6 +95,16 @@ interface ElectronAPI {
   onError: (callback: (data: unknown) => void) => () => void;
   getBackendStatus: () => Promise<ElectronBackendStatus>;
   onBackendStatus: (callback: (status: ElectronBackendStatus) => void) => () => void;
+
+  // Software updater
+  getUpdateSettings: () => Promise<ElectronUpdateSettings>;
+  updateUpdateSettings: (patch: Partial<ElectronUpdateSettings>) => Promise<ElectronUpdateSettings>;
+  getUpdateStatus: () => Promise<ElectronUpdaterStatusSnapshot>;
+  checkForUpdates: () => Promise<void>;
+  downloadUpdate: () => Promise<void>;
+  quitAndInstall: () => Promise<void>;
+  openReleasePage: (url?: string) => Promise<void>;
+  onUpdateStatus: (callback: (status: ElectronUpdaterStatusSnapshot) => void) => () => void;
 }
 
 interface Window {

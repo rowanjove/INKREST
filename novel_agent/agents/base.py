@@ -19,7 +19,7 @@ logger = get_logger("agents.base")
 def _assert_safe_model_base_url(base_url: str) -> None:
     from urllib.parse import urlparse
 
-    from web.security import (
+    from novel_agent.utils.network_security import (
         is_dev_model_host,
         is_loopback_host,
         validate_outbound_model_base_url,
@@ -307,13 +307,18 @@ class OpenAILLM:
     def _get_client(self) -> httpx.Client:
         if self._client is None or self._client.is_closed:
             kwargs = self._client_kwargs()
-            try:
-                from web.outbound import model_httpx_transport
+            from web.outbound import model_httpx_transport
 
-                transport = model_httpx_transport(self.base_url, async_mode=False)
-            except Exception:
-                transport = None
+            # Endpoint validation and DNS pinning are security boundaries.  If
+            # they cannot be established, do not silently fall back to an
+            # ordinary client which would re-resolve the host at connect time.
+            transport = model_httpx_transport(self.base_url, async_mode=False)
             if transport is not None:
+                if self.proxy:
+                    raise ValueError(
+                        "Model proxy cannot be combined with DNS pinning; "
+                        "remove proxy or use a trusted local endpoint"
+                    )
                 kwargs["transport"] = transport
             self._client = httpx.Client(**kwargs)
         return self._client
@@ -321,13 +326,15 @@ class OpenAILLM:
     def _get_async_client(self) -> httpx.AsyncClient:
         if self._aclient is None or self._aclient.is_closed:
             kwargs = self._client_kwargs()
-            try:
-                from web.outbound import model_httpx_transport
+            from web.outbound import model_httpx_transport
 
-                transport = model_httpx_transport(self.base_url, async_mode=True)
-            except Exception:
-                transport = None
+            transport = model_httpx_transport(self.base_url, async_mode=True)
             if transport is not None:
+                if self.proxy:
+                    raise ValueError(
+                        "Model proxy cannot be combined with DNS pinning; "
+                        "remove proxy or use a trusted local endpoint"
+                    )
                 kwargs["transport"] = transport
             self._aclient = httpx.AsyncClient(**kwargs)
         return self._aclient
@@ -519,7 +526,7 @@ class OpenAILLM:
                     raise
                 if isinstance(exc, LLMThinkingTruncatedError) or "模型思考过程超限截断" in str(exc):
                     old_tokens = current_max_tokens
-                    current_max_tokens = min(max(current_max_tokens * 2, 16384), 65536)
+                    current_max_tokens = min(max(current_max_tokens * 2, 8192), 16384)
                     system_hint = (
                         "【紧急生成指引】：上一轮生成由于思考链（Reasoning）过长消耗过多 Token 导致正文截断。"
                         "本轮请务必：极简思考（控制在 300 字以内），直接专注于输出高质量完整正文，严禁长篇展开内心推演。"
@@ -569,7 +576,7 @@ class OpenAILLM:
                     raise
                 if isinstance(exc, LLMThinkingTruncatedError) or "模型思考过程超限截断" in str(exc):
                     old_tokens = current_max_tokens
-                    current_max_tokens = min(max(current_max_tokens * 2, 16384), 65536)
+                    current_max_tokens = min(max(current_max_tokens * 2, 8192), 16384)
                     system_hint = (
                         "【紧急生成指引】：上一轮生成由于思考链（Reasoning）过长消耗过多 Token 导致正文截断。"
                         "本轮请务必：极简思考（控制在 300 字以内），直接专注于输出高质量完整正文，严禁长篇展开内心推演。"
@@ -737,30 +744,30 @@ class OpenAILLM:
         t0 = time.time()
         try:
             timeout = max(self.timeout, 180.0)
-            client_kwargs = {"timeout": timeout}
-            if self.proxy:
-                client_kwargs["proxy"] = self.proxy
+            resp = self._get_client().post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            latency_ms = int((time.time() - t0) * 1000)
+            reply = data["choices"][0]["message"]["content"].strip()
 
-            with httpx.Client(**client_kwargs) as test_client:
-                resp = test_client.post(url, headers=headers, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                latency_ms = int((time.time() - t0) * 1000)
-                reply = data["choices"][0]["message"]["content"].strip()
-
-                success = ver_secret in reply
-                if success:
-                    return {
-                        "success": True,
-                        "latency_ms": latency_ms,
-                        "model": data.get("model", self.model),
-                        "message": f"上下文承载测试成功！成功提取测试暗号。总耗时 {latency_ms} ms。",
-                    }
+            success = ver_secret in reply
+            if success:
                 return {
-                    "success": False,
+                    "success": True,
                     "latency_ms": latency_ms,
-                    "error": f"大模型回复未包含正确暗号。模型回复预览：'{reply[:100]}'",
+                    "model": data.get("model", self.model),
+                    "message": f"上下文承载测试成功！成功提取测试暗号。总耗时 {latency_ms} ms。",
                 }
+            return {
+                "success": False,
+                "latency_ms": latency_ms,
+                "error": f"大模型回复未包含正确暗号。模型回复预览：'{reply[:100]}'",
+            }
         except (httpx.HTTPStatusError, httpx.RequestError, KeyError, json.JSONDecodeError) as exc:
             latency_ms = int((time.time() - t0) * 1000)
             return {

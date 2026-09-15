@@ -23,6 +23,9 @@ export interface Project {
   author_label?: string
   channel?: string
   target_chapters?: number
+  scale?: string
+  scale_label?: string
+  scale_profile?: Record<string, any>
   has_cover?: boolean
   pending_alert_count?: number
 }
@@ -128,6 +131,8 @@ export const useProjectStore = defineStore('project', () => {
     try {
       await apiSwitch(id)
       await fetchCurrent(true)
+      const { useChapterStore } = await import('./chapter')
+      useChapterStore().reset()
     } catch (error) {
       currentProject.value = previous
       if (previous?.id && previous.id !== id) {

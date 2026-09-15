@@ -50,3 +50,19 @@ def test_safe_write_connection_releases_lock_on_error(tmp_path: Path):
     acquired = lock.acquire(blocking=False)
     assert acquired is True
     lock.release()
+
+
+def test_sqlite_write_queue_canonicalizes_path(tmp_path: Path):
+    from novel_agent.state.sqlite_schema import SQLiteWriteQueue
+    import sys
+
+    db_path = tmp_path / "queue_test.sqlite"
+    q1 = SQLiteWriteQueue.get_instance(db_path)
+    if sys.platform == "win32":
+        upper_path = Path(str(db_path).upper())
+        q2 = SQLiteWriteQueue.get_instance(upper_path)
+        assert q1 is q2
+    else:
+        q2 = SQLiteWriteQueue.get_instance(db_path)
+        assert q1 is q2
+

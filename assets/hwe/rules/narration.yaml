@@ -1,0 +1,112 @@
+# HWE Rules: Narration (小说叙事解释腔 - 小说专属核心规则)
+rules:
+  - id: "HWE.NARRATION.OVER_EXPLANATION"
+    version: 1
+    title: "动作后冗余解释情绪"
+    family: "narration"
+    scope: ["sentence", "paragraph"]
+    detector_type: "narration"
+    patterns:
+      - "(?:紧攥着拳头|咬紧牙关|低下头|别过脸|后退了一步|瘫坐在地)[。，；！][^。！？\n]{0,10}(?:显然|可以看出|分明|事实上|他是在|这意味着).{0,15}(?:害怕|愤怒|紧张|绝望|不安|痛恨)"
+      - "(?:手在抖|身体发颤|脸色惨白)[。，；！][^。！？\n]{0,10}(?:他知道自己|他意识到自己|内心的恐慌|内心的愤怒)"
+    severity: "high"
+    confidence: 0.92
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: false
+    why: "在身体反应或外在动作已经传递出情绪后，旁白又紧跟着用第二句将情绪直接命名并说破，属于低级“Show 后又 Tell”。"
+    suggestion: "相信读者的理解力，删去后半句情绪标签，仅保留动作与注意力转变。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["worldwonderer/oh-story-claudecode", "KKKKhazix/human-writing", "adewale/anti-slop-writing"]
+
+  - id: "HWE.NARRATION.AUTHOR_SUMMARY"
+    version: 1
+    title: "作者越位替读者总结"
+    family: "narration"
+    scope: ["paragraph"]
+    detector_type: "narration"
+    patterns:
+      - "(?:简而言之|总而言之|换句话说|可以说|总的来看)[，,]"
+      - "这一幕证明了"
+      - "这就是为什么他会"
+    severity: "medium"
+    confidence: 0.90
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: false
+    why: "叙述者跳出沉浸的世界，站在作者席上用评论家口吻向读者概括事实，破坏小说客观再现的幻觉。"
+    suggestion: "删除概括性总结连词，让读者从前后事件中体会结论。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["MrGeDiao/shuorenhua", "blader/humanizer"]
+
+  - id: "HWE.NARRATION.MIND_READING"
+    version: 1
+    title: "限知视点下的越权读心"
+    family: "narration"
+    scope: ["sentence", "paragraph"]
+    detector_type: "narration"
+    patterns:
+      - "(?P<target>[^，。！？\n]{2,6})(?:心中暗想|在心底嘲笑|心里很清楚|脑海中闪过)(?:，|：|\")"
+    severity: "medium"
+    confidence: 0.82
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: false
+    why: "在第三人称限知视角中，旁白擅自进入非焦点人物的脑内窥视其心理活动，导致视角漂移。"
+    suggestion: "改为由主角观察到的外部微表情或语气推测，如‘他神色微变，嘴角扬起似笑非笑的弧度’。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["KKKKhazix/human-writing"]
+
+  - id: "HWE.NARRATION.ARRANGEMENT_TONE"
+    version: 1
+    title: "机械宿命安排腔"
+    family: "narration"
+    scope: ["sentence"]
+    detector_type: "narration"
+    patterns:
+      - "命运(?:的齿轮|早就在暗中|早已在悄然|已经开始转动)"
+      - "冥冥之中(?:自有|仿佛有).{0,10}(?:安排|注定)"
+      - "这一切都是最好的安排"
+    severity: "medium"
+    confidence: 0.93
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: false
+    why: "俗套廉价的旁白全知预示，透出浓厚的公式化网文套路感。"
+    suggestion: "删去宿命感叹，聚焦当下事件的具体动力与现实因果。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["oh-story-claudecode"]
+
+  - id: "HWE.NARRATION.FORESHADOW_ANNOUNCEMENT"
+    version: 1
+    title: "剧透式大喇叭报幕"
+    family: "narration"
+    scope: ["sentence", "paragraph"]
+    detector_type: "narration"
+    patterns:
+      - "(?:殊不知|但他不知道的是|他所不知道的是|当时的他并不知道)[，,]"
+      - "只是他没有想到[，,]"
+    severity: "medium"
+    confidence: 0.91
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: false
+    why: "粗暴跳出当前时间线进行‘上帝剧透’，破坏读者的沉浸式悬念感。"
+    suggestion: "通过场景细节埋下客观伏笔，而非让旁白大喇叭广播剧透。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["oh-story-claudecode", "qu-ai-wei"]

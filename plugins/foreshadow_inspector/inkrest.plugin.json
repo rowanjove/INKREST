@@ -1,0 +1,55 @@
+{
+  "$schema": "https://inkrest.dev/schemas/plugin-v2.json",
+  "schema_version": 2,
+  "id": "inkrest.foreshadow-inspector",
+  "name": "Foreshadow Inspector",
+  "version": "1.0.0",
+  "display_name": "伏笔完整性检测器",
+  "description": "智能扫描长篇小说前后伏笔、呼应状态与一致性风险",
+  "author": "INKREST Team",
+  "icon": "inspection",
+  "plugin_type": "quality_guard",
+  "entry": "plugin:ForeshadowInspector",
+  "engines": {
+    "inkrest": ">=2.0.0",
+    "plugin_api": "^2.0",
+    "python": ">=3.11"
+  },
+  "permissions": [
+    "project_read",
+    "model_access"
+  ],
+  "services": {
+    "requires": [
+      "inkrest.project.reader"
+    ],
+    "provides": [
+      "foreshadow.service"
+    ]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "foreshadow.scan",
+        "title": "扫描全书伏笔",
+        "category": "Quality"
+      }
+    ],
+    "validators": [
+      {
+        "id": "foreshadow.consistency",
+        "label": "伏笔呼应校验",
+        "scope": "chapter"
+      }
+    ],
+    "navigation": [
+      {
+        "id": "foreshadow.sidebar",
+        "title": "伏笔雷达",
+        "surface": "project_sidebar",
+        "view_id": "foreshadow_panel",
+        "icon": "inspection"
+      }
+    ]
+  }
+}

@@ -15,6 +15,7 @@ from novel_agent.state.state_repository import StateRepositoryMixin
 from novel_agent.state.search_repository import SearchRepositoryMixin
 from novel_agent.state.history_repository import HistoryRepositoryMixin
 from novel_agent.state.manuscript_repository import ManuscriptRepositoryMixin
+from novel_agent.state.hwe_repository import HWERepositoryMixin
 from novel_agent.state.schema_version import (
     SCHEMA_VERSION,
     SchemaState,
@@ -32,6 +33,7 @@ class SQLiteStateStore(
     SearchRepositoryMixin,
     HistoryRepositoryMixin,
     ManuscriptRepositoryMixin,
+    HWERepositoryMixin,
 ):
     """Unified entry point for database state store.
 
@@ -50,13 +52,9 @@ class SQLiteStateStore(
             self.task_repository = TaskRepository(self.db_path, self.schema_state)
             return
         self._init_schema()
-        if initial_state is SchemaState.FRESH:
-            write_schema_version(self.db_path)
-            self.schema_state = SchemaState.V2
-            self.schema_version = SCHEMA_VERSION
-        else:
-            self.schema_state = initial_state
-            self.schema_version = initial_version
+        write_schema_version(self.db_path)
+        self.schema_state = SchemaState.V2
+        self.schema_version = SCHEMA_VERSION
         self.task_repository = TaskRepository(self.db_path, self.schema_state)
 
     @db_write_lock
@@ -79,9 +77,6 @@ class SQLiteStateStore(
                 cur = conn.execute(f"DELETE FROM [{table}]")
                 cleared[table] = cur.rowcount
             conn.commit()
-            if include_operational:
-                conn.execute("VACUUM")
-                conn.commit()
         logger.info(
             "Cleared narrative SQLite state (%s tables, operational=%s)",
             len(cleared),

@@ -133,7 +133,7 @@ class ContextBuilderAgent:
 
         # Anti-AI guardrails — low priority so budget trimming drops this before scene/state
         if self._writer_anti_ai_enabled():
-            anti_ai = self._build_writer_anti_ai_block()
+            anti_ai = self._build_writer_anti_ai_block(scene=scene, plan=plan)
             if anti_ai:
                 blocks.append(("写作禁忌", anti_ai, PRIORITY_LOW))
 
@@ -219,10 +219,14 @@ class ContextBuilderAgent:
         except Exception:
             return True
 
-    def _build_writer_anti_ai_block(self) -> str:
+    def _build_writer_anti_ai_block(
+        self,
+        scene: Optional[Mapping[str, Any]] = None,
+        plan: Optional[Mapping[str, Any]] = None,
+    ) -> str:
         from novel_agent.quality.generation_policy import build_writer_anti_ai_block
 
-        return build_writer_anti_ai_block(self.root_dir)
+        return build_writer_anti_ai_block(self.root_dir, scene=scene, plan=plan)
 
     def _get_current_state(self, scene: Dict[str, Any]) -> Dict[str, Any]:
         state = self.store.get_continuity_state()

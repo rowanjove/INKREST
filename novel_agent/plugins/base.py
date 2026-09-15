@@ -46,6 +46,7 @@ class PluginContext:
     event_bus: Optional[Any] = None
     logger: Optional[Any] = None
     plugin_home: Optional[Path] = None
+    broker: Optional[Any] = None
 
 
 class PluginBase(ABC):
@@ -303,6 +304,15 @@ class WebExtensionPlugin(PluginBase):
     def get_frontend_manifest(self) -> Optional[Dict[str, Any]]:
         """Returns metadata for frontend UI integration."""
         return None
+
+    def handle_view_rpc(
+        self,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+        session: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Allowlisted business RPC for sandboxed plugin views."""
+        raise ValueError(f"Unsupported view RPC method: {method}")
 
 
 # 14. Sensitive Scanner

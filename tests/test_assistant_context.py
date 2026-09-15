@@ -133,7 +133,10 @@ class AssistantContextTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 200)
             data = response.json()
-            self.assertEqual(data["active_project"], {"id": project["id"], "name": "测试项目"})
+            self.assertEqual(data["active_project"]["id"], project["id"])
+            self.assertEqual(data["active_project"]["name"], "测试项目")
+            self.assertEqual(data["active_project"]["target_chapters"], 0)
+            self.assertIn("scale_profile", data["active_project"])
             self.assertEqual(data["work"]["scale"], "medium")
             self.assertTrue(data["work"]["has_macro_outline"])
             self.assertEqual(data["running_tasks"][0]["id"], "task-running")
@@ -147,6 +150,36 @@ class AssistantContextTests(unittest.TestCase):
             web_server._active_project_id = original_active
             web_server._task_manager = original_manager
             web_server.project_manager = original_project_manager
+
+    def test_task_progress_history_survives_manager_reload(self):
+        from novel_agent.domain.tasks import TaskType
+
+        manager = TaskManager(self.tmpdir)
+        manager._create_task_record(
+            "task-pipeline",
+            TaskType.CHAPTER,
+            {"chapter_id": "001", "goal": "写两章"},
+        )
+        manager._update_task_status("task-pipeline", "running")
+        manager._update_task_progress(
+            "task-pipeline",
+            {"step": "writer", "status": "done", "chapter_id": "001", "timestamp": 1},
+        )
+        manager._update_task_chapter_id("task-pipeline", "002")
+        manager._update_task_progress(
+            "task-pipeline",
+            {"step": "writer", "status": "running", "chapter_id": "002", "timestamp": 2},
+        )
+        manager._update_task_status("task-pipeline", "succeeded")
+
+        reloaded = TaskManager(self.tmpdir).get_task("task-pipeline")
+        self.assertIsNotNone(reloaded)
+        history = reloaded["pipeline_progress"]
+        self.assertEqual(
+            [(item["chapter_id"], item["step"], item["status"]) for item in history],
+            [("001", "writer", "done"), ("002", "writer", "done")],
+        )
+        self.assertTrue(all(item["run_id"] == "task-pipeline" for item in history))
 
     def test_assistant_context_reports_batch_paused(self):
         original_base = web_server.BASE_DIR

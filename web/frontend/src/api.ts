@@ -273,8 +273,16 @@ export const listPlugins = () =>
 export const fetchPluginNavigation = () =>
   api.get('/plugins/navigation')
 
-export const createPluginViewSession = (pluginId: string, viewId: string, projectId?: string) =>
-  api.post(`/plugins/${pluginId}/views/${viewId}/session`, { project_id: projectId })
+export const createPluginViewSession = (
+  pluginId: string,
+  viewId: string,
+  projectId?: string,
+  contextRevision = 1,
+) =>
+  api.post(`/plugins/${pluginId}/views/${viewId}/session`, {
+    project_id: projectId,
+    context_revision: contextRevision,
+  })
 
 export const closePluginViewSession = (pluginId: string, viewId: string, sessionId: string) =>
   api.delete(`/plugins/${pluginId}/views/${viewId}/session/${sessionId}`)
@@ -349,14 +357,115 @@ export const getLLMLogs = () =>
 export const getAssistantContext = () =>
   api.get('/assistant/context')
 
-export const sendAssistantChat = (data: { message: string; history: any[]; context?: any }) =>
-  api.post('/assistant/chat', data)
+export const listAssistantSkills = () =>
+  api.get<{ skills: Array<{ id: string; name: string; command: string; description?: string; produces_patch?: boolean }> }>('/assistant/skills')
+
+export const listAssistantPatches = (chapterId?: string) =>
+  api.get<{ patches: any[] }>('/assistant/patches', { params: chapterId ? { chapter_id: chapterId } : {} })
+
+export const applyAssistantPatch = (patchId: string) =>
+  api.post<{ success: boolean; patch: any; new_text?: string }>(`/assistant/patches/${patchId}/apply`)
+
+export const rejectAssistantPatch = (patchId: string) =>
+  api.post<{ success: boolean; patch: any }>(`/assistant/patches/${patchId}/reject`)
+
+export const revertAssistantPatch = (patchId: string) =>
+  api.post<{ success: boolean; patch: any; reverted_text?: string }>(`/assistant/patches/${patchId}/revert`)
+
+export const listAssistantPreferences = () =>
+  api.get<{ preferences: Array<{ id: string; scope: string; preference_type: string; content: string; created_at?: string }> }>('/assistant/preferences')
+
+export const createAssistantPreference = (data: { content: string; preference_type?: string; scope?: string }) =>
+  api.post<{ success: boolean; preference: any }>('/assistant/preferences', data)
+
+export const deleteAssistantPreference = (prefId: string) =>
+  api.delete<{ success: boolean; deleted_id: string }>(`/assistant/preferences/${prefId}`)
+
+export const previewAssistantContext = (data: {
+  message: string
+  editor_context?: any
+  skill_id?: string
+}) =>
+  api.post<{
+    chips: any[]
+    citations: any[]
+    budget_breakdown: Record<string, number>
+    total_chars: number
+    preview_text: string
+  }>('/assistant/context/preview', data)
+
+export const listAssistantTools = () =>
+  api.get<{
+    tools: Array<{
+      name: string
+      description: string
+      permission_level: number
+      requires_confirmation: boolean
+      parameters_schema?: any
+    }>
+  }>('/assistant/tools')
+
+export const listAssistantRuns = (limit = 50) =>
+  api.get<{ runs: any[] }>('/assistant/runs', { params: { limit } })
+
+export const getAssistantRun = (runId: string) =>
+  api.get<{ run: any }>(`/assistant/runs/${runId}`)
+
+export const confirmAssistantRunAction = (runId: string, action: any) =>
+  api.post<{
+    run_id: string
+    reply: string
+    status: string
+    steps: any[]
+    total_elapsed_ms: number
+  }>(`/assistant/runs/${runId}/confirm`, { action })
+
+export const listAssistantThreads = (limit = 50) =>
+  api.get<{ threads: Array<{ id: string; title: string; created_at: string; updated_at: string }> }>(
+    '/assistant/threads',
+    { params: { limit } },
+  )
+
+export const createAssistantThread = (title = '新对话') =>
+  api.post<{ thread: { id: string; title: string; created_at: string; updated_at: string } }>(
+    '/assistant/threads',
+    { title },
+  )
+
+export const listAssistantThreadMessages = (threadId: string, limit = 100) =>
+  api.get<{ messages: Array<{ id: string; thread_id: string; role: string; content: string; skill_id?: string; patch_id?: string; created_at: string }> }>(
+    `/assistant/threads/${threadId}/messages`,
+    { params: { limit } },
+  )
+
+
+export const sendAssistantChat = (data: {
+  message: string
+  history: any[]
+  context?: any
+  editor_context?: any
+  skill_id?: string
+}) => api.post('/assistant/chat', data)
 
 export const sendAssistantChatStream = async (
-  data: { message: string; history: any[]; context?: any },
+  data: {
+    message: string
+    history: any[]
+    context?: any
+    editor_context?: any
+    skill_id?: string
+  },
   onChunk: (chunk: string) => void,
-  onDone: (result: { reply: string; actions: any[]; suggestions: string[] }) => void,
+  onDone: (result: {
+    reply: string
+    actions: any[]
+    suggestions: string[]
+    chips?: any[]
+    citations?: any[]
+    patch?: any
+  }) => void,
   onError: (err: any) => void | Promise<void>,
+  onContext?: (contextData: { chips?: any[]; citations?: any[] }) => void,
 ) => {
   try {
     const baseURL = api.defaults.baseURL || '/api'
@@ -398,7 +507,11 @@ export const sendAssistantChatStream = async (
         await onError(new Error('Malformed assistant stream payload'))
         return
       }
-      if (eventType === 'chunk') {
+      if (eventType === 'context') {
+        if (onContext) {
+          onContext(parsed)
+        }
+      } else if (eventType === 'chunk') {
         onChunk(parsed.chunk || '')
       } else if (eventType === 'done') {
         receivedDone = true
@@ -406,6 +519,9 @@ export const sendAssistantChatStream = async (
           reply: parsed.reply || '',
           actions: parsed.actions || [],
           suggestions: parsed.suggestions || [],
+          chips: parsed.chips || [],
+          citations: parsed.citations || [],
+          patch: parsed.patch || null,
         })
       } else if (eventType === 'error') {
         failed = true

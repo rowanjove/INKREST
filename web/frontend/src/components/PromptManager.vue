@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { isMessageBoxDismissal } from '../utils/elementPlusServices'
@@ -167,13 +167,22 @@ const truncate = (text: string, len: number) => {
   return text.length > len ? `${text.substring(0, len)}...` : text
 }
 
+const props = withDefaults(
+  defineProps<{
+    bare?: boolean
+  }>(),
+  {
+    bare: false,
+  },
+)
+
 onMounted(loadPrompts)
 defineExpose({ loadPrompts })
 </script>
 
 <template>
-  <section class="fold-card">
-    <div class="fold-head" @click="expanded = !expanded">
+  <section class="fold-card" :class="{ 'is-bare': bare }">
+    <div v-if="!bare" class="fold-head" @click="expanded = !expanded">
       <div class="head-left">
         <span class="collapse-arrow" :class="{ open: expanded }">▶</span>
         <div>
@@ -181,12 +190,9 @@ defineExpose({ loadPrompts })
           <p>管理多阶段 Agent 生产线提示词。已加载 {{ nonEmptyCount }}/{{ prompts.length }} 条。</p>
         </div>
       </div>
-      <el-button class="fold-action" size="small" type="primary" @click.stop="expanded = !expanded">
-        {{ expanded ? '收起' : '编辑配置' }}
-      </el-button>
     </div>
 
-    <div v-show="expanded" class="fold-body">
+    <div v-show="bare || expanded" class="fold-body">
       <div class="toolbar">
         <div class="prompt-status">
           <p>空白提示词会自动从内置默认模板恢复。</p>

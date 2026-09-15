@@ -99,6 +99,15 @@ const testSnapshot = async () => {
   }
 }
 
+const props = withDefaults(
+  defineProps<{
+    bare?: boolean
+  }>(),
+  {
+    bare: false,
+  },
+)
+
 onMounted(() => {
   openFromHash()
   load()
@@ -107,8 +116,8 @@ watch(() => route.hash, openFromHash)
 </script>
 
 <template>
-  <section id="agent-bridge" class="fold-card agent-bridge-section" v-loading="loading">
-    <div class="fold-head" @click="expanded = !expanded">
+  <section id="agent-bridge" class="fold-card agent-bridge-section" :class="{ 'is-bare': bare }" v-loading="loading">
+    <div v-if="!bare" class="fold-head" @click="expanded = !expanded">
       <div class="head-left">
         <span class="collapse-arrow" :class="{ open: expanded }">▶</span>
         <div>
@@ -120,7 +129,7 @@ watch(() => route.hash, openFromHash)
       <el-tag v-else type="info" size="small">MCP 未安装（可选）</el-tag>
     </div>
 
-    <div v-show="expanded" class="fold-body">
+    <div v-show="bare || expanded" class="fold-body">
       <div class="form-grid">
         <label class="field">
           <span class="label">外部 API 地址</span>

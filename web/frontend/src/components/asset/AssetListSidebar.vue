@@ -103,9 +103,8 @@ defineProps<{
   padding: 8px;
   overflow: auto;
   background: var(--color-bg-surface);
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 
 .asset-group {
@@ -140,9 +139,9 @@ defineProps<{
   gap: 10px;
   padding: 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: #1f2937;
+  color: var(--color-text);
   text-align: left;
   cursor: pointer;
   box-sizing: border-box;
@@ -151,7 +150,7 @@ defineProps<{
 .asset-row:hover,
 .asset-row.active {
   background: var(--color-bg-surface-muted);
-  border-color: #dbe2ea;
+  border-color: var(--color-border);
 }
 
 .asset-row.active {
@@ -193,12 +192,12 @@ defineProps<{
 }
 
 .asset-row-main small {
-  color: #7b8494;
+  color: var(--color-text-muted);
   font-size: 13px;
 }
 
 .asset-row-size {
-  color: #7b8494;
+  color: var(--color-text-muted);
   font-size: 13px;
   margin-left: auto;
   flex-shrink: 0;

@@ -291,10 +291,10 @@ def build_quality_report(
              except Exception as exc:
                  logger.warning("Canon visibility check degraded: %s", exc)
                  raw_checks["canon_visibility"] = {
-                     "pass": True,
-                     "score": 1.0,
-                     "level": "warning",
-                     "status": "degraded",
+                     "pass": False,
+                     "score": 0.0,
+                     "level": "fail",
+                     "status": "error",
                      "details": [f"canon_check_degraded: {exc}"],
                  }
  
@@ -307,27 +307,15 @@ def build_quality_report(
              logger.warning("Plugin guard %s failed: %s", guard.get_meta().name, exc)
  
      checks = {name: _normalize_check(result) for name, result in raw_checks.items()}
- 
-     # Calculate overall score
-     scores = []
-     for check_result in checks.values():
-         scores.append(check_result.get("score", 0))
- 
+
+     scores = [check_result.get("score", 0) for check_result in checks.values()]
      overall_score = sum(scores) / len(scores) if scores else 0
- 
      guard_summary = build_guard_summary(final_text, checks)
- 
-     # Determine overall pass/fail. Hard guard failures always win.
-     all_passed = (
-         guard_summary["overall_status"] != "FAIL"
-         and all(check.get("pass", False) for check in checks.values())
-     )
 
      resolved_mode = mode if mode in ("report_only", "block_on_fail") else "report_only"
      report = {
          "mode": resolved_mode,
          "overall_score": round(overall_score, 1),
-         "overall_pass": all_passed,
          "checks": checks,
          "guard_summary": guard_summary,
      }
@@ -341,15 +329,25 @@ def build_quality_report(
              "status": status,
              "risk_level": audit.get("risk_level"),
              "issue_count": len(audit.get("issues") or []),
+             # Preserve the actual L2 evidence for the review queue/API.  The
+             # previous summary-only shape made non-empty audit issues vanish
+             # from downstream decisions.
+             "issues": list(audit.get("issues") or [])[:50],
          }
          if audit.get("error"):
              report["audit"]["error"] = audit.get("error")
          report["incomplete"] = incomplete
-         if incomplete:
-             # Report-only still exposes the incomplete state to the UI and
-             # downstream automation; the mode decides whether it blocks.
-             report["overall_pass"] = False
      else:
          report["incomplete"] = False
+
+     from novel_agent.quality.decision import derive_quality_decision
+
+     decision = derive_quality_decision(report)
+     report["quality_decision"] = decision
+     report["quality_status"] = decision["status"]
+     report["hard_gate_pass"] = decision["hard_gate_pass"]
+     # Backward-compatible field now means "may continue production". Advisory
+     # L1 findings are represented by quality_status=review, not a false failure.
+     report["overall_pass"] = decision["status"] in {"pass", "review"}
 
      return report

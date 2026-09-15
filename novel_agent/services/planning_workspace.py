@@ -207,6 +207,34 @@ def build_planning_workspace(root_dir: Path) -> PlanningWorkspace:
         entity = _entity("rule", item, source="assets")
         entities.setdefault(f"rule:{entity.id}", entity)
 
+    blueprint_asset = _safe_json(root / "assets" / "story_blueprint.json")
+    if blueprint_asset:
+        bp_name = blueprint_asset.get("title") or "故事蓝图契约"
+        bp_hook = (blueprint_asset.get("usp") or {}).get("one_sentence_hook") or "十维 Story DNA 故事蓝图契约"
+        bp_entity = PlanningEntity(
+            id="blueprint:contract",
+            kind="blueprint",
+            name=bp_name,
+            summary=bp_hook,
+            source="assets",
+            configured=blueprint_asset,
+            current_state={},
+        )
+        entities["blueprint:contract"] = bp_entity
+
+        for promise in blueprint_asset.get("reader_promises", []):
+            p_id = promise.get("id") or f"promise_{len(entities)}"
+            p_desc = promise.get("description") or "读者承诺"
+            entities[f"promise:{p_id}"] = PlanningEntity(
+                id=f"promise:{p_id}",
+                kind="promise",
+                name=p_desc[:24],
+                summary=p_desc,
+                source="assets",
+                configured=promise,
+                current_state={"expected_interval": promise.get("expected_interval", "")},
+            )
+
     for item in store.list_objects():
         entity = _entity(
             "object",

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Connection, Delete, Edit, Plus } from '@element-plus/icons-vue'
 import { isMessageBoxDismissal } from '../utils/elementPlusServices'
@@ -306,22 +306,64 @@ const restorePresets = () => {
   ElMessage.success('已恢复预设模型')
 }
 
+const isCustomProvider = ref(false)
+const idManuallyEdited = ref(false)
+const nameManuallyEdited = ref(false)
+
+function onModelNameInput(val: string) {
+  if (!editingId.value) {
+    if (!idManuallyEdited.value) {
+      form.value.id = val.trim()
+    }
+    if (!nameManuallyEdited.value) {
+      form.value.name = val.trim()
+    }
+  }
+}
+
+function onProviderProtocolChange(val: any) {
+  if (val === 'openai') {
+    isCustomProvider.value = false
+    form.value.provider = 'openai'
+  } else {
+    isCustomProvider.value = true
+    if (form.value.provider === 'openai') {
+      form.value.provider = ''
+    }
+  }
+}
+
 const openPresetDialog = (preset?: ModelLibraryPreset) => {
   editingId.value = null
+  idManuallyEdited.value = !!preset
+  nameManuallyEdited.value = !!preset
+  isCustomProvider.value = !!preset && preset.provider !== 'openai'
   form.value = preset ? presetToModelForm(preset) : createEmptyModelForm()
   dialogVisible.value = true
 }
 
 const openEditDialog = (m: ModelLibraryEntry) => {
   editingId.value = m.id
+  idManuallyEdited.value = true
+  nameManuallyEdited.value = true
+  isCustomProvider.value = m.provider !== 'openai'
   form.value = entryToModelForm(m)
   dialogVisible.value = true
 }
 
 const handleSave = async () => {
-  if (!form.value.id.trim() || !form.value.model.trim()) {
-    ElMessage.warning('请填写模型 ID 和服务商模型名')
+  if (!form.value.model.trim()) {
+    ElMessage.warning('请填写服务商模型名')
     return
+  }
+  if (!form.value.id.trim()) {
+    form.value.id = form.value.model.trim()
+  }
+  if (!form.value.name.trim()) {
+    form.value.name = form.value.model.trim()
+  }
+  if (!form.value.provider.trim()) {
+    form.value.provider = 'openai'
   }
   const { payload, slot } = buildModelSavePayload(form.value)
   const { data } = await saveModel(payload)
@@ -402,12 +444,33 @@ const getModelBrandClass = (m: ModelLibraryEntry) => {
   return 'brand-other'
 }
 
-defineExpose({ fetchModels })
+const props = withDefaults(
+  defineProps<{
+    bare?: boolean
+  }>(),
+  {
+    bare: false,
+  },
+)
+
+const emit = defineEmits<{
+  'preview-update': [models: ModelLibraryEntry[]]
+}>()
+
+watch(
+  previewModels,
+  (val) => {
+    emit('preview-update', val)
+  },
+  { immediate: true },
+)
+
+defineExpose({ fetchModels, previewModels })
 </script>
 
 <template>
-  <section class="fold-card model-library">
-    <div class="fold-head model-head" @click="expanded = !expanded">
+  <section class="fold-card model-library" :class="{ 'is-bare': bare }">
+    <div v-if="!bare" class="fold-head model-head" @click="expanded = !expanded">
       <div class="head-left">
         <span class="collapse-arrow" :class="{ open: expanded }">▶</span>
         <div>
@@ -433,13 +496,9 @@ defineExpose({ fetchModels })
         </span>
         <span v-if="previewOverflow" class="model-chip">+{{ previewOverflow }}</span>
       </div>
-
-      <el-button class="fold-action" size="small" type="primary" @click.stop="expanded = !expanded">
-        {{ expanded ? '收起' : '编辑配置' }}
-      </el-button>
     </div>
 
-    <div v-show="expanded" class="fold-body">
+    <div v-show="bare || expanded" class="fold-body">
       <div class="library-toolbar">
         <div>
           <strong>模型库</strong>
@@ -499,11 +558,7 @@ defineExpose({ fetchModels })
             <p v-if="m.proxy" class="proxy-line">代理：{{ m.proxy }}</p>
           </div>
           <div class="card-actions">
-            <span class="test-indicator" v-if="getTestStatus(m.id) !== 'untested'">
-              <span class="status-dot" :class="getTestStatus(m.id)"></span>
-              <span class="status-text">{{ getTestStatus(m.id) === 'testing' ? '测试中' : getTestStatus(m.id) === 'success' ? '可用' : '失败' }}</span>
-            </span>
-            <div class="action-buttons">
+            <div class="card-actions-left">
               <el-select
                 :model-value="m.slot || ''"
                 size="small"
@@ -519,16 +574,22 @@ defineExpose({ fetchModels })
                   :value="opt.value"
                 />
               </el-select>
-              <el-button text type="primary" :loading="testResults[m.id]?.loading" @click="handleTest(m.id)"><el-icon><Connection /></el-icon>测试</el-button>
-              <el-button text @click="openEditDialog(m)"><el-icon><Edit /></el-icon>编辑</el-button>
-              <el-button text type="danger" @click="handleDelete(m.id, m.name || m.id)"><el-icon><Delete /></el-icon>删除</el-button>
+              <span class="test-indicator" v-if="getTestStatus(m.id) !== 'untested'">
+                <span class="status-dot" :class="getTestStatus(m.id)"></span>
+                <span class="status-text">{{ getTestStatus(m.id) === 'testing' ? '测试中' : getTestStatus(m.id) === 'success' ? '可用' : '失败' }}</span>
+              </span>
+            </div>
+            <div class="action-buttons">
+              <el-button text type="primary" :icon="Connection" :loading="testResults[m.id]?.loading" @click="handleTest(m.id)">测试</el-button>
+              <el-button text :icon="Edit" @click="openEditDialog(m)">编辑</el-button>
+              <el-button text type="danger" :icon="Delete" @click="handleDelete(m.id, m.name || m.id)">删除</el-button>
             </div>
           </div>
         </article>
         <el-empty v-if="!loading && !textModels.length" description="还没有配置文字模型，请新增自定义模型。" />
       </div>
 
-      <div class="configured-title" style="margin-top: 30px;">
+      <div class="configured-title" style="margin-top: 18px;">
         <strong>已配置图像模型</strong>
       </div>
       <div class="model-grid" v-loading="loading">
@@ -550,9 +611,9 @@ defineExpose({ fetchModels })
               <span class="status-text">{{ getTestStatus(m.id) === 'testing' ? '测试中' : getTestStatus(m.id) === 'success' ? '可用' : '失败' }}</span>
             </span>
             <div class="action-buttons">
-              <el-button text type="primary" :loading="testResults[m.id]?.loading" @click="handleTest(m.id)"><el-icon><Connection /></el-icon>测试</el-button>
-              <el-button text @click="openEditDialog(m)"><el-icon><Edit /></el-icon>编辑</el-button>
-              <el-button text type="danger" @click="handleDelete(m.id, m.name || m.id)"><el-icon><Delete /></el-icon>删除</el-button>
+              <el-button text type="primary" :icon="Connection" :loading="testResults[m.id]?.loading" @click="handleTest(m.id)">测试</el-button>
+              <el-button text :icon="Edit" @click="openEditDialog(m)">编辑</el-button>
+              <el-button text type="danger" :icon="Delete" @click="handleDelete(m.id, m.name || m.id)">删除</el-button>
             </div>
           </div>
         </article>
@@ -564,21 +625,53 @@ defineExpose({ fetchModels })
     </div>
 
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑模型' : '新增模型'" width="580px">
-      <el-form label-width="112px">
+      <el-form label-width="120px">
         <el-form-item label="模型类型" required>
           <el-radio-group v-model="form.type">
             <el-radio value="text">文字模型</el-radio>
             <el-radio value="image">图像模型</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="模型 ID" required>
-          <el-input v-model="form.id" :disabled="!!editingId" placeholder="唯一标识，如 openai-main" />
+        <el-form-item label="服务商模型名" required>
+          <el-input
+            v-model="form.model"
+            placeholder="API 实际调用的模型名称，如 deepseek-chat 或 gpt-4o"
+            @input="onModelNameInput"
+          />
         </el-form-item>
-        <el-form-item label="显示名称">
-          <el-input v-model="form.name" placeholder="自定义名称，如 我的主力模型" />
+        <el-form-item label="显示别名">
+          <el-input
+            v-model="form.name"
+            placeholder="自定义名称（留空默认使用模型名）"
+            @input="nameManuallyEdited = true"
+          />
         </el-form-item>
-        <el-form-item label="Provider">
-          <el-input v-model="form.provider" placeholder="openai" />
+        <el-form-item label="配置唯一 ID" required>
+          <el-input
+            v-model="form.id"
+            :disabled="!!editingId"
+            placeholder="系统内部唯一标识，如 deepseek-chat（默认自动同步）"
+            @input="idManuallyEdited = true"
+          />
+        </el-form-item>
+        <el-form-item label="接口协议">
+          <el-select
+            :model-value="isCustomProvider ? 'custom' : 'openai'"
+            style="width: 100%"
+            @update:model-value="onProviderProtocolChange"
+          >
+            <el-option label="OpenAI 兼容协议（主流通用默认）" value="openai" />
+            <el-option label="自定义插件驱动协议（高级扩展）" value="custom" />
+          </el-select>
+          <el-input
+            v-if="isCustomProvider"
+            v-model="form.provider"
+            style="margin-top: 8px;"
+            placeholder="输入插件驱动 provider 标识"
+          />
+          <p class="slot-form-hint">
+            绝大多数服务（DeepSeek、OpenAI、Kimi、Ollama、千问等）均兼容 OpenAI 协议，保持默认即可。
+          </p>
         </el-form-item>
         <el-form-item label="Base URL">
           <el-input v-model="form.base_url" placeholder="https://api.example.com/v1 或 http://localhost:11434/v1" />
@@ -592,16 +685,13 @@ defineExpose({ fetchModels })
           />
           <p v-if="form.has_api_key && !form.api_key" class="api-key-hint">当前已保存密钥，无需重复填写</p>
         </el-form-item>
-        <el-form-item label="模型名" required>
-          <el-input v-model="form.model" placeholder="服务商模型 ID，如 gpt-5.2 或 qwen3:14b" />
-        </el-form-item>
         <el-form-item label="Max Tokens">
           <el-input-number v-model="form.max_tokens" :min="256" :max="65536" :step="256" />
         </el-form-item>
         <el-form-item label="Temperature">
           <el-input-number v-model="form.temperature" :min="0" :max="2" :step="0.1" :precision="1" />
         </el-form-item>
-        <el-form-item label="超时">
+        <el-form-item label="超时(秒)">
           <el-input-number v-model="form.timeout" :min="10" :max="600" :step="10" />
         </el-form-item>
         <el-form-item label="网络代理">
@@ -674,7 +764,7 @@ defineExpose({ fetchModels })
 }
 
 .slot-select {
-  width: 96px;
+  width: 84px;
   flex-shrink: 0;
 }
 
@@ -742,9 +832,9 @@ defineExpose({ fetchModels })
 .preset-grid,
 .model-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-  margin-top: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
 }
 
 .preset-card,
@@ -753,14 +843,14 @@ defineExpose({ fetchModels })
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 6px;
+  padding: 10px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(226, 232, 240, 0.9);
   box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.02), 0 2px 4px -2px rgba(15, 23, 42, 0.02);
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
   overflow: hidden;
 }
 
@@ -941,16 +1031,43 @@ defineExpose({ fetchModels })
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
+  row-gap: 6px;
+  flex-wrap: wrap;
   border-top: 1px dashed var(--color-border);
-  padding-top: 8px;
+  padding-top: 7px;
   margin-top: auto;
 }
 
+.card-actions-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.action-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
 .action-buttons .el-button {
+  display: inline-flex !important;
+  align-items: center !important;
   font-size: 12px !important;
-  padding: 4px 6px !important;
-  height: 28px !important;
+  padding: 2px 5px !important;
+  height: 26px !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+.action-buttons .el-button :deep(.el-icon) {
+  margin-right: 3px !important;
+  font-size: 13px !important;
+  flex-shrink: 0 !important;
 }
 
 .test-indicator {
@@ -991,11 +1108,6 @@ defineExpose({ fetchModels })
   font-size: 12px;
   color: var(--color-text-muted);
   font-weight: 500;
-}
-
-.action-buttons {
-  display: flex;
-  gap: 2px;
 }
 
 /* 日常档强调样式 */

@@ -77,7 +77,7 @@ def task_manager_for(session: ProjectSession):
 
 
 def current_project_info(session: ProjectSession) -> Dict[str, Any]:
-    """Resolve {id, name} for the active project (or nulls when none)."""
+    """Resolve active project info including scale and target_chapters."""
     if not session.project_id:
         return {"id": None, "name": None}
     data = ctx.project_manager._read_registry()
@@ -85,7 +85,25 @@ def current_project_info(session: ProjectSession) -> Dict[str, Any]:
     if not info:
         return {"id": None, "name": None}
     name = info.get("name", session.project_id)
-    return {"id": session.project_id, "name": name}
+    project_dir = ctx.BASE_DIR / "projects" / session.project_id
+    meta_path = project_dir / "config" / "project_meta.json"
+    meta: Dict[str, Any] = {}
+    if meta_path.exists():
+        try:
+            import json
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {
+        "id": session.project_id,
+        "name": name,
+        "genre": meta.get("genre", ""),
+        "channel": meta.get("channel", ""),
+        "target_chapters": meta.get("target_chapters", 0),
+        "scale": meta.get("scale", ""),
+        "scale_label": meta.get("scale_label", ""),
+        "scale_profile": meta.get("scale_profile", {}),
+    }
 
 
 def get_global_session(request: Request) -> ProjectSession:

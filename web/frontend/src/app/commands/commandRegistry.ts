@@ -22,8 +22,8 @@ const SETTINGS_COMMANDS: readonly AppCommand[] = [
     label: '模型与提供方',
     description: '配置日常、推理和备用模型',
     group: '设置',
-    path: '/config#model-library',
-    keywords: ['模型', 'provider', 'api key', 'llm'],
+    path: '/config#models-providers',
+    keywords: ['模型', 'provider', 'api key', 'llm', 'model-library'],
     executeMode: 'navigate',
   },
   {
@@ -36,12 +36,39 @@ const SETTINGS_COMMANDS: readonly AppCommand[] = [
     executeMode: 'navigate',
   },
   {
-    id: 'settings-diagnostics',
-    label: '系统与诊断',
-    description: '查看运行环境、数据和集成设置',
+    id: 'settings-quality',
+    label: '生成与质量',
+    description: '质量门禁、改写与流水线运行时',
     group: '设置',
-    path: '/config#system-readiness',
-    keywords: ['系统', '诊断', '日志', '数据'],
+    path: '/config#generation-quality',
+    keywords: ['质量', '门禁', '流水线', 'pipeline'],
+    executeMode: 'navigate',
+  },
+  {
+    id: 'settings-update',
+    label: '在线更新',
+    description: '检查 GitHub 官方发布并查看当前版本',
+    group: '设置',
+    path: '/config#software-update',
+    keywords: ['更新', '升级', 'updater', 'release'],
+    executeMode: 'navigate',
+  },
+  {
+    id: 'settings-data',
+    label: '系统与数据',
+    description: '外观、备份、重置与桌面更新',
+    group: '设置',
+    path: '/config#system-data',
+    keywords: ['系统', '诊断', '日志', '数据', '备份', 'system-readiness'],
+    executeMode: 'navigate',
+  },
+  {
+    id: 'nav-inspiration',
+    label: '灵感工坊',
+    description: '开书构思与故事蓝图',
+    group: '全局',
+    path: '/inspiration',
+    keywords: ['灵感', '蓝图', '工坊'],
     executeMode: 'navigate',
   },
 ]
@@ -56,7 +83,7 @@ export function buildNavigationCommands(inProject: boolean): AppCommand[] {
     keywords: [item.id],
     executeMode: 'navigate',
   }))
-  if (!inProject) return globalCommands
+  if (!inProject) return [...globalCommands, ...SETTINGS_COMMANDS]
   const projectCommands = PROJECT_NAV_ITEMS.map<AppCommand>((item) => ({
     id: `nav-${item.id}`,
     label: item.label,

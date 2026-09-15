@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Sunny, Moon } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useProjectStore } from '../../stores/project'
 import { useProjectSnapshotStore } from '../../stores/projectSnapshot'
+import { useTheme } from '../../composables/useTheme'
 import {
   firstEnabledSnapshotAction,
   resolveSnapshotActionLocation,
@@ -16,6 +18,8 @@ const route = useRoute()
 const router = useRouter()
 const projectStore = useProjectStore()
 const snapshotStore = useProjectSnapshotStore()
+const { resolvedTheme, setThemeMode } = useTheme()
+
 const title = computed(() => route.meta.title || '栖墨')
 const nextAction = computed(() =>
   firstEnabledSnapshotAction(snapshotStore.snapshot?.next_actions || []),
@@ -24,6 +28,12 @@ const nextAction = computed(() =>
 function openNextAction() {
   if (!nextAction.value) return
   void router.push(resolveSnapshotActionLocation(nextAction.value))
+}
+
+function toggleTheme() {
+  const next = resolvedTheme.value === 'dark' ? 'light' : 'dark'
+  setThemeMode(next)
+  ElMessage.success(`已切换为${next === 'dark' ? '深色' : '浅色'}模式`)
 }
 </script>
 
@@ -64,17 +74,32 @@ function openNextAction() {
         {{ snapshotStore.status === 'loading' ? '正在判断下一步…' : '当前没有待办建议' }}
       </span>
     </div>
-    <button
-      type="button"
-      class="command-trigger"
-      data-tour="command-palette"
-      aria-label="打开全局搜索与命令面板"
-      @click="$emit('openCommand')"
-    >
-      <el-icon><Search /></el-icon>
-      <span>搜索或执行命令</span>
-      <kbd>Ctrl K</kbd>
-    </button>
+    <div class="topbar-actions">
+      <button
+        type="button"
+        class="theme-toggle-btn"
+        :title="`外观：当前为${resolvedTheme === 'dark' ? '深色' : '浅色'}模式（点击直接切换）`"
+        :aria-label="`切换深浅模式，当前为${resolvedTheme === 'dark' ? '深色' : '浅色'}模式`"
+        @click="toggleTheme"
+      >
+        <el-icon :size="16">
+          <Sunny v-if="resolvedTheme === 'light'" />
+          <Moon v-else />
+        </el-icon>
+      </button>
+
+      <button
+        type="button"
+        class="command-trigger"
+        data-tour="command-palette"
+        aria-label="打开全局搜索与命令面板"
+        @click="$emit('openCommand')"
+      >
+        <el-icon><Search /></el-icon>
+        <span>搜索或执行命令</span>
+        <kbd>Ctrl K</kbd>
+      </button>
+    </div>
   </header>
 </template>
 
@@ -174,13 +199,35 @@ function openNextAction() {
   font-size: 12px;
 }
 
-.breadcrumbs i {
-  color: var(--color-text-subtle);
-  font-style: normal;
-}
-
 .breadcrumbs strong {
   color: var(--color-text-strong);
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.theme-toggle-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-bg-surface-muted);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all var(--motion-fast);
+}
+
+.theme-toggle-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .command-trigger {
@@ -200,6 +247,11 @@ function openNextAction() {
 .command-trigger:hover {
   border-color: var(--color-primary);
   color: var(--color-text-strong);
+}
+
+.breadcrumbs i {
+  color: var(--color-text-subtle);
+  font-style: normal;
 }
 
 .command-trigger kbd {

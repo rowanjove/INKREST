@@ -3,6 +3,8 @@
 .env.local
 config/pipeline.yaml
 config/models.json
+config/plugins.yaml
+dist-plugins/
 
 # 本地项目、运行数据与备份
 data/
@@ -64,3 +66,12 @@ electron_version/
 
 # 杉杉素材的本地重复源
 山山/
+
+# 本地归档目录
+归档/
+
+# 本地多作品账户与运行缓存
+accounts/
+global/
+.codex/
+插件/

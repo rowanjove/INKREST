@@ -1,6 +1,7 @@
 <script setup lang="ts">
 defineProps<{
   outline: Record<string, any> | null
+  designUpperLimit?: number
   submitting: boolean
   tasksRunning: boolean
   onSubmitOutline: () => void
@@ -56,7 +57,12 @@ const newGuard = defineModel<string>('newGuard', { required: true })
         <el-input v-model="form.genre" placeholder="都市 / 玄幻 / 科幻 / 历史..." />
       </el-form-item>
       <el-form-item label="目标章数">
-        <el-input-number v-model="form.target_chapters" :min="1" :max="999999" />
+        <div class="chapters-field">
+          <el-input-number v-model="form.target_chapters" :min="1" :max="999999" />
+          <span v-if="designUpperLimit" class="chapters-tip">
+            （默认按作品设计上限 {{ designUpperLimit }} 章生成，可微调）
+          </span>
+        </div>
       </el-form-item>
       <el-form-item label="额外要求">
         <el-input v-model="form.special_requirements" type="textarea" :rows="5" resize="none" />
@@ -157,3 +163,16 @@ const newGuard = defineModel<string>('newGuard', { required: true })
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+.chapters-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.chapters-tip {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+</style>

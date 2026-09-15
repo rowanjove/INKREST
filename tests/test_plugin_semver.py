@@ -33,27 +33,30 @@ def test_is_core_version_compatible():
 def test_validate_manifest_with_engines_inkrest(tmp_path: Path):
     (tmp_path / "plugin.py").write_text("class P: pass\nPLUGIN_CLASS = P\n", encoding="utf-8")
 
+    compatible_spec = f"^{CORE_VERSION}"
     data = {
         'id': 'semver-test',
         'name': 'Semver Test',
         'plugin_type': 'web_extension',
         'entry': 'plugin:PLUGIN_CLASS',
         'version': '1.0.0',
-        'engines': {'inkrest': '^1.0.0'},
+        'engines': {'inkrest': compatible_spec},
     }
     normalized = validate_manifest(data, tmp_path)
-    assert normalized['engines']['inkrest'] == '^1.0.0'
-    assert normalized['min_core_version'] == '^1.0.0'
+    assert normalized['engines']['inkrest'] == compatible_spec
+    assert normalized['min_core_version'] == compatible_spec
 
+    major = int(CORE_VERSION.split('.')[0])
+    incompat_spec = f"^{major + 1}.0.0"
     incompat = {
         'id': 'semver-future',
         'name': 'Future Plugin',
         'plugin_type': 'web_extension',
         'entry': 'plugin:PLUGIN_CLASS',
         'version': '1.0.0',
-        'engines': {'inkrest': '^2.0.0'},
+        'engines': {'inkrest': incompat_spec},
     }
     with pytest.raises(ManifestError) as exc_info:
         validate_manifest(incompat, tmp_path)
-    assert "^2.0.0" in str(exc_info.value)
-    assert "1.0.0" in str(exc_info.value)
+    assert incompat_spec in str(exc_info.value)
+    assert CORE_VERSION in str(exc_info.value)

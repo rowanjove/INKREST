@@ -247,8 +247,17 @@ def dismiss_pipeline_alert(
     if not checkpoint_path.exists():
         try:
             from novel_agent.services.batch_retry_queue import dismiss_batch_retry
+            from novel_agent.services.external_review import dismiss_external_review
 
-            if dismiss_batch_retry(session.root_dir, safe_id):
+            retry_dismissed = dismiss_batch_retry(session.root_dir, safe_id)
+            external_dismissed = dismiss_external_review(session.root_dir, safe_id)
+            if retry_dismissed or external_dismissed:
+                try:
+                    from novel_agent.services.chapter_gate_rerun import maybe_clear_quality_batch_pause
+
+                    maybe_clear_quality_batch_pause(session.root_dir)
+                except Exception:
+                    pass
                 return {
                     "status": "ok",
                     "chapter_id": safe_id,
@@ -278,6 +287,18 @@ def dismiss_pipeline_alert(
         from novel_agent.services.batch_retry_queue import dismiss_batch_retry
 
         dismiss_batch_retry(session.root_dir, safe_id)
+    except Exception:
+        pass
+    try:
+        from novel_agent.services.external_review import dismiss_external_review
+
+        dismiss_external_review(session.root_dir, safe_id)
+    except Exception:
+        pass
+    try:
+        from novel_agent.services.chapter_gate_rerun import maybe_clear_quality_batch_pause
+
+        maybe_clear_quality_batch_pause(session.root_dir)
     except Exception:
         pass
     return {"status": "ok", "chapter_id": safe_id, "resolved_at": checkpoint["resolved_at"]}

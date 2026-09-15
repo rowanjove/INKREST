@@ -1,5 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ElIcon } from 'element-plus'
+import {
+  VideoPause,
+  FirstAidKit,
+  Document,
+  Setting,
+  House,
+  ArrowRight,
+  CircleCheck,
+  Close,
+} from '@element-plus/icons-vue'
 import { usePetStore } from '../../stores/pet'
 import { SHANSHAN_BATCH_PAUSE_HINT } from '../../constants/shanshanCopy'
 import type { PetAction } from '../../composables/usePetBubbleView'
@@ -43,7 +54,10 @@ function briefTagClass(severity: string) {
       @click="onOpenMonitorForBatch"
       @keydown.enter="onOpenMonitorForBatch"
     >
-      <span class="batch-pause-icon">⏸</span>
+      <div class="batch-pause-top">
+        <el-icon class="batch-pause-icon"><VideoPause /></el-icon>
+        <span class="batch-pause-tag">生成已暂停</span>
+      </div>
       <p class="batch-pause-text">{{ SHANSHAN_BATCH_PAUSE_HINT(pet.context.novel_batch) }}</p>
       <span class="batch-pause-cta">去生产中心处理 →</span>
     </div>
@@ -77,15 +91,14 @@ function briefTagClass(severity: string) {
           title="隐藏/忽略此错误"
           @click.stop="pet.ignoreFailedTask(pet.latestFailedTask.id)"
         >
-          ×
+          <el-icon :size="12"><Close /></el-icon>
         </button>
       </div>
       <div class="status-detail-desc">{{ pet.statusDetail }}</div>
-      <div v-if="pet.context?.running_tasks?.length" style="margin-top: 8px; display: flex; justify-content: flex-end;">
+      <div v-if="pet.context?.running_tasks?.length" class="running-task-actions">
         <button
           type="button"
-          class="action-pill-mini"
-          style="background: #fef0f0; color: #f56c6c; border: 1px solid #fde2e2; padding: 4px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; transition: all 0.2s;"
+          class="abort-task-btn"
           @click.stop="onAbortRunningTask()"
         >
           中止
@@ -132,10 +145,11 @@ function briefTagClass(severity: string) {
     </section>
 
     <div class="diagnose-box-compact">
-      <div class="diagnose-header-row" style="cursor: pointer; user-select: none;" @click="onToggleDiagnoseCollapsed">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span class="collapse-arrow" :class="{ open: !diagnoseCollapsed }">▶</span>
-          <span class="diagnose-title-text">🩺 系统诊断</span>
+      <div class="diagnose-header-row" @click="onToggleDiagnoseCollapsed">
+        <div class="diagnose-title-group">
+          <el-icon class="collapse-arrow" :class="{ open: !diagnoseCollapsed }"><ArrowRight /></el-icon>
+          <el-icon class="diagnose-icon"><FirstAidKit /></el-icon>
+          <span class="diagnose-title-text">系统诊断</span>
         </div>
         <button
           type="button"
@@ -152,8 +166,8 @@ function briefTagClass(severity: string) {
           v-if="!pet.diagnoseLoading && (!pet.diagnoseResult || pet.diagnoseResult.issues.length === 0)"
           class="diagnose-healthy-mini"
         >
-          <span class="icon-healthy-mini">✓</span>
-          <span>系统健康状态良好。</span>
+          <el-icon color="#16a34a"><CircleCheck /></el-icon>
+          <span>系统各项服务与创作环境良好</span>
         </div>
 
         <div v-else-if="!pet.diagnoseLoading && pet.diagnoseResult" class="diagnose-list-mini">
@@ -196,13 +210,16 @@ function briefTagClass(severity: string) {
         <span>🔧 修章</span>
       </button>
       <button type="button" class="nav-btn-compact" @click="onNavigate('/logs')">
-        <span>📑 日志</span>
+        <el-icon><Document /></el-icon>
+        <span>日志</span>
       </button>
       <button type="button" class="nav-btn-compact" @click="onNavigate('/config')">
-        <span>⚙️ 配置</span>
+        <el-icon><Setting /></el-icon>
+        <span>配置</span>
       </button>
       <button type="button" class="nav-btn-compact" @click="onNavigate('/')">
-        <span>🏠 主页</span>
+        <el-icon><House /></el-icon>
+        <span>主页</span>
       </button>
     </section>
   </section>
@@ -222,41 +239,56 @@ function briefTagClass(severity: string) {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px 11px;
-  border-radius: 8px;
-  border: 1px solid #f5dab1;
-  background: linear-gradient(180deg, #fdf6ec 0%, #fff 100%);
+  padding: 10px 12px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid #fde68a;
+  background: linear-gradient(180deg, #fffdf5 0%, #fffbf0 100%);
   cursor: pointer;
   flex: none;
+  transition: all 0.18s ease;
 }
 
 .batch-pause-banner:hover {
-  border-color: #e6a23c;
+  border-color: #f59e0b;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.1);
+}
+
+.batch-pause-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .batch-pause-icon {
-  font-size: 12px;
-  color: #e6a23c;
+  font-size: 14px;
+  color: #d97706;
+}
+
+.batch-pause-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #b45309;
 }
 
 .batch-pause-text {
   margin: 0;
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 1.45;
-  color: #606266;
+  color: #4b5563;
 }
 
 .batch-pause-cta {
   font-size: 11px;
   font-weight: 600;
-  color: #b88230;
+  color: #d97706;
 }
 
 .status-scope-hint {
   margin: 0;
   font-size: 11px;
   line-height: 1.4;
-  color: #909399;
+  color: var(--color-text-subtle, #94a3b8);
+  text-align: center;
   flex: none;
 }
 
@@ -264,43 +296,42 @@ function briefTagClass(severity: string) {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 11px;
-  border: 1px solid #e4eaf2;
-  border-radius: 8px;
-  background: var(--color-bg-surface);
+  padding: 11px 13px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-bg-surface, #ffffff);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
   flex: none;
 }
 
 .status-card-compact.clickable {
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
 
 .status-card-compact.clickable:hover {
-  border-color: rgba(0, 122, 255, 0.35);
-  background: rgba(0, 122, 255, 0.02);
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.05);
+  border-color: var(--color-primary, #c66f4f);
+  background: var(--color-primary-soft, #fff9f6);
+  box-shadow: 0 3px 10px rgba(198, 111, 79, 0.08);
 }
 
 .ignore-btn-mini {
   margin-left: 6px;
   border: none;
   background: transparent;
-  color: #a0aec0;
-  font-size: 16px;
-  line-height: 1;
+  color: var(--color-text-subtle, #94a3b8);
   cursor: pointer;
-  padding: 2px 6px;
+  padding: 3px;
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
 
 .ignore-btn-mini:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #e53e3e;
+  background: rgba(0, 0, 0, 0.06);
+  color: #ef4444;
 }
 
 .status-title-row {
@@ -313,34 +344,34 @@ function briefTagClass(severity: string) {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #48a868;
-  box-shadow: 0 0 0 2px rgba(72, 168, 104, 0.14);
+  background: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
 }
 
 .status-indicator-dot.busy {
-  background: #4f7fc6;
-  box-shadow: 0 0 0 2px rgba(79, 127, 198, 0.14);
+  background: var(--color-primary, #c66f4f);
+  box-shadow: 0 0 0 2px var(--color-primary-muted, rgba(198, 111, 79, 0.2));
 }
 
 .status-indicator-dot.alert {
-  background: #d65d5d;
-  box-shadow: 0 0 0 2px rgba(214, 93, 93, 0.14);
+  background: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
 }
 
 .status-text-bold {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--color-text-strong, #0f172a);
 }
 
 .project-name-tag {
   margin-left: auto;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  background: var(--color-border-subtle);
-  color: #4a5568;
-  padding: 1.5px 7px;
-  border-radius: 4px;
+  background: var(--color-bg-hover, #f1f5f9);
+  color: var(--color-text-muted, #64748b);
+  padding: 2px 7px;
+  border-radius: 5px;
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -348,8 +379,8 @@ function briefTagClass(severity: string) {
 }
 
 .status-detail-desc {
-  font-size: 12.5px;
-  color: #536176;
+  font-size: 12px;
+  color: var(--color-text-muted, #64748b);
   line-height: 1.45;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -358,14 +389,36 @@ function briefTagClass(severity: string) {
   -webkit-box-orient: vertical;
 }
 
+.running-task-actions {
+  margin-top: 6px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.abort-task-btn {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.abort-task-btn:hover {
+  background: #fee2e2;
+}
+
 .factory-brief-box {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px;
-  border: 1px solid #e4eaf2;
-  border-radius: 8px;
-  background: var(--color-bg-surface-muted);
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-subtle, #edf0f4);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-bg-app, #f8fafc);
   flex: none;
 }
 
@@ -379,96 +432,97 @@ function briefTagClass(severity: string) {
 .factory-brief-kicker {
   font-size: 12px;
   font-weight: 700;
-  color: #4a5568;
+  color: var(--color-text, #334155);
 }
 
 .factory-brief-tag {
-  padding: 2px 7px;
+  padding: 1.5px 7px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
 }
 
 .factory-brief-tag.danger {
-  color: #c53030;
-  background: #fff5f5;
+  color: #dc2626;
+  background: #fef2f2;
 }
 
 .factory-brief-tag.warning {
-  color: #dd6b20;
-  background: #fffaf0;
+  color: #d97706;
+  background: #fffbeb;
 }
 
 .factory-brief-tag.success {
-  color: #2f855a;
-  background: #f0fff4;
+  color: #16a34a;
+  background: #f0fdf4;
 }
 
 .factory-brief-tag.info {
-  color: #2b6cb0;
-  background: #ebf8ff;
+  color: #0284c7;
+  background: #f0f9ff;
 }
 
 .factory-brief-summary,
 .factory-repair-hint {
   margin: 0;
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 1.45;
-  color: #536176;
+  color: var(--color-text-muted, #64748b);
 }
 
 .factory-command-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 5px;
 }
 
 .factory-command-row .action-pill-mini.primary {
-  border-color: #007aff;
-  background: #007aff;
+  border-color: var(--color-primary, #c66f4f);
+  background: var(--color-primary, #c66f4f);
   color: #fff;
 }
 
 .factory-command-row .action-pill-mini.warning {
-  border-color: #e6a23c;
-  background: #fdf6ec;
-  color: #b88230;
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #b45309;
 }
 
 .factory-command-row .action-pill-mini.danger {
-  border-color: #f56c6c;
-  background: #fef0f0;
-  color: #c53030;
+  border-color: #ef4444;
+  background: #fef2f2;
+  color: #b91c1c;
 }
 
 .factory-command-row .action-pill-mini.success {
-  border-color: #48a868;
-  background: #f0fff4;
-  color: #2f855a;
+  border-color: #22c55e;
+  background: #f0fdf4;
+  color: #15803d;
 }
 
 .factory-repair-btn {
   align-self: flex-start;
-  border: 1px solid #007aff;
-  background: #e6f0ff;
-  color: #007aff;
-  padding: 4px 10px;
+  border: 1px solid var(--color-primary, #c66f4f);
+  background: var(--color-primary-soft, #fff5f0);
+  color: var(--color-primary, #c66f4f);
+  padding: 3px 9px;
   border-radius: 6px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
+  transition: all 0.18s ease;
 }
 
 .factory-repair-btn:hover {
-  background: #007aff;
+  background: var(--color-primary, #c66f4f);
   color: #fff;
 }
 
 .diagnose-box-compact {
-  background: rgba(255, 255, 255, 0.65);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  border-radius: 8px;
-  padding: 10px;
+  background: var(--color-bg-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 10px);
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -481,47 +535,61 @@ function briefTagClass(severity: string) {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  cursor: pointer;
+  user-select: none;
   flex: none;
 }
 
-.diagnose-title-text {
+.diagnose-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diagnose-icon {
+  color: var(--color-primary, #c66f4f);
   font-size: 13px;
-  font-weight: 750;
-  color: #4a5568;
+}
+
+.diagnose-title-text {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-text-strong, #0f172a);
 }
 
 .scan-btn-mini {
   border: 0;
   background: transparent;
-  color: #007aff;
-  font-size: 12px;
-  font-weight: 700;
+  color: var(--color-primary, #c66f4f);
+  font-size: 11.5px;
+  font-weight: 600;
   cursor: pointer;
-  padding: 0;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all 0.18s ease;
+}
+
+.scan-btn-mini:hover:not(:disabled) {
+  background: var(--color-primary-soft, #fff5f0);
 }
 
 .diagnose-healthy-mini {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #2f855a;
-  background: #f0fff4;
-  border: 1px solid #c6f6d5;
-  padding: 6px 8px;
+  color: #15803d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 6px 10px;
   border-radius: 6px;
-  font-size: 12.5px;
+  font-size: 12px;
   flex: 1;
-}
-
-.icon-healthy-mini {
-  font-weight: bold;
-  font-size: 13px;
 }
 
 .diagnose-list-mini {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   flex: 1;
   overflow-y: auto;
 }
@@ -529,27 +597,27 @@ function briefTagClass(severity: string) {
 .diagnose-item-mini {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
-  padding: 5px 8px;
+  gap: 6px;
+  padding: 6px 9px;
   border-radius: 6px;
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 11.5px;
+  line-height: 1.45;
 }
 
 .diagnose-item-mini.error {
-  background: #fff5f5;
-  border: 1px solid #fed7d7;
-  color: #c53030;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
 }
 
 .diagnose-item-mini.warning {
-  background: #fffaf0;
-  border: 1px solid #feebc8;
-  color: #dd6b20;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #b45309;
 }
 
 .issue-bullet {
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
 }
 
@@ -564,24 +632,25 @@ function briefTagClass(severity: string) {
 .suggestion-actions-mini {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 5px;
 }
 
 .action-pill-mini {
-  border: 1px solid #007aff;
-  background: #e6f0ff;
-  color: #007aff;
-  padding: 2.5px 9px;
-  border-radius: 12px;
+  border: 1px solid var(--color-border, #d1d9e5);
+  background: var(--color-bg-surface, #ffffff);
+  color: var(--color-text, #334155);
+  padding: 2.5px 8px;
+  border-radius: 99px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
 
 .action-pill-mini:hover {
-  background: #007aff;
-  color: var(--color-bg-surface);
+  background: var(--color-primary, #c66f4f);
+  color: #ffffff;
+  border-color: var(--color-primary, #c66f4f);
 }
 
 .quick-actions-compact {
@@ -592,39 +661,41 @@ function briefTagClass(severity: string) {
 }
 
 .nav-btn-compact {
-  height: 30px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 6px;
-  background: var(--color-bg-surface);
-  color: #2d3748;
-  font-size: 12px;
-  font-weight: 700;
+  height: 32px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-sm, 7px);
+  background: var(--color-bg-surface, #ffffff);
+  color: var(--color-text, #334155);
+  font-size: 11.5px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.18s ease;
 }
 
 .nav-btn-compact:hover {
-  border-color: rgba(0, 0, 0, 0.15);
-  background: #f7fafc;
+  border-color: var(--color-primary, #c66f4f);
+  color: var(--color-primary, #c66f4f);
+  background: var(--color-primary-soft, #fff5f0);
 }
 
 .nav-btn-compact.primary {
-  border-color: #e6a23c;
-  background: #fdf6ec;
-  color: #b88230;
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #b45309;
 }
 
 .nav-btn-compact.primary:hover {
-  background: #faecd8;
+  background: #fef3c7;
 }
 
 .collapse-arrow {
-  display: inline-block;
-  font-size: 8px;
-  color: #718096;
+  display: inline-flex;
+  font-size: 11px;
+  color: var(--color-text-subtle, #94a3b8);
   transition: transform 0.2s ease;
   transform: rotate(0deg);
 }

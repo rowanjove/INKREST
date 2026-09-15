@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+
 defineProps<{
   visible: boolean
 }>()
@@ -8,6 +10,7 @@ const emit = defineEmits<{
 }>()
 
 const close = () => emit('update:visible', false)
+const activeTab = ref('quickstart')
 
 const pluginTypeHints = [
   { value: 'pipeline_hook', tip: '在流水线各阶段前后插入逻辑（改大纲、润色稿等）' },
@@ -64,17 +67,70 @@ PLUGIN_CLASS = MyPlugin`
 <template>
   <el-dialog
     :model-value="visible"
-    title="插件开发说明"
+    title="扩展帮助"
     width="720px"
     align-center
     class="plugin-help-dialog"
     @update:model-value="emit('update:visible', $event)"
   >
-    <div class="help-scroll">
-      <el-alert type="info" :closable="false" show-icon>
-        <template #title>给新手的一句话</template>
-        做一个文件夹 → 写好清单和 Python → 打成 zip → 本页「载入插件」→ 信任并启用。
-      </el-alert>
+    <el-tabs v-model="activeTab" class="help-tabs" aria-label="扩展帮助子页">
+      <el-tab-pane label="快速开始" name="quickstart">
+        <div class="help-scroll">
+          <el-alert type="info" :closable="false" show-icon>
+            <template #title>先看清楚，再启用</template>
+            载入插件后先核对来源、内容摘要和权限；信任与启用是两步，帮助页不会执行插件。
+          </el-alert>
+          <section class="help-block">
+            <h3>推荐流程</h3>
+            <ol>
+              <li>点击「载入插件」上传 <code>.zip</code>，安装后默认未信任、未启用。</li>
+              <li>查看内容摘要和权限，确认来源后只建立信任。</li>
+              <li>再次确认后打开启用开关；代码或权限变化后需要重新确认。</li>
+              <li>改动本地插件后点「重新扫描」，不要直接让未检查的代码运行。</li>
+            </ol>
+          </section>
+          <section class="help-block">
+            <h3>ZIP 最小结构</h3>
+            <p><code>inkrest.plugin.json</code> 与 <code>plugin.py</code> 放在压缩包根目录，或唯一的顶层文件夹内。</p>
+            <p class="muted">需要更多字段和 Python 示例时，切换到“开发参考”。</p>
+          </section>
+          <section class="help-block">
+            <h3>新手可从官方示例插件开始</h3>
+            <p>
+              源码环境下可复制 <code>plugins/examples/</code> 中的
+              <code>hello_guard.py</code> 到项目 <code>plugins/</code> 目录，再回到扩展中心扫描、信任并启用。
+            </p>
+            <p class="muted">完整说明见 <code>plugins/examples/README.md</code>，也可切换到“官方示例”查看操作步骤。</p>
+          </section>
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="官方示例" name="examples">
+        <div class="help-scroll">
+          <el-alert type="warning" :closable="false" show-icon title="源码环境示例">
+            官方示例位于源码目录 <code>plugins/examples/</code>。桌面安装包不保证包含这个目录；示例是兼容格式，启用前会按本地代码权限处理。
+          </el-alert>
+          <section class="help-block">
+            <h3><code>hello_guard.py</code></h3>
+            <p>质量门禁示例：演示如何拦截低分章节。</p>
+            <ol>
+              <li>源码环境下复制到项目的 <code>plugins/</code> 目录。</li>
+              <li>回到本页点击「重新扫描」，找到 Hello Guard。</li>
+              <li>先查看摘要与权限，再建立信任，最后单独打开启用。</li>
+              <li>只有你明确开始一章生产后，才会看到它对门禁报告的影响。</li>
+            </ol>
+          </section>
+          <section class="help-block">
+            <h3><code>txt_export_hook.py</code></h3>
+            <p>导出钩子示例：演示如何追加自定义 TXT 导出。</p>
+            <p class="muted">它同样不会自动启用；使用前请确认本地代码权限和目标项目。</p>
+          </section>
+          <p class="muted">完整字段、权限和打包方式见 <code>docs/plugins/PLUGIN_AUTHOR.md</code>。示例页面只提供说明，不会自动复制、信任、启用或运行插件。</p>
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="开发参考" name="developer">
+        <div class="help-scroll">
 
       <section class="help-block">
         <h3>1. ZIP 包结构</h3>
@@ -161,7 +217,9 @@ PLUGIN_CLASS = MyPlugin`
         <pre class="code-sample">.\scripts\package-plugin.ps1 -PluginDir .\templates\plugin-starter</pre>
         <p class="muted">更完整的说明见仓库 <code>docs/plugins/PLUGIN_AUTHOR.md</code>。</p>
       </section>
-    </div>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
     <template #footer>
       <el-button type="primary" @click="close">知道了</el-button>
     </template>
@@ -169,6 +227,9 @@ PLUGIN_CLASS = MyPlugin`
 </template>
 
 <style scoped>
+.help-tabs { min-height: 0; }
+.help-tabs :deep(.el-tabs__nav-wrap) { margin-bottom: 8px; }
+.help-tabs :deep(.el-tabs__item) { font-size: 13px; }
 .help-scroll {
   max-height: min(68vh, 640px);
   overflow-y: auto;

@@ -16,6 +16,7 @@ import {
 import { PRODUCTION_BLOCKS, PIPELINE_STEP_LABELS } from '../../constants/pipelineDisplay'
 import {
   applyRunningPipelineOverlay,
+  pipelineEntriesForChapter,
   rawBlockStatus,
   settleGateBlockAfterChapterComplete,
   settleQueueBlockAfterChapterStart,
@@ -57,7 +58,11 @@ const isOperating = computed(
 const activeChapterId = computed(() => tasksStore.currentChapterId || ctx.value.lastChapterId || '')
 
 const blocks = computed<ProductionBlockView[]>(() => {
-  const entries = tasksStore.progress
+  const entries = pipelineEntriesForChapter(
+    tasksStore.progress,
+    activeChapterId.value,
+    tasksStore.currentTaskId,
+  )
   const pipelineBusy = isOperating.value
 
   const initialBlocks: ProductionBlockView[] = PRODUCTION_BLOCKS.map((block, index) => {
@@ -169,7 +174,10 @@ function goToProduction() {
             </span>
           </template>
           <template v-else>
-            <span class="idle-text">空闲就绪 · 点击右侧按钮开启生成</span>
+            <span v-if="activeChapterId && blocks.some((block) => block.status === 'done')" class="idle-text">
+              第 {{ activeChapterId }} 章已有生产记录 · 当前无运行任务
+            </span>
+            <span v-else class="idle-text">空闲就绪 · 点击右侧按钮开启生成</span>
           </template>
         </span>
       </div>

@@ -128,6 +128,7 @@ def split_window_briefs(
     instructions: str = "",
     macro_arc_index: int = 0,
     writing_context: str = "",
+    orchestrator: Optional[Any] = None,
 ) -> Dict[str, Any]:
     from novel_agent.agents.managing_editor import ManagingEditorAgent
     from novel_agent.control.chapter_window import normalize_chapter_window
@@ -148,8 +149,11 @@ def split_window_briefs(
         arc["goal"] = f"{arc.get('goal', '')}\n补充：{instructions}".strip()
     plan_outline["macro_outline"] = [arc]
 
-    config = PipelineConfig.from_config(root_dir)
-    editor = ManagingEditorAgent(config.get_llm("managing_editor"), PromptRepository(root_dir))
+    if orchestrator is None:
+        config = PipelineConfig.from_config(root_dir)
+        editor = ManagingEditorAgent(config.get_llm("managing_editor"), PromptRepository(root_dir))
+    else:
+        editor = orchestrator.managing_editor
     result = editor.split_chapters(plan_outline, arc_index=0, writing_context=writing_context)
     chapters = []
     for i, ch in enumerate((result.get("chapters") or [])[:count]):
@@ -314,6 +318,7 @@ async def replenish_rolling_window(
         start_chapter=start,
         count=need,
         macro_arc_index=macro_index,
+        orchestrator=orchestrator,
     )
     append_briefs_to_queue(root, payload)
     return len(payload.get("chapters") or [])
@@ -335,7 +340,13 @@ async def maybe_open_next_episode(orchestrator: Any, *, complete_fn: Optional[Ca
     if target < 999999 and start > target:
         return False
 
-    payload = split_window_briefs(root, start_chapter=start, count=episode_size, macro_arc_index=0)
+    payload = split_window_briefs(
+        root,
+        start_chapter=start,
+        count=episode_size,
+        macro_arc_index=0,
+        orchestrator=orchestrator,
+    )
     payload["arc_id"] = _episode_arc_id(max(1, (start - 1) // max(1, episode_size) + 1))
     payload["arc_name"] = f"单元 {(start - 1) // max(1, episode_size) + 1}"
     append_briefs_to_queue(root, payload)

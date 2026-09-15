@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import { getConfig, getEmbeddingStatus, updateConfig } from '../api'
 
 const expanded = ref(false)
@@ -92,12 +93,21 @@ const save = async () => {
 
 const embeddingDegraded = computed(() => !semanticEffective.value)
 
+const props = withDefaults(
+  defineProps<{
+    bare?: boolean
+  }>(),
+  {
+    bare: false,
+  },
+)
+
 onMounted(load)
 </script>
 
 <template>
-  <section class="fold-card" v-loading="loading">
-    <div class="fold-head" @click="expanded = !expanded">
+  <section class="fold-card" :class="{ 'is-bare': bare }" v-loading="loading">
+    <div v-if="!bare" class="fold-head" @click="expanded = !expanded">
       <div class="head-left">
         <span class="collapse-arrow" :class="{ open: expanded }">▶</span>
         <div>
@@ -107,20 +117,37 @@ onMounted(load)
       </div>
     </div>
 
-    <div v-show="expanded" class="fold-body">
-      <el-alert type="info" :closable="false" show-icon class="mode-preset-alert" title="推荐组合">
-        <p><strong>连写优先</strong>：失败阻断 + 自动修正开 — 少熔断、机器先修一版。</p>
-        <p><strong>外站严审 / 半自动</strong>：失败阻断 + 自动修正关 — 宁可暂停，改稿后重试审校再「继续写书」。</p>
-      </el-alert>
-      <p class="hint scale-hint">
-        长篇/超长篇的体量请在工作台「体量架构」修改；保存后会自动补全此处空缺的批量保护、persona 自动等项。手改本页后以 pipeline.yaml 为准。
-        当前体量 <strong>{{ workScale }}</strong> · 流水线档位 <strong>{{ pipelineTier }}</strong> · 审校配置 <strong>{{ auditProfile }}</strong>
-        （economy 抽检省 token，standard 均衡，premium 全审；可在 pipeline.yaml 的 <code>runtime.audit_profile</code> 覆盖）。
-      </p>
-      <el-alert type="info" :closable="false" show-icon class="scale-gate-alert" title="体量与门禁关系">
-        <p>短篇/中篇默认全审；长篇起逐步抽检，超长篇更偏 economy 以控制成本。</p>
-        <p>修改体量后审校档位会联动，此处开关只影响「失败是否阻断」「外审是否拦续跑」等行为。</p>
-      </el-alert>
+    <div v-show="bare || expanded" class="fold-body">
+      <div class="runtime-status-bar">
+        <span class="scale-stat">
+          当前体量 <strong>{{ workScale }}</strong> · 流水线档位 <strong>{{ pipelineTier }}</strong> · 审校配置 <strong>{{ auditProfile }}</strong>
+        </span>
+        <el-popover
+          placement="bottom-end"
+          :width="360"
+          trigger="hover"
+          popper-class="runtime-help-popover"
+        >
+          <template #reference>
+            <el-button class="help-btn" circle size="small" :icon="QuestionFilled" title="查看推荐组合与体量门禁关系" />
+          </template>
+          <div class="runtime-help-panel">
+            <div class="help-block">
+              <div class="help-title">💡 推荐组合</div>
+              <p><strong>连写优先</strong>：失败阻断 + 自动修正开 — 少熔断、机器先修一版。</p>
+              <p><strong>外站严审 / 半自动</strong>：失败阻断 + 自动修正关 — 宁可暂停，改稿后重试审校再「继续写书」。</p>
+            </div>
+            <div class="help-block">
+              <div class="help-title">📐 体量与门禁关系</div>
+              <p>短篇/中篇默认全审；长篇起逐步抽检，超长篇更偏 economy 以控制成本。</p>
+              <p>修改体量后审校档位会联动，此处开关只影响「失败是否阻断」「外审是否拦续跑」等行为。</p>
+            </div>
+            <div class="help-footer">
+              长篇/超长篇体量请在工作台「体量架构」调整；高级覆盖以项目 pipeline.yaml 为准。
+            </div>
+          </div>
+        </el-popover>
+      </div>
 
       <el-alert
         v-if="embeddingDegraded"
@@ -237,12 +264,58 @@ onMounted(load)
 </template>
 
 <style scoped>
-.scale-hint {
-  margin: 0;
-  padding: 10px 12px;
+.runtime-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
   background: var(--color-bg-surface-muted);
   border-radius: 8px;
   border: 1px solid var(--color-border);
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.scale-stat strong {
+  color: var(--color-text-strong);
+}
+
+.help-btn {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+}
+
+.help-btn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.runtime-help-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-strong);
+}
+
+.help-block p {
+  margin: 4px 0 0;
+  color: var(--color-text-muted);
+}
+
+.help-title {
+  font-weight: 700;
+  color: var(--color-text-strong);
+}
+
+.help-footer {
+  padding-top: 6px;
+  border-top: 1px dashed var(--color-border);
+  font-size: 11px;
+  color: var(--color-text-subtle);
 }
 
 .field-block label {

@@ -76,7 +76,7 @@ function handleGo(path: string) {
 <template>
   <div v-if="displayItems.length > 0" class="plugin-sidebar-group">
     <div class="plugin-group-header">
-      <small>{{ inProject ? '作品插件' : '书库插件' }}</small>
+      <small>{{ inProject ? '作品扩展' : '全局工作台' }}</small>
     </div>
 
     <div class="plugin-items-scroll">

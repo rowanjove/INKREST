@@ -96,10 +96,14 @@ def _chapter_row(
     )
     quality_errors = sum(1 for check in checks.values() if isinstance(check, Mapping) and check.get("status") in {"error", "incomplete"})
     rewrite_rounds = len(list(reports_dir.glob("quality_rewrite_candidate*.json")))
+    from novel_agent.quality.decision import derive_quality_decision
+
+    decision = derive_quality_decision(quality) if quality else {}
     return {
         "chapter_id": chapter_id,
         "has_quality_report": bool(quality),
-        "quality_pass": bool(quality.get("overall_pass")) if quality else None,
+        "quality_pass": decision.get("status") in {"pass", "review"} if quality else None,
+        "quality_status": decision.get("status") if quality else None,
         "quality_score": quality.get("overall_score"),
         "quality_error": quality_errors,
         "incomplete": bool(quality.get("incomplete")) if quality else False,

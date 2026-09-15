@@ -10,6 +10,10 @@ defineProps<{
   setNodeRef: (id: string, el: Element | null) => void
   displayIndex: (index: string | number) => number
 }>()
+
+const emit = defineEmits<{
+  select: [arc: any, index: number]
+}>()
 </script>
 
 <template>
@@ -53,6 +57,7 @@ defineProps<{
                 :key="`arc-${idx}`"
                 :ref="el => setNodeRef(`arc-node-${idx}`, el as Element | null)"
                 class="mm-node leaf-node arc-node-item"
+                @click="emit('select', arc, idx)"
               >
                 <span class="arc-badge">Phase {{ displayIndex(idx) }}</span>
                 <strong>{{ arc.title || arc.name || `阶段 ${displayIndex(idx)}` }}</strong>
@@ -70,6 +75,8 @@ defineProps<{
 .mindmap-wrapper {
   flex: 1;
   min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
   padding: 12px;
   overflow: auto;
   background: var(--color-bg-surface-muted);
@@ -214,6 +221,7 @@ defineProps<{
   border-left: 3px solid #f3e8ff;
   background: #faf5ff;
   max-width: 440px;
+  cursor: pointer;
 }
 
 .arc-node-item strong {

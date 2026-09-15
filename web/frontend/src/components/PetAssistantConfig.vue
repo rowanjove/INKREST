@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { usePetStore } from '../stores/pet'
@@ -9,6 +9,7 @@ const pet = usePetStore()
 const expanded = ref(false)
 const config = ref<any>({})
 const libraryModels = ref<any[]>([])
+const shanshanAvatar = new URL('../assets/pet/shanshan/ui/bubble_avatar.png', import.meta.url).href
 
 const loadConfig = async () => {
   try {
@@ -62,16 +63,46 @@ onMounted(async () => {
   await Promise.all([loadConfig(), loadModels()])
 })
 
+const handleLocateShanshan = async () => {
+  try {
+    if (!pet.settings.enabled) {
+      await pet.updateSettings({ enabled: true })
+    }
+    if (window.electronAPI?.showPet) {
+      await window.electronAPI.showPet()
+      ElMessage.success('已唤醒桌面助手山山并居中定位')
+    } else {
+      window.dispatchEvent(new CustomEvent('open-shanshan'))
+      ElMessage.success('已展开驻场助手山山')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '定位山山失败')
+  }
+}
+
 async function updateBoolean(key: 'enabled' | 'showOnStartup' | 'alwaysOnTop' | 'notifyOnTaskComplete' | 'notifyOnTaskError', value: boolean) {
   await pet.updateSettings({ [key]: value })
   if (key === 'enabled') {
     if (value) {
-      await window.electronAPI?.showPet?.()
+      if (window.electronAPI?.showPet) {
+        await window.electronAPI.showPet()
+      } else {
+        window.dispatchEvent(new CustomEvent('open-shanshan'))
+      }
     } else {
       await window.electronAPI?.hidePet?.()
     }
   }
 }
+
+const props = withDefaults(
+  defineProps<{
+    bare?: boolean
+  }>(),
+  {
+    bare: false,
+  },
+)
 
 async function updateSize(value: number) {
   await pet.updateSettings({ size: value })
@@ -79,8 +110,8 @@ async function updateSize(value: number) {
 </script>
 
 <template>
-  <section class="fold-card pet-config">
-    <div class="fold-head" @click="expanded = !expanded">
+  <section class="fold-card pet-config" :class="{ 'is-bare': bare }">
+    <div v-if="!bare" class="fold-head" @click="expanded = !expanded">
       <div class="head-left">
         <span class="collapse-arrow" :class="{ open: expanded }">▶</span>
         <div>
@@ -97,7 +128,37 @@ async function updateSize(value: number) {
       </div>
     </div>
     
-    <div v-show="expanded" class="fold-body pet-config-body">
+    <div v-show="bare || expanded" class="fold-body pet-config-body">
+      <div v-if="bare" class="bare-pet-head">
+        <div class="bare-pet-info">
+          <img :src="shanshanAvatar" class="bare-pet-avatar" alt="山山" />
+          <div class="bare-pet-meta">
+            <div class="bare-pet-title-row">
+              <strong>山山（驻场小编辑）</strong>
+              <el-tag size="small" :type="pet.settings.enabled ? 'success' : 'info'" effect="plain">
+                {{ pet.settings.enabled ? '运行中' : '未启用' }}
+              </el-tag>
+            </div>
+            <span>{{ SHANSHAN_CONFIG_BLURB }}</span>
+          </div>
+        </div>
+        <div class="bare-pet-actions">
+          <el-button
+            size="small"
+            type="primary"
+            plain
+            class="locate-pet-btn"
+            @click="handleLocateShanshan"
+          >
+            唤醒并定位
+          </el-button>
+          <el-switch
+            :model-value="pet.settings.enabled"
+            active-text="启用"
+            @change="(value: any) => updateBoolean('enabled', Boolean(value))"
+          />
+        </div>
+      </div>
       <div class="setting-row">
         <div>
           <strong>启动时显示</strong>
@@ -185,16 +246,16 @@ async function updateSize(value: number) {
 .pet-config-body {
   display: grid;
   gap: 0;
-  padding: 0 18px 14px;
+  padding: 0 14px 10px;
 }
 
 .setting-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 18px;
-  min-height: 62px;
-  border-top: 1px solid var(--color-border-subtle);
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--color-border-subtle, #edf0f4);
 }
 
 .setting-row:first-child {
@@ -207,22 +268,84 @@ async function updateSize(value: number) {
 }
 
 .setting-row strong {
-  color: #1f2937;
-  font-size: 14px;
+  color: var(--color-text-strong, #1f2937);
+  font-size: 13.5px;
+  font-weight: 600;
 }
 
 .setting-row span {
-  margin-top: 4px;
-  color: var(--color-text-muted);
-  font-size: 13px;
+  margin-top: 3px;
+  color: var(--color-text-muted, #64748b);
+  font-size: 12.5px;
+  line-height: 1.45;
 }
 
 .size-row {
-  grid-template-columns: 170px minmax(0, 1fr);
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 20px;
 }
 
 .notify-switches {
   display: flex;
   gap: 10px;
+}
+
+.bare-pet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--color-border);
+}
+
+.bare-pet-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bare-pet-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-base);
+}
+
+.bare-pet-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bare-pet-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bare-pet-title-row strong {
+  font-size: 14px;
+  color: var(--color-text-strong);
+}
+
+.bare-pet-meta span {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.bare-pet-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.locate-pet-btn {
+  font-size: 12px;
+  padding: 4px 10px;
 }
 </style>

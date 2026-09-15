@@ -17,7 +17,7 @@ from novel_agent.state.vector_store import (
     VectorChunk,
     create_vector_store,
 )
-from orchestrator import _normalize_argv
+from cli import _normalize_argv
 from novel_agent.json_utils import loads_json_object
 from novel_agent.rules import RuleBook
 

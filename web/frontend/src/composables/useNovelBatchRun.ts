@@ -47,7 +47,7 @@ import {
 } from '../utils/tokenCostEstimate'
 import { useProjectStore } from '../stores/project'
 import { useTasksStore } from '../stores/tasks'
-import { needsRepairBeforeResume } from '../utils/batchPause'
+import { needsRepairBeforeResume, productionResumeAction } from '../utils/batchPause'
 import { notifyPipelineStarted } from '../utils/pipelineNotify'
 import { resolveEngine } from '../utils/dashboardEngine'
 import { waitForQueueTask as pollQueueTask } from '../utils/waitForQueueTask'
@@ -119,20 +119,24 @@ let chapterCountPollTimer: ReturnType<typeof setInterval> | null = null
 const modelPricePer1k = ref(0.0144)
 const modelPriceLabel = ref('默认模型')
 
-const ctx = ref<NovelBatchRunContext>({
-  outline: null,
-  assets: [],
-  chapterCountTotal: 0,
-  engineReady: false,
-  vectorReadiness: resolveVectorContextFromApis({}, {}),
-  serverReadiness: {},
-  arcProgress: null,
-  batchPaused: false,
-  pauseReason: '',
-  lastChapterId: '',
-  externalPendingCount: 0,
-  blockContinueUntilExternal: false,
-})
+function emptyBatchContext(): NovelBatchRunContext {
+  return {
+    outline: null,
+    assets: [],
+    chapterCountTotal: 0,
+    engineReady: false,
+    vectorReadiness: resolveVectorContextFromApis({}, {}),
+    serverReadiness: {},
+    arcProgress: null,
+    batchPaused: false,
+    pauseReason: '',
+    lastChapterId: '',
+    externalPendingCount: 0,
+    blockContinueUntilExternal: false,
+  }
+}
+
+const ctx = ref<NovelBatchRunContext>(emptyBatchContext())
 
 export function useNovelBatchRun() {
   const router = useRouter()
@@ -388,9 +392,20 @@ export function useNovelBatchRun() {
   }
 
   async function resumeBatchRun() {
-    const taskId = activeProductionTaskId.value
-    if (!taskId) {
+    if (isCircuitPaused.value) {
       await openDialog()
+      return
+    }
+    const task = activeProductionTask.value
+    const taskId = task?.task_id || activeProductionTaskId.value
+    const action = productionResumeAction(task?.status)
+    if (!taskId || action === 'start') {
+      await openDialog()
+      return
+    }
+    if (action === 'observe') {
+      await tasksStore.refreshTaskList()
+      ElMessage.info('生产任务仍在执行，无需重复恢复')
       return
     }
     try {
@@ -599,6 +614,7 @@ export function useNovelBatchRun() {
       timestamp: Date.now(),
     })
     let queueMsg: ReturnType<typeof ElMessage.info> | null = null
+    let keepQueueTask = false
     try {
       runPhase.value = 'syncing_queue'
       queueMsg = ElMessage.info({
@@ -657,6 +673,12 @@ export function useNovelBatchRun() {
       if (signal.aborted || error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError') {
         return
       }
+      if (error?.name === 'QueueWaitTimeoutError') {
+        keepQueueTask = true
+        operationError.value = error.message
+        ElMessage.warning(error.message)
+        return
+      }
       tasksStore.addProgress({
         step: 'ensure_queue',
         status: 'error',
@@ -679,7 +701,9 @@ export function useNovelBatchRun() {
       queueMsg?.close()
       const aborted = signal.aborted
       runAbort = null
-      queueTaskId.value = ''
+      if (!keepQueueTask) {
+        queueTaskId.value = ''
+      }
       running.value = false
       runPhase.value = 'idle'
       stopChapterCountPoll()
@@ -699,10 +723,19 @@ export function useNovelBatchRun() {
   watch(
     () => currentProject.value?.id,
     () => {
+      if (runAbort) {
+        runAbort.abort()
+        runAbort = null
+      }
       roundStartChapterCount.value = 0
       roundTargetChapters.value = 0
       productionTaskId.value = ''
       queueTaskId.value = ''
+      running.value = false
+      continueSubmitted.value = false
+      runPhase.value = 'idle'
+      ctx.value = emptyBatchContext()
+      closeBatchDialog()
     },
   )
 

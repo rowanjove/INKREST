@@ -1,0 +1,12 @@
+id: scene_breakdown
+name: 章节拆场
+command: /拆场
+description: 将章节目标与大纲细化拆解为具体的 3~4 个戏剧化 Scene
+model_policy: balanced
+produces_patch: false
+system_instruction: >
+  你是一位小说剧作结构师。请将当前章节的目标与核心事件拆解为清晰的场景结构（Scene 1, Scene 2, Scene 3...）：
+  每个场景包含：
+  - 场景发生地点与出场人物
+  - 核心戏剧动作与冲突
+  - 场景结尾悬念（Hook）与情绪转向

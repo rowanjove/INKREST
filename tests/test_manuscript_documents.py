@@ -220,6 +220,21 @@ def test_generated_plain_text_argument_wins_over_stale_disk(tmp_path):
     assert final_path.read_text(encoding="utf-8") == "门禁改写后的正文"
 
 
+def test_save_does_not_recreate_a_deleted_project(tmp_path):
+    removed_root = tmp_path / "removed-project"
+
+    with pytest.raises(FileNotFoundError, match="Project no longer exists"):
+        save_manuscript_document(
+            removed_root,
+            chapter_id="001",
+            title="第一章",
+            content_json=_doc("不应写入"),
+            expected_revision=0,
+        )
+
+    assert not removed_root.exists()
+
+
 def test_generated_text_does_not_overwrite_a_concurrent_manual_edit(tmp_path):
     chapter_dir = tmp_path / "workspace" / "chapters" / "chapter_001"
     chapter_dir.mkdir(parents=True)
@@ -262,13 +277,14 @@ def test_apply_plain_text_updates_authoritative_document(tmp_path):
         json.dumps({"chapter_title": "第三章"}, ensure_ascii=False),
         encoding="utf-8",
     )
-    ensure_manuscript_document(tmp_path, "003")
+    existing = ensure_manuscript_document(tmp_path, "003")
 
     document = apply_plain_text_to_manuscript(
         tmp_path,
         chapter_id="003",
         plain_text="回滚稿",
         title="第三章·回滚",
+        expected_revision=int(existing["revision"]),
         source="restore",
     )
 

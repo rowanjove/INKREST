@@ -1,4 +1,5 @@
 import type { PetSettings } from './pet-settings'
+import type { UpdateSettings, UpdateSourceId } from './updater/update-settings'
 
 export interface WindowBounds {
   x: number
@@ -249,6 +250,77 @@ export function parsePetSettingsPatch(
       throw new TypeError('dockedEdge must be left, right, top, or null')
     }
     patch.dockedEdge = (input.dockedEdge as 'left' | 'right' | 'top' | null) ?? null
+  }
+
+  return patch
+}
+
+const UPDATE_SETTING_KEYS = new Set<string>([
+  'autoCheck',
+  'autoDownload',
+  'sourceId',
+  'customSourceUrl',
+  'checkPrerelease',
+])
+
+export function validateUpdateSourceUrl(rawUrl: string): string {
+  if (typeof rawUrl !== 'string') {
+    throw new TypeError('custom update source URL must be a string')
+  }
+  const trimmed = rawUrl.trim()
+  if (trimmed === '') {
+    throw new TypeError('custom update source URLs are disabled; use the official GitHub Releases source')
+  }
+  if (trimmed.length > 2048) {
+    throw new RangeError('custom update source URL exceeds maximum length')
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    throw new TypeError('custom update source URL is not a valid URL')
+  }
+  if (parsed.username || parsed.password) {
+    throw new TypeError('custom update source URL must not contain authentication credentials')
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new TypeError('custom update source URL must use HTTPS')
+  }
+  // Generic feeds cannot establish a publisher/signature boundary.  Keep the
+  // validator explicit so old clients cannot persist or apply an empty/custom
+  // source while the product is in official-source-only mode.
+  throw new TypeError('custom update source URLs are disabled; use the official GitHub Releases source')
+}
+
+export function parseUpdateSettingsPatch(
+  value: unknown,
+): Partial<UpdateSettings> {
+  const input = recordValue(value, 'update settings')
+  assertKnownKeys(input, UPDATE_SETTING_KEYS, 'update setting')
+
+  const patch: Partial<UpdateSettings> = {}
+
+  for (const key of ['autoCheck', 'autoDownload', 'checkPrerelease'] as const) {
+    const setting = input[key]
+    if (setting === undefined) continue
+    if (typeof setting !== 'boolean') {
+      throw new TypeError(`${key} must be a boolean`)
+    }
+    if (key === 'autoDownload' && setting) {
+      throw new TypeError('autoDownload is disabled until update signatures can be verified')
+    }
+    patch[key] = setting
+  }
+
+  if (input.sourceId !== undefined) {
+    if (input.sourceId !== 'github') {
+      throw new TypeError('sourceId must be github; third-party and custom feeds are disabled')
+    }
+    patch.sourceId = 'github' as UpdateSourceId
+  }
+
+  if (input.customSourceUrl !== undefined) {
+    patch.customSourceUrl = validateUpdateSourceUrl(input.customSourceUrl as string)
   }
 
   return patch

@@ -1,5 +1,16 @@
 import { executePluginViewRpc } from '../../api'
 
+export interface PluginThemeTokens {
+  isDark: boolean
+  primaryColor: string
+  bgApp?: string
+  bgSurface?: string
+  bgCard: string
+  textPrimary: string
+  textMuted?: string
+  border?: string
+}
+
 export interface PluginInitMessage {
   type: 'inkrest:init'
   pluginId: string
@@ -8,12 +19,12 @@ export interface PluginInitMessage {
   projectId?: string
   surface: 'library_sidebar' | 'project_sidebar'
   contextRevision: number
-  theme: {
-    isDark: boolean
-    primaryColor: string
-    bgCard: string
-    textPrimary: string
-  }
+  theme: PluginThemeTokens
+}
+
+export interface PluginThemeChangeMessage {
+  type: 'inkrest:theme_change'
+  theme: PluginThemeTokens
 }
 
 export interface PluginDisposeMessage {
@@ -90,6 +101,15 @@ export class PluginRpcBridge {
       surface: options.surface,
       contextRevision: this.contextRevision,
       theme: options.theme,
+    }
+    this.iframe.contentWindow.postMessage(msg, '*')
+  }
+
+  public sendTheme(theme: PluginThemeTokens): void {
+    if (this.destroyed || !this.iframe.contentWindow) return
+    const msg: PluginThemeChangeMessage = {
+      type: 'inkrest:theme_change',
+      theme,
     }
     this.iframe.contentWindow.postMessage(msg, '*')
   }

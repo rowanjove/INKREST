@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>墨局 · 剧本杀工坊</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f4f1;
+      --panel: #ffffff;
+      --panel2: #fafbfc;
+      --line: #e1e7ef;
+      --text: #1f2937;
+      --muted: #697386;
+      --accent: #c66f4f;
+      --ok: #16a34a;
+      --warn: #d97706;
+      --bad: #dc2626;
+    }
+    :root.dark, body.dark {
+      color-scheme: dark;
+      --bg: #0c1118;
+      --panel: #141b24;
+      --panel2: #1a2330;
+      --line: #2a3646;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #d4845f;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --bad: #f87171;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font:14px/1.55 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+    button,input,textarea,select { font:inherit; }
+    button { border:1px solid var(--line); border-radius:7px; background:var(--panel); color:var(--text); padding:8px 12px; cursor:pointer; }
+    button:hover { border-color:var(--accent); }
+    button.primary { background:var(--accent); border-color:var(--accent); color:#ffffff; font-weight:650; }
+    body.dark button.primary { color:#17110e; }
+    button.danger { color:var(--bad); border-color:var(--bad); }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    input,textarea,select { width:100%; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:8px 10px; }
+    textarea { min-height:120px; resize:vertical; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; }
+    .app { display:flex; flex-direction:column; min-height:100vh; }
+    .top { display:flex; align-items:center; justify-content:space-between; padding:18px 24px; border-bottom:1px solid var(--line); background:var(--panel); }
+    .brand { display:flex; gap:12px; align-items:center; }
+    .brand-mark { width:38px;height:38px;display:grid;place-items:center;border-radius:10px;background:linear-gradient(135deg,var(--accent),#9d5063);color:#fff;font-size:20px; }
+    h1,h2,h3,p { margin:0; }
+    h1 { font-size:20px; }
+    h2 { font-size:17px; }
+    h3 { font-size:14px; }
+    .muted { color:var(--muted); }
+    .layout { display:grid; grid-template-columns:250px 1fr; flex:1; min-height:0; }
+    .sidebar { padding:18px 14px; border-right:1px solid var(--line); background:var(--panel2); }
+    .sidebar h3 { padding:0 8px 10px; color:var(--muted); }
+    .project-item { display:block; width:100%; text-align:left; margin:5px 0; background:transparent; }
+    .project-item.active { border-color:var(--accent); background:rgba(198, 111, 79, 0.12); }
+    .content { padding:22px; min-width:0; overflow:auto; background:var(--bg); }
+    .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:18px; }
+    .toolbar .grow { flex:1; }
+    .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:18px; }
+    .tab.active { background:var(--panel); border-color:var(--accent); color:var(--accent); font-weight:600; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+    .card h3 { margin-bottom:8px; }
+    .stat { font-size:26px; font-weight:700; color:var(--text); }
+    .kpi { color:var(--muted); font-size:12px; }
+    .stack { display:flex; flex-direction:column; gap:12px; }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .row > .field { flex:1; min-width:160px; }
+    .field label { display:block; color:var(--muted); font-size:12px; margin:0 0 5px; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { text-align:left; vertical-align:top; padding:9px 8px; border-bottom:1px solid var(--line); color:var(--text); }
+    th { color:var(--muted); font-size:12px; font-weight:500; }
+    .pill { display:inline-block; border-radius:999px; padding:2px 8px; font-size:11px; background:var(--panel2); color:var(--muted); }
+    .pill.ok { color:#2e7d32;background:rgba(46, 125, 50, 0.15); }
+    body.dark .pill.ok { color:#b7f0ce;background:#1d3a2a; }
+    .pill.warn { color:#b26a00;background:rgba(178, 106, 0, 0.15); }
+    body.dark .pill.warn { color:#ffe0a1;background:#43361d; }
+    .pill.bad { color:#c62828;background:rgba(198, 40, 40, 0.15); }
+    body.dark .pill.bad { color:#ffc3c3;background:#482326; }
+    .issue { border-left:3px solid var(--warn); padding:9px 11px; background:rgba(178, 106, 0, 0.08); margin:7px 0; }
+    body.dark .issue { background:#24211b; }
+    .issue.bad { border-color:var(--bad); background:rgba(198, 40, 40, 0.08); }
+    body.dark .issue.bad { background:#2a1d20; }
+    .empty { padding:42px 20px; text-align:center; color:var(--muted); border:1px dashed var(--line); border-radius:10px; background:var(--panel); }
+    .json-editor { min-height:290px; }
+    .notice { padding:10px 12px; border-radius:7px; background:var(--panel2); color:var(--muted); margin-bottom:12px; }
+    .notice.bad { background:rgba(198, 40, 40, 0.12);color:var(--bad); }
+    body.dark .notice.bad { background:#351f23;color:#ffc3c3; }
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999; backdrop-filter:blur(2px); }
+    .modal-box { width:90%; max-width:400px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:20px; box-shadow:0 12px 32px rgba(0,0,0,0.25); }
+    @media (max-width:800px) { .layout { grid-template-columns:1fr; } .sidebar { border-right:0; border-bottom:1px solid var(--line); } .sidebar .project-list { display:flex; overflow:auto; gap:6px; } .project-item { min-width:180px; } }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="top"><div class="brand"><div class="brand-mark">墨</div><div><h1>墨局 · 剧本杀工坊</h1><div class="muted">结构化真相、信息边界与可开本导出</div></div></div><div id="hostState" class="pill">等待宿主连接</div></header>
+  <div class="layout">
+    <aside class="sidebar"><div class="row" style="justify-content:space-between"><h3>剧本库</h3><button id="newProjectBtn" title="创建项目">＋</button></div><div id="projectList" class="project-list"><div class="empty">正在加载项目…</div></div></aside>
+    <main class="content">
+      <div id="notice"></div>
+      <section id="emptyState" class="empty"><h2>从一个案件灵感开始</h2><p style="margin:8px 0 18px">创建项目后可手工编辑全部结构，也可以在 AI 工厂逐节点生成。</p><button class="primary" id="emptyNewBtn">创建第一个剧本</button></section>
+      <section id="workspace" hidden>
+        <div class="toolbar"><div class="grow"><h2 id="projectTitle">未命名剧本</h2><div class="muted" id="projectMeta"></div></div><button id="refreshBtn">刷新</button><button id="snapshotBtn">创建快照</button><button class="danger" id="deleteBtn">移入回收区</button></div>
+        <nav class="tabs" id="tabs"><button class="tab active" data-tab="overview">总览</button><button class="tab" data-tab="canon">真相板</button><button class="tab" data-tab="characters">人物</button><button class="tab" data-tab="clues">线索</button><button class="tab" data-tab="flow">流程</button><button class="tab" data-tab="quality">质量</button><button class="tab" data-tab="ai">AI 工厂</button><button class="tab" data-tab="export">导出</button></nav>
+        <div id="panel-overview" class="panel"></div><div id="panel-canon" class="panel" hidden></div><div id="panel-characters" class="panel" hidden></div><div id="panel-clues" class="panel" hidden></div><div id="panel-flow" class="panel" hidden></div><div id="panel-quality" class="panel" hidden></div><div id="panel-ai" class="panel" hidden></div><div id="panel-export" class="panel" hidden></div>
+      </section>
+    </main>
+  </div>
+</div>
+<div id="modalOverlay" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <h3 id="modalTitle">标题</h3>
+    <p id="modalMsg" class="muted" style="margin:8px 0 12px;font-size:13px;"></p>
+    <div id="modalInputWrap" style="margin-bottom:14px;"><input id="modalInput" type="text" /></div>
+    <div class="actions" style="justify-content:flex-end;margin-top:14px;">
+      <button type="button" id="modalCancelBtn">取消</button>
+      <button type="button" class="primary" id="modalConfirmBtn">确定</button>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  'use strict';
+  var state = { projectId:null, workspace:null, tab:'overview', tasks:[], contextReady:false };
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (value) { return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); };
+  var json = function (value) { return JSON.stringify(value || {}, null, 2); };
+  function notice(text, bad) { $('notice').innerHTML = text ? '<div class="notice ' + (bad ? 'bad' : '') + '">' + esc(text) + '</div>' : ''; }
+  function call(method, params) {
+    if (!window.inkrest || !window.inkrest.callRpc) return Promise.reject(new Error('宿主尚未建立 RPC 通道'));
+    return window.inkrest.callRpc('extension.request', { method:method, params:params || {} });
+  }
+  function run(promise) { return promise.catch(function (e) { notice(e && e.message ? e.message : '操作失败', true); throw e; }); }
+  function current() { return state.workspace; }
+  function renderProjects(projects) {
+    var list = $('projectList'); if (!projects || !projects.length) { list.innerHTML = '<div class="empty">还没有剧本项目</div>'; return; }
+    list.innerHTML = projects.map(function (p) { return '<button class="project-item ' + (p.id === state.projectId ? 'active' : '') + '" data-project="' + esc(p.id) + '"><strong>' + esc(p.title) + '</strong><br><span class="muted">' + esc(p.player_count) + ' 人 · ' + esc(p.status) + '</span></button>'; }).join('');
+    list.querySelectorAll('[data-project]').forEach(function (b) { b.onclick = function () { loadProject(b.dataset.project); }; });
+  }
+  function loadProjects() { return run(call('project.list')).then(function (r) { renderProjects(r.projects || []); if (!state.projectId && r.projects && r.projects[0]) return loadProject(r.projects[0].id); if (!r.projects || !r.projects.length) showEmpty(); }); }
+  function showEmpty() { $('emptyState').hidden = false; $('workspace').hidden = true; }
+  function loadProject(id) { state.projectId = id; return run(call('project.get', {project_id:id})).then(function (r) { state.workspace = r.workspace; $('emptyState').hidden = true; $('workspace').hidden = false; renderAll(); return call('task.list', {project_id:id}); }).then(function (r) { if (r && r.tasks) { state.tasks = r.tasks; renderAi(); } }); }
+  function renderAll() { var w=current(); $('projectTitle').textContent=w.meta.title; $('projectMeta').textContent=w.meta.player_count+' 人 · '+w.meta.duration_minutes+' 分钟 · '+(w.meta.genre||[]).join(' / ')+' · revision '+w.revision; renderOverview(); renderCanon(); renderCharacters(); renderClues(); renderFlow(); renderQuality(); renderAi(); renderExport(); }
+  function renderOverview() { var w=current(), a=w.artifact_status||{}; $('panel-overview').innerHTML='<div class="grid"><div class="card"><div class="kpi">事实</div><div class="stat">'+w.canon.facts.length+'</div><div class="muted">Truth Facts</div></div><div class="card"><div class="kpi">角色</div><div class="stat">'+w.characters.length+' / '+w.meta.player_count+'</div><div class="muted">玩家人数匹配度</div></div><div class="card"><div class="kpi">线索</div><div class="stat">'+w.clues.length+'</div><div class="muted">含推理图引用</div></div><div class="card"><div class="kpi">下游状态</div><div class="stat">'+Object.keys(a).filter(function(k){return a[k]==='stale';}).length+'</div><div class="muted">个节点待复查</div></div></div><div class="card" style="margin-top:12px"><h3>案件企划</h3><p class="muted">'+esc(w.brief && (w.brief.core_conflict || w.brief.logline) || '尚未生成设计简报。')+'</p><div class="actions"><button data-ai="brief">生成设计简报</button><button data-ai="canon">生成 Truth Canon</button></div></div>';
+    $('panel-overview').querySelectorAll('[data-ai]').forEach(function(b){b.onclick=function(){submitTask(b.dataset.ai,{inspiration:(current().brief&&current().brief.inspiration)||current().meta.title});};}); }
+  function renderCanon() { var w=current(), c=w.canon; $('panel-canon').innerHTML='<div class="card stack"><div class="row"><div class="field"><label>受害者</label><input id="canonVictim" value="'+esc(c.victim)+'"></div><div class="field"><label>真凶角色 ID</label><input id="canonKiller" value="'+esc(c.killer)+'"></div></div><div class="row"><div class="field"><label>死因</label><input id="canonCause" value="'+esc(c.cause_of_death)+'"></div><div class="field"><label>案发现场</label><input id="canonScene" value="'+esc(c.crime_scene)+'"></div></div><div class="row"><div class="field"><label>作案手法</label><textarea id="canonMethod">'+esc(c.crime_method)+'</textarea></div><div class="field"><label>真实动机</label><textarea id="canonMotive">'+esc(c.true_motive)+'</textarea></div></div><div class="field"><label>事实库 JSON（稳定 ID）</label><textarea id="canonFacts" class="json-editor">'+esc(json(c.facts))+'</textarea></div><div class="actions"><button class="primary" id="saveCanon">保存真相板</button><button data-ai="canon">AI 重建 Canon</button></div></div>'; $('saveCanon').onclick=function(){var facts;try{facts=JSON.parse($('canonFacts').value||'[]');}catch(e){notice('事实 JSON 无法解析',true);return;} run(call('canon.update',{project_id:state.projectId,canon:{victim:$('canonVictim').value,killer:$('canonKiller').value,cause_of_death:$('canonCause').value,crime_scene:$('canonScene').value,crime_method:$('canonMethod').value,true_motive:$('canonMotive').value,crime_time_window:c.crime_time_window,facts:facts}})).then(function(){return loadProject(state.projectId);});}; $('panel-canon').querySelector('[data-ai]').onclick=function(){submitTask('canon',{inspiration:current().meta.title});}; }
+  function renderCharacters() { var w=current(); $('panel-characters').innerHTML='<div class="card stack"><div class="toolbar"><h3 class="grow">人物与认知边界</h3><button data-ai="characters">生成角色组</button></div><p class="muted">可直接编辑完整人物 JSON；保存时会以稳定 ID 整体替换，删除条目即可删除角色。</p><textarea id="charactersJson" class="json-editor">'+esc(json(w.characters))+'</textarea><div class="actions"><button class="primary" id="saveCharacters">保存人物 JSON</button></div><div class="notice">当前 '+w.characters.length+' 人；每个 knowledge_map.fact_id 必须指向 Truth Canon 的 Fact。</div></div>'; $('panel-characters').querySelector('[data-ai]').onclick=function(){submitTask('characters',{});}; $('saveCharacters').onclick=function(){var parsed;try{parsed=JSON.parse($('charactersJson').value||'[]');if(!Array.isArray(parsed))throw new Error();}catch(e){notice('人物 JSON 必须是数组且格式正确',true);return;} run(call('characters.replace',{project_id:state.projectId,characters:parsed})).then(function(){return loadProject(state.projectId);});}; }
+  function renderClues() { var w=current(); $('panel-clues').innerHTML='<div class="card stack"><div class="toolbar"><h3 class="grow">线索与推理链</h3><button data-ai="clues">生成线索图</button></div><p class="muted">线索和结论共享一次保存；可编辑引用、轮次、可见性与误导关系。</p><textarea id="cluesJson" class="json-editor">'+esc(json({clues:w.clues,conclusions:w.conclusions}))+'</textarea><div class="actions"><button class="primary" id="saveClues">保存线索/结论 JSON</button></div><div class="notice">当前 '+w.clues.length+' 条线索、'+w.conclusions.length+' 个结论；保存后会重新标记流程与文稿为待复查。</div></div>'; $('panel-clues').querySelector('[data-ai]').onclick=function(){submitTask('clues',{});}; $('saveClues').onclick=function(){var parsed;try{parsed=JSON.parse($('cluesJson').value||'{}');if(!parsed||!Array.isArray(parsed.clues)||!Array.isArray(parsed.conclusions))throw new Error();}catch(e){notice('线索 JSON 必须包含 clues/conclusions 数组',true);return;} run(call('clues.replace',{project_id:state.projectId,clues:parsed.clues,conclusions:parsed.conclusions})).then(function(){return loadProject(state.projectId);});}; }
+  function renderFlow() { var w=current(); $('panel-flow').innerHTML='<div class="card stack"><div class="toolbar"><h3 class="grow">游戏流程</h3><button data-ai="flow">生成三轮流程</button></div><p class="muted">编辑开场、轮次、公开事件、投票与结局；保存后脚本/主持手册会进入待复查。</p><textarea id="flowJson" class="json-editor">'+esc(json(w.flow))+'</textarea><div class="actions"><button class="primary" id="saveFlow">保存流程 JSON</button></div><div class="notice">当前 '+w.flow.rounds.length+' 轮；round_index 从 1 开始且 search_clue_ids 必须引用已存在的线索。</div></div>'; $('panel-flow').querySelector('[data-ai]').onclick=function(){submitTask('flow',{});}; $('saveFlow').onclick=function(){var parsed;try{parsed=JSON.parse($('flowJson').value||'{}');if(!parsed||!Array.isArray(parsed.rounds))throw new Error();}catch(e){notice('流程 JSON 必须包含 rounds 数组',true);return;} run(call('flow.update',{project_id:state.projectId,flow:parsed})).then(function(){return loadProject(state.projectId);});}; }
+  function renderQuality() { var w=current(), a=w.artifact_status||{}; $('panel-quality').innerHTML='<div class="grid"><div class="card"><h3>确定性验证</h3><p class="muted">不消耗模型 token，检查引用、时间线、泄密与推理闭环。</p><div class="actions"><button class="primary" id="validateBtn">运行验证</button><button id="auditBtn">语义审计</button><button id="playtestBtn">有限信息试玩</button></div></div><div class="card"><h3>派生状态</h3>'+Object.keys(a).map(function(k){var v=a[k];return '<div class="row" style="justify-content:space-between"><span>'+esc(k)+'</span><span class="pill '+(v==='current'?'ok':v==='stale'?'warn':'')+'">'+esc(v)+'</span></div>';}).join('')+'</div></div><div id="qualityReport" style="margin-top:12px"></div>'; $('validateBtn').onclick=function(){run(call('validation.run',{project_id:state.projectId})).then(function(r){renderReport(r.report);});}; $('auditBtn').onclick=function(){submitTask('audit',{});}; $('playtestBtn').onclick=function(){submitTask('playtest',{});}; }
+  function renderReport(r) { var el=$('qualityReport'); if(!r){return;} el.innerHTML='<div class="card"><h3>验证报告 <span class="pill '+(r.is_valid?'ok':'bad')+'">'+(r.is_valid?'通过':'存在问题')+'</span></h3><p class="muted">BLOCKER '+r.blocker_count+' · ERROR '+r.error_count+' · WARNING '+r.warning_count+'</p>'+((r.issues||[]).map(function(i){return '<div class="issue '+((i.severity==='BLOCKER'||i.severity==='ERROR')?'bad':'')+'"><strong>'+esc(i.severity)+' · '+esc(i.code)+'</strong><br>'+esc(i.message)+(i.fix_suggestion?'<br><span class="muted">建议：'+esc(i.fix_suggestion)+'</span>':'')+'</div>';}).join('')||'<p class="muted" style="margin-top:10px">没有问题。</p>')+'</div>'; }
+  var modalCallback = null;
+  function closeModal() {
+    $('modalOverlay').style.display = 'none';
+    modalCallback = null;
+  }
+  $('modalCancelBtn').onclick = closeModal;
+  $('modalConfirmBtn').onclick = function () {
+    var cb = modalCallback;
+    var val = $('modalInput').value;
+    closeModal();
+    if (cb) cb(val);
+  };
+  $('modalInput').onkeydown = function (e) {
+    if (e.key === 'Enter') $('modalConfirmBtn').click();
+    else if (e.key === 'Escape') closeModal();
+  };
+  function uiPrompt(title, defaultValue, onConfirm) {
+    $('modalTitle').textContent = title || '输入';
+    $('modalMsg').textContent = '';
+    $('modalInputWrap').style.display = 'block';
+    $('modalInput').value = defaultValue || '';
+    $('modalOverlay').style.display = 'flex';
+    setTimeout(function () { $('modalInput').focus(); $('modalInput').select(); }, 50);
+    modalCallback = function (val) {
+      if (val && val.trim()) onConfirm(val.trim());
+    };
+  }
+  function uiConfirm(message, onConfirm) {
+    $('modalTitle').textContent = '操作确认';
+    $('modalMsg').textContent = message || '确定执行此操作吗？';
+    $('modalInputWrap').style.display = 'none';
+    $('modalOverlay').style.display = 'flex';
+    modalCallback = function () {
+      onConfirm();
+    };
+  }
+
+  function renderAi() { if(!$('panel-ai'))return; $('panel-ai').innerHTML='<div class="card"><div class="toolbar"><h3 class="grow">AI 制作流水线</h3><button data-ai="brief">从灵感开始</button><button data-ai="host">生成主持手册</button><button data-ai="scripts">生成全部角色剧本</button></div><p class="muted">生成结果先进入候选区；点击“接受”才会写入项目。revision 变化会让迟到结果进入 superseded，不覆盖新编辑。</p><table style="margin-top:12px"><thead><tr><th>任务</th><th>节点</th><th>状态</th><th>模型</th><th>结果</th><th></th></tr></thead><tbody>'+((state.tasks||[]).map(function(t){var action=t.apply_state==='pending'?'<button data-accept="'+esc(t.id)+'">接受</button> <button data-reject="'+esc(t.id)+'">拒绝</button>':(t.status==='queued'||t.status==='running'?'<button data-cancel="'+esc(t.id)+'">取消</button>':'');return '<tr><td><code>'+esc(t.id.slice(0,16))+'</code></td><td>'+esc(t.node)+'</td><td><span class="pill '+(t.status==='succeeded'?'ok':(t.status==='failed'||t.status==='superseded'?'bad':t.status==='running'?'warn':''))+'">'+esc(t.status)+(t.apply_state==='pending'?' · 待接受':'')+'</span></td><td>'+esc(t.model)+'</td><td>'+esc(t.error||((t.result&&Object.keys(t.result).length)?'已产生结果':''))+'</td><td>'+action+'</td></tr>';}).join('')||'<tr><td colspan="6" class="muted">暂无任务</td></tr>')+'</tbody></table></div>'; $('panel-ai').querySelector('[data-ai="brief"]').onclick=function(){uiPrompt('输入一句案件灵感：',current().meta.title,function(inspiration){if(inspiration)submitTask('brief',{inspiration:inspiration});});}; $('panel-ai').querySelector('[data-ai="host"]').onclick=function(){submitTask('host',{});}; $('panel-ai').querySelector('[data-ai="scripts"]').onclick=function(){if(!current().characters.length){notice('请先生成或保存角色',true);return;} current().characters.forEach(function(c){submitTask('script',{character_id:c.id,act:1});});}; $('panel-ai').querySelectorAll('[data-cancel]').forEach(function(b){b.onclick=function(){run(call('task.cancel',{task_id:b.dataset.cancel})).then(refreshTasks);};}); $('panel-ai').querySelectorAll('[data-accept]').forEach(function(b){b.onclick=function(){run(call('task.accept',{task_id:b.dataset.accept})).then(function(){return loadProject(state.projectId);});};}); $('panel-ai').querySelectorAll('[data-reject]').forEach(function(b){b.onclick=function(){run(call('task.reject',{task_id:b.dataset.reject})).then(refreshTasks);};}); }
+  function refreshTasks(){return run(call('task.list',{project_id:state.projectId})).then(function(r){state.tasks=r.tasks||[];renderAi();});}
+  function submitTask(node, params){params=params||{};if(['brief','canon','characters','clues','flow','script','host'].indexOf(node)>=0)params.preview_only=true;return run(call('task.submit',{project_id:state.projectId,node:node,params:params})).then(function(r){state.tasks.unshift(r.task);renderAi();pollTask(r.task.id);});}
+  function pollTask(id){var timer=setInterval(function(){call('task.get',{task_id:id}).then(function(r){var t=r.task;state.tasks=state.tasks.map(function(x){return x.id===id?t:x;});renderAi();if(['succeeded','failed','cancelled','superseded'].indexOf(t.status)>=0){clearInterval(timer);loadProject(state.projectId);}}).catch(function(){clearInterval(timer);});},900);}
+  function renderExport(){ $('panel-export').innerHTML='<div class="card"><h3>导出中心</h3><p class="muted">导出前会重新运行结构 Preflight。存在 BLOCKER/ERROR 或 stale 派生产物时将阻断。</p><div class="actions"><button id="preflightBtn">运行 Preflight</button><button class="primary" id="exportBtn">生成并下载 ZIP</button></div><div id="exportResult" style="margin-top:12px"></div></div>'; $('preflightBtn').onclick=function(){run(call('export.preflight',{project_id:state.projectId})).then(function(r){var p=r.preflight;$('exportResult').innerHTML='<div class="notice '+(p.can_export?'':'bad')+'">'+(p.can_export?'可以导出':'导出已阻断')+' · BLOCKER '+p.blocker_count+' · WARNING '+p.warning_count+'<br>'+esc((p.blocking_reasons||[]).join('；'))+'</div>';});}; $('exportBtn').onclick=function(){run(call('export.zip',{project_id:state.projectId})).then(function(r){var bytes=Uint8Array.from(atob(r.base64),function(c){return c.charCodeAt(0);});var blob=new Blob([bytes],{type:'application/zip'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=r.filename||'script_murder.zip';a.click();setTimeout(function(){URL.revokeObjectURL(a.href);},1000);});}; }
+  function createProject(){uiPrompt('剧本标题：','未命名剧本',function(title){run(call('project.create',{title:title,player_count:6})).then(function(r){state.projectId=r.workspace.meta.id;return loadProjects();}).catch(function(){});});}
+  document.querySelectorAll('.tab').forEach(function(b){b.onclick=function(){state.tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('active',x===b);});document.querySelectorAll('.panel').forEach(function(x){x.hidden=x.id!=='panel-'+state.tab;});};});
+  $('newProjectBtn').onclick=createProject; $('emptyNewBtn').onclick=createProject; $('refreshBtn').onclick=function(){loadProject(state.projectId);}; $('snapshotBtn').onclick=function(){run(call('snapshot.create',{project_id:state.projectId,label:'手动快照 '+new Date().toLocaleString()})).then(function(){notice('快照已创建');});}; $('deleteBtn').onclick=function(){uiConfirm('项目将移动到插件回收区，可恢复。继续？',function(){run(call('project.delete',{project_id:state.projectId})).then(function(){state.projectId=null;state.workspace=null;loadProjects();});});};
+  function applyTheme(theme) {
+    if (!theme) return;
+    var isDark = Boolean(theme.isDark);
+    document.documentElement.classList.toggle('dark', isDark);
+    document.body.classList.toggle('dark', isDark);
+    if (theme.primaryColor) {
+      document.documentElement.style.setProperty('--accent', theme.primaryColor);
+    }
+    if (theme.bgApp) {
+      document.documentElement.style.setProperty('--bg', theme.bgApp);
+    }
+    if (theme.bgSurface || theme.bgCard) {
+      document.documentElement.style.setProperty('--panel', theme.bgSurface || theme.bgCard);
+    }
+    if (theme.border) {
+      document.documentElement.style.setProperty('--line', theme.border);
+    }
+    if (theme.textPrimary) {
+      document.documentElement.style.setProperty('--text', theme.textPrimary);
+    }
+    if (theme.textMuted) {
+      document.documentElement.style.setProperty('--muted', theme.textMuted);
+    }
+  }
+  window.addEventListener('message', function (e) {
+    if (!e.data || typeof e.data !== 'object') return;
+    if (e.data.type === 'inkrest:init') {
+      state.contextReady = true;
+      $('hostState').textContent = '宿主已连接';
+      if (e.data.theme) applyTheme(e.data.theme);
+      loadProjects().catch(function () {});
+    }
+    if (e.data.type === 'inkrest:theme_change') {
+      if (e.data.theme) applyTheme(e.data.theme);
+    }
+  });
+  if (window.inkrest && window.inkrest.callRpc) {
+    state.contextReady = true;
+    $('hostState').textContent = '宿主已连接';
+    loadProjects().catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>

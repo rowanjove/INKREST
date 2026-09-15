@@ -22,18 +22,45 @@ class ApiProjectsTests(ApiTestBase):
             web_server.project_manager = web_server.ProjectManager(self.tmpdir)
             web_server.activate_project(target["id"])
 
-            response = TestClient(web_app).delete(f"/api/projects/{target['id']}")
+            response = TestClient(web_app).request(
+                "DELETE",
+                f"/api/projects/{target['id']}",
+                json={"confirmation": f"DELETE {target['id']}"},
+            )
 
             self.assertEqual(response.status_code, 200)
             self.assertFalse(target_dir.exists())
             self.assertTrue((unrelated_dir / "keep.txt").is_file())
             self.assertIsNone(web_context._active_project_id)
+            backup = response.json()["backup"]
+            self.assertTrue(Path(backup["path"]).is_file())
             registry = json.loads(
                 (self.tmpdir / "projects.json").read_text(encoding="utf-8")
             )
             self.assertNotIn(target["id"], registry["projects"])
         finally:
             web_server._active_project_id = original_active
+            web_server.BASE_DIR = original_base
+            web_server.project_manager = original_manager
+
+    def test_delete_project_requires_exact_confirmation(self):
+        original_base = web_server.BASE_DIR
+        original_manager = web_server.project_manager
+        try:
+            web_server.BASE_DIR = self.tmpdir
+            target = web_server.ProjectManager(self.tmpdir).create_project("Keep me")
+            target_dir = self.tmpdir / "projects" / target["id"]
+            web_server.project_manager = web_server.ProjectManager(self.tmpdir)
+
+            response = TestClient(web_app).request(
+                "DELETE",
+                f"/api/projects/{target['id']}",
+                json={"confirmation": "DELETE wrong-project"},
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertTrue(target_dir.is_dir())
+        finally:
             web_server.BASE_DIR = original_base
             web_server.project_manager = original_manager
 

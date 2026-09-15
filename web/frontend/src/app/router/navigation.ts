@@ -23,8 +23,8 @@ export interface NavigationItem {
 export const GLOBAL_NAV_ITEMS: readonly NavigationItem[] = [
   { id: 'library', label: '书库', path: '/', icon: 'library', match: ['/'] },
   { id: 'create', label: '新建作品', path: '/create', icon: 'create', match: ['/create'] },
+  { id: 'extensions', label: '插件', path: '/plugins', icon: 'extensions', match: ['/plugins'] },
   { id: 'settings', label: '设置', path: '/config', icon: 'settings', match: ['/config'] },
-  { id: 'extensions', label: '扩展', path: '/plugins', icon: 'extensions', match: ['/plugins'] },
 ]
 
 export const PROJECT_NAV_ITEMS: readonly NavigationItem[] = [
@@ -43,18 +43,18 @@ export const PROJECT_NAV_ITEMS: readonly NavigationItem[] = [
     match: ['/outline', '/assets', '/state', '/trope-workshop'],
   },
   {
-    id: 'manuscript',
-    label: '正文',
-    path: '/writer',
-    icon: 'manuscript',
-    match: ['/writer', '/chapters'],
-  },
-  {
     id: 'production',
     label: '生产',
     path: '/production',
     icon: 'production',
     match: ['/production', '/monitor', '/tasks', '/pipeline', '/logs'],
+  },
+  {
+    id: 'manuscript',
+    label: '正文',
+    path: '/writer',
+    icon: 'manuscript',
+    match: ['/writer', '/chapters'],
   },
   {
     id: 'quality',

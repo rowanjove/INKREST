@@ -155,6 +155,83 @@ def test_plugin_view_routes(mock_root_with_plugin, monkeypatch):
     assert rpc_after.json()["error"]["code"] == -32001
 
 
+def test_extension_request_dispatches_to_plugin(mock_root_with_plugin):
+    plugin_py = mock_root_with_plugin / "plugins" / "test-tool" / "plugin.py"
+    plugin_py.write_text(
+        """from novel_agent.plugins.base import WebExtensionPlugin, PluginMeta, PluginType
+class TestPlugin(WebExtensionPlugin):
+    def get_meta(self):
+        return PluginMeta(name="test-tool", display_name="Test Tool", version="1.0.0", plugin_type=PluginType.WEB_EXTENSION)
+    def handle_view_rpc(self, method, params=None, session=None):
+        if method == "project.list":
+            return {"projects": [{"id": "sm-1", "title": "墨局"}]}
+        raise ValueError(method)
+PLUGIN_CLASS = TestPlugin
+""",
+        encoding="utf-8",
+    )
+    pm = PluginManager(mock_root_with_plugin, allow_web_extensions=True)
+    entry = pm.discovery.discover_all()["test-tool"]
+    desc = pm._security_descriptor("test-tool", entry)
+    import yaml
+    (mock_root_with_plugin / "config" / "plugins.yaml").write_text(
+        yaml.safe_dump({
+            "plugins": {
+                "registry": {
+                    "test-tool": {
+                        "enabled": True,
+                        "trust_digest": desc["digest"],
+                        "granted_capabilities": desc["effective_capabilities"],
+                    }
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    pm.initialize()
+    sess = pm.create_view_session("test-tool", "radar-view", project_id="test_novel")
+    res = pm.execute_view_rpc(
+        "test-tool",
+        "radar-view",
+        sess["session_id"],
+        "extension.request",
+        {"method": "project.list", "params": {}},
+        context_revision=sess.get("context_revision", 1),
+    )
+    assert res["result"]["projects"][0]["id"] == "sm-1"
+
+
+def test_disable_plugin_invalidates_view_sessions(mock_root_with_plugin):
+    pm = PluginManager(mock_root_with_plugin, allow_web_extensions=True)
+    pm.initialize()
+    sess = pm.create_view_session("test-tool", "radar-view", project_id="test_novel")
+    assert pm.disable_plugin("test-tool") is True
+    res = pm.execute_view_rpc(
+        "test-tool",
+        "radar-view",
+        sess["session_id"],
+        "host.ping",
+        context_revision=sess.get("context_revision", 1),
+    )
+    assert res["error"]["code"] == -32001
+
+
+def test_stale_context_revision_is_rejected(mock_root_with_plugin):
+    pm = PluginManager(mock_root_with_plugin, allow_web_extensions=True)
+    pm.initialize()
+    sess = pm.create_view_session(
+        "test-tool", "radar-view", project_id="test_novel", context_revision=3
+    )
+    res = pm.execute_view_rpc(
+        "test-tool",
+        "radar-view",
+        sess["session_id"],
+        "host.ping",
+        context_revision=1,
+    )
+    assert res["error"]["code"] == -32006
+
+
 def test_rpc_chapters_and_characters_reading(mock_root_with_plugin):
     proj_dir = mock_root_with_plugin / "projects" / "test_novel"
     # Write chapters

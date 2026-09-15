@@ -1,0 +1,9 @@
+{
+  "id": "pos_faux_insight_01",
+  "category": "staging",
+  "text": "很多人没有意识到的是，在某种意义上说，这正是整个阴谋的核心逻辑所在。",
+  "expected_rules": [
+    "HWE.STAGING.FAUX_INSIGHT"
+  ],
+  "description": "社论式自媒体虚假深刻论断"
+}

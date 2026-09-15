@@ -34,6 +34,18 @@ export function rawBlockStatus(
   return 'idle'
 }
 
+export function pipelineEntriesForChapter(
+  entries: ProgressEntry[],
+  chapterId: string,
+  taskId = '',
+): ProgressEntry[] {
+  return entries.filter((entry) => {
+    if (taskId && entry.task_id && entry.task_id !== taskId) return false
+    if (QUEUE_PIPELINE_STEPS.has(entry.step)) return !entry.chapter_id
+    return Boolean(chapterId) && entry.chapter_id === chapterId
+  })
+}
+
 export function chapterPipelineTouched(
   entries: ProgressEntry[],
   chapterId: string,
@@ -81,7 +93,18 @@ export function applyRunningPipelineOverlay(
   if (runIdx < 0) return blocks
 
   return blocks.map((block, index) => {
-    if (block.status === 'error' || block.status === 'paused' || block.status === 'done') {
+    if (block.status === 'error' || block.status === 'paused') return block
+    if (block.status === 'done') {
+      const runningEntry = [...entries].reverse().find((entry) => entry.status === 'running')
+      const latestForBlock = [...entries].reverse().find((entry) => block.steps.includes(entry.step))
+      if (
+        index > runIdx
+        && runningEntry
+        && latestForBlock
+        && latestForBlock.timestamp < runningEntry.timestamp
+      ) {
+        return { ...block, status: 'idle' as BlockStatus, detailLabel: '' }
+      }
       return block
     }
     if (index < runIdx) {
@@ -132,7 +155,8 @@ export function settleGateBlockAfterChapterComplete(
   if (chapterHasGateFailure(entries, activeChapterId)) return blocks
 
   const auditSteps = AUDIT_BLOCK?.steps ?? []
-  if (rawBlockStatus(auditSteps, entries) !== 'done') return blocks
+  const chapterEntries = pipelineEntriesForChapter(entries, activeChapterId)
+  if (rawBlockStatus(auditSteps, chapterEntries) !== 'done') return blocks
 
   const chapterRunning = entries.some(
     (entry) => entry.chapter_id === activeChapterId && entry.status === 'running',

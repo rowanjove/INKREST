@@ -79,13 +79,15 @@ function ensureBubbleWindow(ctx: PetIpcContext) {
 
 function applySettingsToPetWindow(settings: PetSettings, petWindow: BrowserWindow | null) {
   if (!petWindow || petWindow.isDestroyed()) return;
-  petWindow.setAlwaysOnTop(settings.alwaysOnTop);
+  petWindow.setAlwaysOnTop(settings.alwaysOnTop, 'screen-saver');
   petWindow.setSize(settings.size, settings.size);
   if (settings.position) {
     petWindow.setPosition(settings.position.x, settings.position.y);
   }
   if (!settings.enabled) {
     petWindow.hide();
+  } else {
+    showWhenReady(petWindow, 'showInactive');
   }
 }
 
@@ -198,8 +200,24 @@ export function registerPetIpc(ctx: PetIpcContext) {
 
   ipcMain.handle('pet:show', (event) => {
     ctx.assertTrustedSender(event);
-    writePetSettings({ enabled: true });
-    showWhenReady(ensurePetWindow(ctx), 'showInactive');
+    const petWindow = ensurePetWindow(ctx);
+    const primary = screen.getPrimaryDisplay().workArea;
+    const settings = readPetSettings();
+    const size = settings.size || 180;
+    const safeX = primary.x + primary.width - size - 40;
+    const safeY = primary.y + primary.height - size - 80;
+
+    writePetSettings({
+      enabled: true,
+      dockedEdge: null,
+      position: { x: safeX, y: safeY },
+    });
+
+    petWindow.setBounds({ x: safeX, y: safeY, width: size, height: size });
+    petWindow.setAlwaysOnTop(true, 'screen-saver');
+    showWhenReady(petWindow, 'show');
+    petWindow.show();
+    petWindow.focus();
   });
 
   ipcMain.handle('pet:hide', (event) => {

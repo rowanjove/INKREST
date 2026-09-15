@@ -466,21 +466,30 @@ def save_manuscript_document(
     expected_revision: int,
     source: str = "autosave",
 ) -> Dict[str, Any]:
-    validate_tiptap_document(content_json)
-    plain_text, markdown_text = derive_document_text(content_json)
-    store = SQLiteStateStore(root_dir)
-    ensure_manuscript_document(root_dir, chapter_id, store=store)
-    document = store.save_manuscript_document(
-        chapter_id=chapter_id,
-        title=title.strip() or "第 {} 章".format(chapter_id),
-        content_json=content_json,
-        plain_text=plain_text,
-        markdown_text=markdown_text,
-        expected_revision=expected_revision,
-        source=source,
-    )
-    _project_document(Path(root_dir), document, store)
-    return document
+    # Reset/delete uses this same boundary.  Keep the authoritative SQLite
+    # write and its projection together so maintenance cannot move the
+    # project between the two operations.
+    from web import context as ws_context
+
+    with ws_context._project_lock:
+        root = Path(root_dir)
+        if not root.is_dir():
+            raise FileNotFoundError("Project no longer exists")
+        validate_tiptap_document(content_json)
+        plain_text, markdown_text = derive_document_text(content_json)
+        store = SQLiteStateStore(root)
+        ensure_manuscript_document(root, chapter_id, store=store)
+        document = store.save_manuscript_document(
+            chapter_id=chapter_id,
+            title=title.strip() or "第 {} 章".format(chapter_id),
+            content_json=content_json,
+            plain_text=plain_text,
+            markdown_text=markdown_text,
+            expected_revision=expected_revision,
+            source=source,
+        )
+        _project_document(root, document, store)
+        return document
 
 
 def apply_plain_text_to_manuscript(
@@ -493,28 +502,39 @@ def apply_plain_text_to_manuscript(
     source: str = "manual",
 ) -> Dict[str, Any]:
     """Write plain text through the authoritative document + projection path."""
-    store = SQLiteStateStore(root_dir)
-    current = ensure_manuscript_document(root_dir, chapter_id, store=store)
-    revision = int(current["revision"] if expected_revision is None else expected_revision)
-    resolved_title = (
-        (title or "").strip()
-        or str(current.get("title") or "")
-        or f"第 {chapter_id} 章"
-    )
-    if (
-        str(current.get("plain_text") or "") == (plain_text or "")
-        and str(current.get("title") or "") == resolved_title
-        and expected_revision in (None, int(current.get("revision") or 0))
-    ):
-        return current
-    return save_manuscript_document(
-        root_dir,
-        chapter_id=chapter_id,
-        title=resolved_title,
-        content_json=plain_text_to_tiptap(plain_text),
-        expected_revision=revision,
-        source=source,
-    )
+    from web import context as ws_context
+
+    with ws_context._project_lock:
+        root = Path(root_dir)
+        if not root.is_dir():
+            raise FileNotFoundError("Project no longer exists")
+        store = SQLiteStateStore(root)
+        current = ensure_manuscript_document(root, chapter_id, store=store)
+        if expected_revision is None and str(current.get("plain_text") or "") != (plain_text or ""):
+            if source not in {"restore", "version", "generation", "import"}:
+                from novel_agent.state.manuscript_repository import DocumentConflictError
+
+                raise DocumentConflictError(current)
+        revision = int(current["revision"] if expected_revision is None else expected_revision)
+        resolved_title = (
+            (title or "").strip()
+            or str(current.get("title") or "")
+            or f"第 {chapter_id} 章"
+        )
+        if (
+            str(current.get("plain_text") or "") == (plain_text or "")
+            and str(current.get("title") or "") == resolved_title
+            and expected_revision in (None, int(current.get("revision") or 0))
+        ):
+            return current
+        return save_manuscript_document(
+            root,
+            chapter_id=chapter_id,
+            title=resolved_title,
+            content_json=plain_text_to_tiptap(plain_text),
+            expected_revision=revision,
+            source=source,
+        )
 
 
 def sync_generated_manuscript_document(
@@ -527,60 +547,65 @@ def sync_generated_manuscript_document(
     plain_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Commit generated text into the authoritative document and its projection."""
-    root = Path(root_dir)
-    chapter_dir = root / "workspace" / "chapters" / f"chapter_{chapter_id}"
-    resolved_final = Path(final_path).resolve()
-    expected_final = (chapter_dir / "chapter_final.txt").resolve()
-    if resolved_final != expected_final:
-        raise ValueError("Generated manuscript path does not match the requested chapter")
-    if plain_text is None:
-        plain_text = resolved_final.read_text(encoding="utf-8")
-    plan = _safe_json(chapter_dir / "plan.json")
-    title = str(plan.get("chapter_title") or f"第 {chapter_id} 章")
-    content_json = plain_text_to_tiptap(plain_text)
-    derived_plain, markdown_text = derive_document_text(content_json)
-    store = SQLiteStateStore(root)
+    from web import context as ws_context
 
-    current = store.get_manuscript_document(chapter_id)
-    if current is None and expected_revision in (None, 0):
-        created = store.create_manuscript_document(
-            chapter_id=chapter_id,
-            title=title,
-            content_json=content_json,
-            plain_text=derived_plain,
-            markdown_text=markdown_text,
-            source=source,
-        )
-        if (
-            created["plain_text"] != derived_plain
-            or created["title"] != title
-        ):
+    with ws_context._project_lock:
+        root = Path(root_dir)
+        if not root.is_dir():
+            raise FileNotFoundError("Project no longer exists")
+        chapter_dir = root / "workspace" / "chapters" / f"chapter_{chapter_id}"
+        resolved_final = Path(final_path).resolve()
+        expected_final = (chapter_dir / "chapter_final.txt").resolve()
+        if resolved_final != expected_final:
+            raise ValueError("Generated manuscript path does not match the requested chapter")
+        if plain_text is None:
+            plain_text = resolved_final.read_text(encoding="utf-8")
+        plan = _safe_json(chapter_dir / "plan.json")
+        title = str(plan.get("chapter_title") or f"第 {chapter_id} 章")
+        content_json = plain_text_to_tiptap(plain_text)
+        derived_plain, markdown_text = derive_document_text(content_json)
+        store = SQLiteStateStore(root)
+
+        current = store.get_manuscript_document(chapter_id)
+        if current is None and expected_revision in (None, 0):
+            created = store.create_manuscript_document(
+                chapter_id=chapter_id,
+                title=title,
+                content_json=content_json,
+                plain_text=derived_plain,
+                markdown_text=markdown_text,
+                source=source,
+            )
+            if (
+                created["plain_text"] != derived_plain
+                or created["title"] != title
+            ):
+                _project_document(root, created, store)
+                raise DocumentConflictError(created)
             _project_document(root, created, store)
-            raise DocumentConflictError(created)
-        _project_document(root, created, store)
-        return created
+            return created
 
-    if current is None:
-        current = ensure_manuscript_document(root, chapter_id, store=store)
-    revision = int(
-        current["revision"] if expected_revision is None else expected_revision
-    )
-    try:
-        document = store.save_manuscript_document(
-            chapter_id=chapter_id,
-            title=title,
-            content_json=content_json,
-            plain_text=derived_plain,
-            markdown_text=markdown_text,
-            expected_revision=revision,
-            source=source,
+        if current is None:
+            current = ensure_manuscript_document(root, chapter_id, store=store)
+        revision = int(
+            current["revision"] if expected_revision is None else expected_revision
         )
-    except DocumentConflictError as exc:
-        # SQLite is authoritative. Restore its latest text over the stale pipeline projection.
-        _project_document(root, exc.current, store)
-        raise
-    _project_document(root, document, store)
-    return document
+        try:
+            document = store.save_manuscript_document(
+                chapter_id=chapter_id,
+                title=title,
+                content_json=content_json,
+                plain_text=derived_plain,
+                markdown_text=markdown_text,
+                expected_revision=revision,
+                source=source,
+            )
+        except DocumentConflictError as exc:
+            # SQLite is authoritative. Restore its latest text over the stale pipeline projection.
+            _project_document(root, exc.current, store)
+            raise
+        _project_document(root, document, store)
+        return document
 
 
 def restore_manuscript_revision(
@@ -590,11 +615,17 @@ def restore_manuscript_revision(
     revision_id: str,
     expected_revision: int,
 ) -> Dict[str, Any]:
-    store = SQLiteStateStore(root_dir)
-    document = store.restore_manuscript_revision(
-        chapter_id=chapter_id,
-        revision_id=revision_id,
-        expected_revision=expected_revision,
-    )
-    _project_document(Path(root_dir), document, store)
-    return document
+    from web import context as ws_context
+
+    with ws_context._project_lock:
+        root = Path(root_dir)
+        if not root.is_dir():
+            raise FileNotFoundError("Project no longer exists")
+        store = SQLiteStateStore(root)
+        document = store.restore_manuscript_revision(
+            chapter_id=chapter_id,
+            revision_id=revision_id,
+            expected_revision=expected_revision,
+        )
+        _project_document(root, document, store)
+        return document

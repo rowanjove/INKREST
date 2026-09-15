@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, ref, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
+  Avatar,
   Collection,
   Cpu,
   DataAnalysis,
@@ -11,11 +12,14 @@ import {
   Edit,
   Files,
   List,
+  Monitor,
+  Opportunity,
   Plus,
   Reading,
+  Search,
   Setting,
 } from '@element-plus/icons-vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 import {
   GLOBAL_NAV_ITEMS,
@@ -24,6 +28,11 @@ import {
   type NavigationIcon,
 } from '../router/navigation'
 import { useProjectStore } from '../../stores/project'
+import { usePetStore } from '../../stores/pet'
+import {
+  useSidebarQuickActionsStore,
+  type SidebarActionId,
+} from '../../stores/sidebarQuickActions'
 import type { BackendStatus } from '../bootstrap/useDesktopLifecycle'
 import PluginSidebarGroup from './PluginSidebarGroup.vue'
 
@@ -35,12 +44,16 @@ defineProps<{
   backendUnreachable: boolean
 }>()
 
-defineEmits<{ openDiagnostics: [] }>()
+const emit = defineEmits<{ openDiagnostics: [] }>()
 
 const route = useRoute()
 const router = useRouter()
 const projectStore = useProjectStore()
+const petStore = usePetStore()
+const quickActionsStore = useSidebarQuickActionsStore()
 const showProjectSwitcher = ref(false)
+
+const shanshanAvatar = new URL('../../assets/pet/shanshan/ui/bubble_avatar.png', import.meta.url).href
 
 const inProject = computed(
   () => route.meta.scope === 'project' && Boolean(projectStore.currentProject?.id),
@@ -48,10 +61,8 @@ const inProject = computed(
 const primaryItems = computed(() =>
   inProject.value ? PROJECT_NAV_ITEMS : GLOBAL_NAV_ITEMS.slice(0, 2),
 )
-const utilityItems = computed(() =>
-  inProject.value
-    ? GLOBAL_NAV_ITEMS.filter((item) => ['settings', 'extensions'].includes(item.id))
-    : GLOBAL_NAV_ITEMS.slice(2),
+const settingsItem = computed(() =>
+  GLOBAL_NAV_ITEMS.find((item) => item.id === 'settings'),
 )
 const activeId = computed(() => activeNavigationId(route.path, inProject.value))
 
@@ -68,7 +79,60 @@ const iconMap: Record<NavigationIcon, Component> = {
   extensions: Cpu,
 }
 
+const actionIconMap: Record<SidebarActionId, Component> = {
+  plugins: Cpu,
+  inspiration: Opportunity,
+  shanshan: Avatar,
+  diagnostics: Monitor,
+  command: Search,
+}
+
 const go = (path: string) => void router.push(path)
+
+function isActionActive(id: SidebarActionId): boolean {
+  if (id === 'plugins') {
+    return route.path === '/plugins' || route.path.startsWith('/extensions')
+  }
+  if (id === 'inspiration') {
+    return route.path.startsWith('/inspiration')
+  }
+  return false
+}
+
+async function handleActionClick(id: SidebarActionId) {
+  if (id === 'plugins') {
+    go('/plugins')
+    return
+  }
+  if (id === 'inspiration') {
+    go('/inspiration')
+    return
+  }
+  if (id === 'shanshan') {
+    try {
+      if (!petStore.settings.enabled) {
+        await petStore.updateSettings({ enabled: true })
+      }
+      if (window.electronAPI?.showPet) {
+        await window.electronAPI.showPet()
+        ElMessage.success('已唤出桌面助手山山')
+      } else {
+        window.dispatchEvent(new CustomEvent('open-shanshan'))
+        ElMessage.success('已打开驻场助手山山')
+      }
+    } catch (e: any) {
+      ElMessage.error(e?.message || '打开山山失败')
+    }
+    return
+  }
+  if (id === 'diagnostics') {
+    emit('openDiagnostics')
+    return
+  }
+  if (id === 'command') {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+  }
+}
 
 async function handleBrandClick() {
   if (inProject.value) {
@@ -153,18 +217,52 @@ async function handleBrandClick() {
         :backend-unreachable="backendUnreachable"
         @open="$emit('openDiagnostics')"
       />
-      <nav class="nav-group nav-group--utility" aria-label="全局入口">
+
+      <!-- 快捷操作栏（设置上方可配置行） -->
+      <div
+        v-if="quickActionsStore.enabledActions.length"
+        class="quick-actions-bar"
+        :class="{ 'quick-actions-bar--icon-only': !quickActionsStore.showLabels }"
+        aria-label="快捷操作栏"
+      >
         <button
-          v-for="item in utilityItems"
-          :key="item.id"
+          v-for="action in quickActionsStore.enabledActions"
+          :key="action.id"
+          type="button"
+          class="quick-action-btn"
+          :class="{
+            active: isActionActive(action.id),
+            'quick-action-btn--icon-only': !quickActionsStore.showLabels,
+          }"
+          :title="action.label + ' · ' + action.description"
+          :aria-label="action.label"
+          @click="handleActionClick(action.id)"
+        >
+          <img
+            v-if="action.id === 'shanshan'"
+            :src="shanshanAvatar"
+            alt=""
+            class="action-avatar"
+          />
+          <el-icon v-else>
+            <component :is="actionIconMap[action.id] || Cpu" />
+          </el-icon>
+          <span v-if="quickActionsStore.showLabels">{{ action.label }}</span>
+        </button>
+      </div>
+
+      <!-- 全局设置入口 -->
+      <nav class="nav-group nav-group--utility" aria-label="全局设置">
+        <button
+          v-if="settingsItem"
           type="button"
           class="nav-item"
-          :class="{ active: activeId === item.id }"
-          :aria-current="activeId === item.id ? 'page' : undefined"
-          @click="go(item.path)"
+          :class="{ active: activeId === 'settings' }"
+          :aria-current="activeId === 'settings' ? 'page' : undefined"
+          @click="go(settingsItem.path)"
         >
-          <el-icon><component :is="iconMap[item.icon]" /></el-icon>
-          <span>{{ item.label }}</span>
+          <el-icon><Setting /></el-icon>
+          <span>{{ settingsItem.label }}</span>
         </button>
       </nav>
     </div>
@@ -332,6 +430,80 @@ async function handleBrandClick() {
   margin-top: auto;
   display: grid;
   gap: 8px;
+}
+
+.quick-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.quick-actions-bar--icon-only {
+  justify-content: space-between;
+}
+
+.quick-action-btn {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-text-sidebar-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  transition: all var(--motion-fast) var(--ease-standard);
+}
+
+.quick-action-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--color-text-sidebar);
+}
+
+.quick-action-btn.active {
+  background: rgba(198, 111, 79, 0.16);
+  border-color: rgba(198, 111, 79, 0.45);
+  color: var(--color-brand-ink);
+}
+
+.quick-action-btn .el-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.quick-action-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-action-btn--icon-only {
+  flex: 1;
+  max-width: 38px;
+  height: 36px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.quick-action-btn--icon-only .el-icon {
+  font-size: 16px;
+}
+
+.action-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .nav-group--utility {

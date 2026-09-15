@@ -87,10 +87,11 @@ describe('production center contracts', () => {
       review({ chapter_id: '003', stage: 'quality_blocked' }),
       review({ chapter_id: '004', stage: 'external_review_pending' }),
       review({ chapter_id: '005', stage: 'batch_retry' }),
+      review({ chapter_id: '006', stage: 'report_invalid' }),
     ]
     expect(resolveReviewActionTargets('rerun_gate', items)).toEqual(['003'])
     expect(resolveReviewActionTargets('external_passed', items)).toEqual(['004'])
-    expect(resolveReviewActionTargets('rewrite', items)).toEqual(['003', '005'])
+    expect(resolveReviewActionTargets('rewrite', items)).toEqual(['003', '005', '006'])
   })
 
   it('creates an explicit confirmation intent without executing an action', () => {
@@ -101,6 +102,20 @@ describe('production center contracts', () => {
     expect(intent.label).toBe('重新生产章节')
     expect(intent.description).toContain('修订历史')
     expect(intent.tone).toBe('danger')
+  })
+
+  it('creates a resume-task intent for paused production jobs', () => {
+    const intent = createProductionActionIntent('resume_task', { taskId: 'cont-1' })
+    expect(intent.taskId).toBe('cont-1')
+    expect(intent.label).toBe('恢复生产任务')
+    expect(intent.tone).toBe('primary')
+  })
+
+  it('labels dismiss as a risky override instead of a repair', () => {
+    const intent = createProductionActionIntent('dismiss', { chapterIds: ['003'] })
+    expect(intent.label).toBe('忽略并移出待处理')
+    expect(intent.description).toContain('不会修复正文或质量报告')
+    expect(intent.tone).toBe('warning')
   })
 
   it('builds a three-step recovery path for quality-blocked chapters', () => {

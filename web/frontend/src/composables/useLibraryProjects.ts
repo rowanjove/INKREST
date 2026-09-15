@@ -152,15 +152,20 @@ export function useLibraryProjects() {
     await router.push('/create')
   }
 
-  const handleDelete = async (id: string, name: string) => {
+  const handleDelete = async (id: string) => {
     try {
-      await ElMessageBox.confirm(
-        `确定要删除「${name}」吗？所有章节和数据都会被删除。`,
-        '删除小说',
-        { confirmButtonText: '删除', cancelButtonText: '取消', type: 'error' },
+      const deletePhrase = `DELETE ${id}`
+      await ElMessageBox.prompt(
+        `输入 ${deletePhrase}`,
+        '备份并删除',
+        {
+          confirmButtonText: '删除',
+          cancelButtonText: '取消',
+          type: 'error',
+          inputValidator: (input: string) => input === deletePhrase,
+        },
       )
       await projectStore.deleteProject(id)
-      ElMessage.success('已删除')
       if (selectedProject.value?.id === id) {
         detailsVisible.value = false
       }

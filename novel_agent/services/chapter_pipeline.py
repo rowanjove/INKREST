@@ -56,6 +56,8 @@ class ChapterPipelineRunner:
         ctx, plan = await self._run_planning(
             chapter_id, chapter_goal, chapter_dir, scenes_dir, reports_dir
         )
+        checkpoint = self._o._load_checkpoint(chapter_dir)
+        completed = list(checkpoint.get("completed_stages") or [])
 
         early, ctx = await self._run_phases(
             chapter_id, chapter_dir, reports_dir, completed, ctx
@@ -85,12 +87,21 @@ class ChapterPipelineRunner:
         emit_complete(chapter_id, {"word_count": wc_count, "risk_level": risk_level})
         self._o._persist_llm_cost(chapter_id)
 
+        quality_decision = None
+        try:
+            from novel_agent.quality.decision import derive_quality_decision
+
+            payload = ctx.quality_report if isinstance(getattr(ctx, "quality_report", None), dict) else {"audit": ctx.audit or {}}
+            quality_decision = derive_quality_decision(payload)
+        except Exception:
+            quality_decision = None
         result = ChapterResult(
             chapter_id=chapter_id,
             final_path=chapter_dir / "chapter_final.txt",
             audit=ctx.audit or {},
             warnings=list(ctx.warnings),
             final_text=ctx.final_text or "",
+            quality_decision=quality_decision,
         )
         self._o._emit_chapter_complete_hooks(chapter_id, ctx, result, wc_count)
 
@@ -311,10 +322,15 @@ class ChapterPipelineRunner:
                 restored = self._restore_skipped_phase_ctx(
                     name, chapter_dir, reports_dir, completed, ctx
                 )
-                if restored is None:
+                if restored is None and name != "generation":
                     continue
-                ctx = restored
-                continue
+                if restored is not None:
+                    ctx = restored
+                    continue
+                # A generation checkpoint without a usable final text is
+                # corrupt.  _restore_skipped_phase_ctx removed the stale
+                # marker; fall through and execute generation now instead of
+                # silently advancing audit with an empty context.
 
             early, ctx = await self._execute_phase(
                 name, phase, chapter_id, chapter_dir, reports_dir, completed, ctx
@@ -359,7 +375,16 @@ class ChapterPipelineRunner:
                 logger.warning(
                     "Checkpoint says generation complete but chapter_final.txt is empty, re-running"
                 )
-                completed.remove("generation")
+                # Downstream audit/post-audit artifacts describe the missing
+                # text and cannot be trusted after regeneration.  Roll all of
+                # them back so the newly generated text is reviewed again.
+                phase_names = [str(stage) for stage, _ in self._o.phases]
+                try:
+                    generation_index = phase_names.index("generation")
+                except ValueError:
+                    generation_index = 0
+                stale_stages = set(phase_names[generation_index:])
+                completed[:] = [stage for stage in completed if stage not in stale_stages]
                 return None
             return dataclasses.replace(ctx, final_text=final_text)
         if name == "audit":
@@ -515,6 +540,7 @@ class ChapterPipelineRunner:
                     final_path=chapter_dir / "chapter_final.txt",
                     audit=ctx.audit or {},
                     warnings=list(ctx.warnings) + [gate.block_message],
+                    final_text=ctx.final_text or "",
                 ),
                 ctx,
             )

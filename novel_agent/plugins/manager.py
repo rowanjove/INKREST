@@ -32,7 +32,9 @@ from novel_agent.plugins.base import (
 )
 from novel_agent.plugins.discovery import PluginDiscovery, PluginEntry
 from novel_agent.plugins.installer import install_plugin_zip, uninstall_plugin
+from novel_agent.plugins.lifecycle import PluginDiagnostics, PluginState
 from novel_agent.plugins.manifest import find_manifest_path, load_manifest, manifest_to_plugin_meta, ManifestError
+from novel_agent.plugins.capability_broker import CapabilityBroker
 from novel_agent.plugins.permissions import (
     PluginCapability,
     capability_details,
@@ -83,6 +85,11 @@ class LoadedPlugin:
         self.instance = instance
         self.enabled = enabled
         self.meta: PluginMeta = instance.get_meta()
+        self.diagnostics = PluginDiagnostics(
+            plugin_id=self.meta.name,
+            status=PluginState.ACTIVE if enabled else PluginState.DISABLED,
+            reason="Loaded initially",
+        )
 
 
 class PluginManager:
@@ -101,6 +108,7 @@ class PluginManager:
 
     def initialize(self) -> None:
         """Scan, load, and activate enabled plugins."""
+        self.invalidate_view_sessions()
         if self.plugins:
             self.shutdown()
             self.plugins.clear()
@@ -237,11 +245,13 @@ class PluginManager:
                 unregister_llm_provider(loaded.instance.get_provider_name())
             loaded.instance.on_deactivate()
             loaded.enabled = False
+            loaded.diagnostics.transition(PluginState.DISABLED, reason="Plugin deactivated")
             ptype = loaded.meta.plugin_type
             if loaded.instance in self._active_by_type[ptype]:
                 self._active_by_type[ptype].remove(loaded.instance)
             return True
         except Exception as e:
+            loaded.diagnostics.transition(PluginState.FAILED, error=str(e), reason=f"Deactivation failed: {e}")
             logger.error("Error deactivating plugin '%s': %s", name, e, exc_info=True)
             return False
 
@@ -265,6 +275,7 @@ class PluginManager:
             )
             descriptor = self._security_descriptor(name, loaded.entry)
             if not self._is_security_grant_current(plugin_state, descriptor):
+                loaded.diagnostics.transition(PluginState.TRUST_PENDING, reason="Stale trust digest or permission grant")
                 logger.error(
                     "Cannot enable local plugin '%s': trust digest or permission grant is stale.",
                     name,
@@ -279,6 +290,7 @@ class PluginManager:
         for req in loaded.meta.requires:
             req_loaded = self.plugins.get(req)
             if not req_loaded or not req_loaded.enabled:
+                loaded.diagnostics.transition(PluginState.DEPENDENCY_MISSING, reason=f"Missing dependency: {req}")
                 logger.error("Cannot enable plugin '%s': missing dependency '%s'", name, req)
                 return False
 
@@ -298,11 +310,17 @@ class PluginManager:
                 event_bus=self.event_bus,
                 logger=get_logger(f"plugin.{name}"),
                 plugin_home=plugin_home,
+                broker=CapabilityBroker(
+                    name,
+                    list(plugin_state.get("granted_capabilities") or []),
+                    self.root_dir,
+                ),
             )
 
             # Activate
             loaded.instance.on_activate(context)
             loaded.enabled = True
+            loaded.diagnostics.transition(PluginState.ACTIVE, reason="Activated successfully")
 
             # Register in active caches
             ptype = loaded.meta.plugin_type
@@ -322,6 +340,7 @@ class PluginManager:
             logger.info("Plugin '%s' (%s) successfully enabled.", name, loaded.meta.display_name)
             return True
         except Exception as e:
+            loaded.diagnostics.transition(PluginState.FAILED, error=str(e), reason=f"Activation failed: {e}")
             logger.error("Error activating plugin '%s': %s", name, e, exc_info=True)
             loaded.enabled = False
             self._set_desired_enabled(name, False)
@@ -346,6 +365,7 @@ class PluginManager:
         try:
             if not self._deactivate_loaded_plugin(name, loaded):
                 return False
+            self.invalidate_view_sessions(name)
             self._set_desired_enabled(name, False)
             logger.info("Plugin '%s' successfully disabled.", name)
             return True
@@ -394,12 +414,18 @@ class PluginManager:
 
             # Reactivate
             try:
+                plugin_state = self._state_config.get("plugins", {}).get("registry", {}).get(name, {})
                 context = PluginContext(
                     root_dir=self.root_dir,
                     config=new_config,
                     event_bus=self.event_bus,
                     logger=get_logger(f"plugin.{name}"),
                     plugin_home=self._plugin_home_for_entry(loaded.entry),
+                    broker=CapabilityBroker(
+                        name,
+                        set(plugin_state.get("granted_capabilities") or []),
+                        self.root_dir,
+                    ),
                 )
                 loaded.instance.on_activate(context)
                 loaded.enabled = True
@@ -641,6 +667,8 @@ class PluginManager:
                     "enabled": loaded.enabled,
                     "trusted": trusted,
                     "loaded": True,
+                    "lifecycle_state": loaded.diagnostics.status.value,
+                    "diagnostics": loaded.diagnostics.to_dict(),
                     "installed_version": reg.get("installed_version", meta.version),
                     "capabilities": descriptor["effective_capabilities"],
                     "contributes": discovery_meta.get("contributes", {"navigation": [], "commands": []}),
@@ -648,6 +676,7 @@ class PluginManager:
                 })
             elif entry:
                 meta = self._meta_from_discovery_entry(name, entry)
+                entry_state = PluginState.TRUST_PENDING.value if not trusted else PluginState.INSTALLED.value
                 catalog.append({
                     **meta,
                     "plugin_type": meta.get("plugin_type") or "",
@@ -656,6 +685,12 @@ class PluginManager:
                     "enabled": False,
                     "trusted": trusted,
                     "loaded": False,
+                    "lifecycle_state": entry_state,
+                    "diagnostics": {
+                        "plugin_id": name,
+                        "status": entry_state,
+                        "reason": "Not loaded into runtime",
+                    },
                     "installed_version": reg.get("installed_version", meta.get("version")),
                     "capabilities": descriptor["effective_capabilities"],
                     "contributes": meta.get("contributes", {"navigation": [], "commands": []}),
@@ -676,6 +711,61 @@ class PluginManager:
         self._save_state_config()
         return result
 
+    def rollback_plugin_by_id(self, name: str, target_version: Optional[str] = None) -> Dict[str, Any]:
+        """Rollback an installed plugin to a previous version."""
+        from novel_agent.plugins.installer import rollback_plugin
+        if name in self.plugins and self.plugins[name].enabled:
+            self.disable_plugin(name)
+        result = rollback_plugin(self.root_dir, name, target_version=target_version)
+        reg = self._state_config.setdefault("plugins", {}).setdefault("registry", {}).setdefault(name, {})
+        reg["installed_version"] = result.get("version")
+        reg["enabled"] = False
+        reg.pop("trust_digest", None)
+        self._save_state_config()
+        return result
+
+    def list_plugin_versions_by_id(self, name: str) -> Dict[str, Any]:
+        """List version history and available rollbacks for a plugin."""
+        from novel_agent.plugins.installer import list_plugin_versions
+        return list_plugin_versions(self.root_dir, name)
+
+    def rollback_plugin(self, name: str, target_version: Optional[str] = None) -> Dict[str, Any]:
+        return self.rollback_plugin_by_id(name, target_version=target_version)
+
+    def list_plugin_versions(self, name: str) -> Dict[str, Any]:
+        return self.list_plugin_versions_by_id(name)
+
+    def get_diagnostics(self, name: str) -> Optional[PluginDiagnostics]:
+        loaded = self.plugins.get(name)
+        if loaded:
+            return loaded.diagnostics
+        catalog = {p["name"]: p for p in self.list_plugin_catalog()}
+        if name in catalog:
+            item = catalog[name]
+            status = PluginState.DISABLED
+            if item.get("source") == "local" and not item.get("trusted"):
+                status = PluginState.TRUST_PENDING
+            return PluginDiagnostics(plugin_id=name, status=status, reason="Not loaded in memory")
+        return None
+
+    def get_all_diagnostics(self) -> Dict[str, PluginDiagnostics]:
+        res = {name: p.diagnostics for name, p in self.plugins.items()}
+        for item in self.list_plugin_catalog():
+            name = item.get("name")
+            if name and name not in res:
+                status = PluginState.DISABLED
+                if item.get("source") == "local" and not item.get("trusted"):
+                    status = PluginState.TRUST_PENDING
+                res[name] = PluginDiagnostics(plugin_id=name, status=status, reason="Catalog item")
+        return res
+
+    def get_plugin_diagnostics(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get diagnostic information for a loaded plugin."""
+        loaded = self.plugins.get(name)
+        if loaded:
+            return loaded.diagnostics.to_dict()
+        return None
+
     def uninstall_plugin_by_id(self, name: str) -> bool:
         if name in self.plugins and self.plugins[name].enabled:
             if not self.disable_plugin(name):
@@ -690,6 +780,7 @@ class PluginManager:
             self._save_state_config()
         if name in self.plugins:
             del self.plugins[name]
+        self.invalidate_view_sessions(name)
         return True
 
     def get_navigation_contributions(self) -> Dict[str, List[Dict[str, Any]]]:
@@ -829,6 +920,7 @@ class PluginManager:
         plugin_id: str,
         view_id: str,
         project_id: Optional[str] = None,
+        context_revision: int = 1,
     ) -> Dict[str, Any]:
         """Allocate an authenticated view session for a plugin view."""
         self._prune_expired_sessions()
@@ -884,6 +976,7 @@ class PluginManager:
             "surface": surface,
             "project_id": project_id,
             "granted_capabilities": sorted(granted_caps),
+            "context_revision": int(context_revision or 1),
             "created_at": time.time(),
         }
         self._view_sessions[session_id] = session_data
@@ -939,6 +1032,17 @@ class PluginManager:
             return True
         return False
 
+    def invalidate_view_sessions(self, plugin_id: Optional[str] = None) -> None:
+        """Drop view sessions for one plugin, or all sessions."""
+        if not plugin_id:
+            self._view_sessions.clear()
+            return
+        self._view_sessions = {
+            sid: session
+            for sid, session in self._view_sessions.items()
+            if session.get("plugin_id") != plugin_id
+        }
+
     def execute_view_rpc(
         self,
         plugin_id: str,
@@ -962,8 +1066,25 @@ class PluginManager:
                 "jsonrpc": "2.0",
                 "error": {"code": -32002, "message": "Session plugin or view mismatch"},
             }
+        session_revision = int(session.get("context_revision") or 1)
+        if int(context_revision or 0) != session_revision:
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32006, "message": "Stale plugin view context"},
+            }
+        catalog = {item["name"]: item for item in self.list_plugin_catalog()}
+        plugin_row = catalog.get(plugin_id) or {}
+        if plugin_row:
+            if not plugin_row.get("enabled") or (
+                plugin_row.get("source") == "local" and not plugin_row.get("trusted")
+            ):
+                self.invalidate_view_sessions(plugin_id)
+                return {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32001, "message": "Session not found or expired"},
+                }
 
-        granted = set(session.get("granted_capabilities") or [])
+        granted = set(plugin_row.get("capabilities") or session.get("granted_capabilities") or [])
         project_id = session.get("project_id")
 
         METHOD_CAPABILITIES = {
@@ -973,6 +1094,7 @@ class PluginManager:
             "project.getChapters": "project_read",
             "project.getCharacters": "project_read",
             "project.getOutline": "project_read",
+            "extension.request": "ui_embed",
         }
 
         if method not in METHOD_CAPABILITIES:
@@ -992,6 +1114,31 @@ class PluginManager:
             }
 
         try:
+            if method == "extension.request":
+                loaded = self.plugins.get(plugin_id)
+                handler = getattr(getattr(loaded, "instance", None), "handle_view_rpc", None)
+                if not loaded or not loaded.enabled or not callable(handler):
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32601, "message": "Plugin view RPC is unavailable"},
+                    }
+                inner_method = str((params or {}).get("method") or "")
+                inner_params = (params or {}).get("params")
+                if not inner_method:
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32602, "message": "extension.request requires method"},
+                    }
+                if inner_params is None:
+                    inner_params = {}
+                if not isinstance(inner_params, dict):
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32602, "message": "extension.request params must be an object"},
+                    }
+                result = handler(inner_method, inner_params, session)
+                return {"jsonrpc": "2.0", "result": result}
+
             if method == "host.ping":
                 return {"jsonrpc": "2.0", "result": {"pong": True, "time": time.time()}}
 

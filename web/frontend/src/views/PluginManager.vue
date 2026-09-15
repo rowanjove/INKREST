@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { Refresh, QuestionFilled, Upload } from '@element-plus/icons-vue'
 import PluginAuthorHelpDialog from '../components/PluginAuthorHelpDialog.vue'
 import PluginMetricsCards from '../components/plugin/PluginMetricsCards.vue'
@@ -7,9 +8,16 @@ import PluginGrid from '../components/plugin/PluginGrid.vue'
 import PluginManagerDialogs from '../components/plugin/PluginManagerDialogs.vue'
 import { usePluginManager } from '../composables/usePluginManager'
 
+const viewMode = ref<'list' | 'card'>(
+  (localStorage.getItem('inkrest_plugin_view_mode') as 'list' | 'card') || 'list'
+)
+
+watch(viewMode, (newVal) => {
+  localStorage.setItem('inkrest_plugin_view_mode', newVal)
+})
+
 const {
   loading,
-  untrustedPlugins,
   searchQuery,
   selectedType,
   selectedStatus,
@@ -69,50 +77,17 @@ const {
       </div>
     </header>
 
-    <el-alert
-      type="info"
-      :closable="false"
-      show-icon
-      title="新手可从官方示例插件开始"
-      style="margin-bottom: 16px"
-    >
-      复制 <code>plugins/examples/</code> 下的 <code>hello_guard.py</code> 到 <code>plugins/</code> 后启用。
-      详见仓库 <code>plugins/examples/README.md</code>。
-    </el-alert>
-
-    <el-alert
-      v-if="untrustedPlugins.length"
-      title="发现尚未信任的本地插件"
-      type="warning"
-      :closable="false"
-      show-icon
-      style="margin-bottom: 16px"
-    >
-      <template #default>
-        <span>这些插件在信任前不会执行：</span>
-        <el-button
-          v-for="name in untrustedPlugins"
-          :key="name"
-          size="small"
-          type="warning"
-          plain
-          style="margin-left: 8px"
-          @click="handleTrust(name)"
-        >
-          信任 {{ name }}
-        </el-button>
-      </template>
-    </el-alert>
-
     <PluginFilterBar
       v-model:search-query="searchQuery"
       v-model:selected-type="selectedType"
       v-model:selected-status="selectedStatus"
+      v-model:view-mode="viewMode"
     />
 
     <PluginGrid
       :plugins="filteredPlugins"
       :loading="loading"
+      :view-mode="viewMode"
       :on-show-detail="showDetail"
       :on-show-config="showConfig"
       :on-delete="handleDelete"

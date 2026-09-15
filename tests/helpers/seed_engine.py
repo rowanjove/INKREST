@@ -12,6 +12,8 @@ def seed_usable_daily_model(
     model_id: str = "test-daily",
     provider: str = "openai",
     model_name: str = "gpt-test",
+    base_url: str = "",
+    api_key: str = "test-key",
 ) -> None:
     cfg = root / "config"
     cfg.mkdir(parents=True, exist_ok=True)
@@ -25,7 +27,8 @@ def seed_usable_daily_model(
                         "model": model_name,
                         # Remote-compatible test models still need an explicit
                         # credential so readiness tests exercise the real gate.
-                        "api_key": "test-key",
+                        "api_key": api_key,
+                        **({"base_url": base_url.rstrip("/")} if base_url else {}),
                     }
                 },
                 "slots": {"daily": model_id, "reasoning": model_id, "backup": []},

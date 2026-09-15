@@ -8,13 +8,13 @@ import type {
 } from '../entities/production/production'
 import { subscribePolling, unsubscribePolling } from '../utils/pollingHub'
 
-const TABS = new Set<ProductionTab>(['runs', 'reviews', 'costs', 'logs'])
+const TABS = new Set<ProductionTab>(['control', 'runs', 'reviews', 'costs', 'logs'])
 const POLL_KEY = 'production-workspace'
 
 function routeTab(value: unknown): ProductionTab {
   return typeof value === 'string' && TABS.has(value as ProductionTab)
     ? (value as ProductionTab)
-    : 'runs'
+    : 'control'
 }
 
 export function useProductionWorkspace() {

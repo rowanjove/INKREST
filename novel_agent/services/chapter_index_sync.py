@@ -225,24 +225,41 @@ def sync_chapters_from_disk(
         logger.error("Failed to fetch chapters from store during sync: %s", exc)
         db_chapter_ids = set()
 
-    deleted_chapter_ids = db_chapter_ids - disk_chapter_ids
-    if deleted_chapter_ids:
+    missing_on_disk = db_chapter_ids - disk_chapter_ids
+    stale_index_ids: set[str] = set()
+    for chapter_id in missing_on_disk:
+        try:
+            if store.get_manuscript_document_summary(chapter_id):
+                logger.info(
+                    "Keeping SQLite manuscript for chapter %s; disk folder is missing",
+                    chapter_id,
+                )
+                continue
+        except Exception as exc:
+            logger.warning(
+                "Could not inspect manuscript for chapter %s during sync: %s",
+                chapter_id,
+                exc,
+            )
+            continue
+        stale_index_ids.add(chapter_id)
+    if stale_index_ids:
         logger.info(
-            "Found %d chapters deleted from disk: %s. Cleaning up assets...",
-            len(deleted_chapter_ids),
-            deleted_chapter_ids,
+            "Dropping %d empty chapter index rows with no disk folder or manuscript: %s",
+            len(stale_index_ids),
+            stale_index_ids,
         )
         try:
-            store.delete_chapters_index(list(deleted_chapter_ids))
+            store.drop_chapter_index_rows(list(stale_index_ids))
         except Exception as exc:
             logger.error(
-                "Failed to batch delete chapter indexes for %s: %s",
-                deleted_chapter_ids,
+                "Failed to drop empty chapter indexes for %s: %s",
+                stale_index_ids,
                 exc,
             )
 
     manifest = {} if force_full else _load_sync_manifest(root_dir)
-    for removed_id in deleted_chapter_ids:
+    for removed_id in stale_index_ids:
         manifest.pop(removed_id, None)
 
     synced = 0
@@ -264,7 +281,7 @@ def sync_chapters_from_disk(
 
     _save_sync_manifest(root_dir, manifest)
 
-    if synced or deleted_chapter_ids:
+    if synced or stale_index_ids:
         if synced:
             logger.info("Synced %d chapters into SQLite index", synced)
         try:

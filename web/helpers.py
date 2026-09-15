@@ -437,8 +437,9 @@ def _sync_outline_to_character_cards(root: Path, outline: Dict[str, Any]):
     db_path = root / "data" / "novel.sqlite"
     if db_path.exists():
         try:
-            import sqlite3
-            with sqlite3.connect(db_path) as conn:
+            from novel_agent.state.sqlite_schema import safe_write_connection
+
+            with safe_write_connection(db_path) as conn:
                 conn.execute(
                     "UPDATE character_state SET name = ? WHERE id = 'protagonist'",
                     (proto_name,)

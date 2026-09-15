@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, shallowRef } from 'vue'
 import { listChapters, getChapter, listTasks, runChapter } from '../api'
+import { notifyPipelineStarted } from '../utils/pipelineNotify'
 
 export interface Chapter {
   chapter_id: string
@@ -33,11 +34,19 @@ export const useChapterStore = defineStore('chapter', () => {
   const totalWords = computed(() => chapters.value.reduce((sum, c) => sum + (c.word_count || 0), 0))
   const latestChapter = computed(() => chapters.value[chapters.value.length - 1])
 
+  function reset() {
+    chapters.value = []
+    tasks.value = []
+    currentChapter.value = null
+  }
+
   async function fetchChapters(sync = false) {
     try {
       const { data } = await listChapters({ offset: 0, limit: 500, sync, include_gaps: true })
       chapters.value = data.items ?? data
-    } catch { /* backend warming up */ }
+    } catch {
+      chapters.value = []
+    }
   }
 
   async function fetchTasks() {
@@ -57,6 +66,7 @@ export const useChapterStore = defineStore('chapter', () => {
     loading.value = true
     try {
       await runChapter(form)
+      notifyPipelineStarted({ chapterId: form.chapter_id, intent: '章节生成' })
       await Promise.all([fetchChapters(true), fetchTasks()])
     } finally {
       loading.value = false
@@ -70,6 +80,6 @@ export const useChapterStore = defineStore('chapter', () => {
   return {
     chapters, tasks, currentChapter, loading,
     completedTasks, runningTasks, totalWords, latestChapter,
-    fetchChapters, fetchTasks, fetchChapter, submitChapter, refreshAll,
+    fetchChapters, fetchTasks, fetchChapter, submitChapter, refreshAll, reset,
   }
 })

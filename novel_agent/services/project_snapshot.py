@@ -150,10 +150,9 @@ def build_quality_summary(root: Path) -> dict[str, Any]:
         ai_risk = str(ai_flavor.get("risk_level") or "").lower()
         if "ai_flavor" in blocked_by or ai_risk in {"medium", "high"}:
             ai_flavor_risks += 1
-        is_failed = (
-            report.get("overall_pass") is False
-            or str(guard.get("overall_status") or "").upper() == "FAIL"
-        )
+        from novel_agent.quality.decision import derive_quality_decision
+
+        is_failed = derive_quality_decision(report)["blocking"]
         if is_failed:
             failed += 1
             latest_issue = {
@@ -219,18 +218,43 @@ def _next_actions(
 ) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
     codes = {str(issue.get("code") or "") for issue in blocking_issues}
+
+    def append_action(action: dict[str, Any]) -> None:
+        if not any(existing["id"] == action["id"] for existing in actions):
+            actions.append(action)
+
+    data_issue_codes = {
+        "project_meta_invalid",
+        "outline_invalid",
+        "outline_corrupt",
+        "readiness_unavailable",
+        "chapter_progress_unavailable",
+        "legacy_schema",
+        "task_state_unavailable",
+        "readiness",
+    }
+    if codes.intersection(data_issue_codes):
+        append_action(
+            {
+                "id": "repair_project_data",
+                "label": "检查项目数据",
+                "kind": "navigate",
+                "target": "/config#system-data",
+                "enabled": True,
+            }
+        )
     if "config_invalid" in codes:
-        actions.append(
+        append_action(
             {
                 "id": "repair_config",
                 "label": "修复配置",
                 "kind": "navigate",
-                "target": "/config",
+                "target": "/config#generation-quality",
                 "enabled": True,
             }
         )
     if not outline:
-        actions.append(
+        append_action(
             {
                 "id": "create_outline",
                 "label": "创建故事蓝图",
@@ -240,7 +264,7 @@ def _next_actions(
             }
         )
     if active_tasks:
-        actions.append(
+        append_action(
             {
                 "id": "monitor_tasks",
                 "label": "查看运行任务",
@@ -255,7 +279,7 @@ def _next_actions(
         for issue in blocking_issues
     )
     if has_pipeline_alerts:
-        actions.append(
+        append_action(
             {
                 "id": "resolve_blocking_issues",
                 "label": "处理审校阻断",
@@ -265,29 +289,29 @@ def _next_actions(
             }
         )
     if "engine" in codes:
-        actions.append(
+        append_action(
             {
                 "id": "configure_model",
                 "label": "配置日常模型",
                 "kind": "navigate",
-                "target": "/config",
+                "target": "/config#models-providers",
                 "enabled": True,
             }
         )
     if "vector" in codes:
-        actions.append(
+        append_action(
             {
                 "id": "configure_vector",
                 "label": "配置向量服务",
                 "kind": "navigate",
-                "target": "/config",
+                "target": "/config#memory",
                 "enabled": True,
             }
         )
-    if codes.intersection({"outline", "title", "quota", "outline_corrupt", "arc_queue"}) and not any(
+    if codes.intersection({"outline", "outline_invalid", "title", "quota", "outline_corrupt", "arc_queue"}) and not any(
         a["id"] in ("create_outline", "complete_outline") for a in actions
     ):
-        actions.append(
+        append_action(
             {
                 "id": "complete_outline",
                 "label": "完善故事大纲",
@@ -297,16 +321,26 @@ def _next_actions(
             }
         )
     if "assets" in codes:
-        actions.append(
+        append_action(
             {
                 "id": "complete_assets",
                 "label": "补齐写作设定",
                 "kind": "navigate",
-                "target": "/state",
+                "target": "/assets",
                 "enabled": True,
             }
         )
-    if not actions:
+    if blocking_issues and not actions:
+        append_action(
+            {
+                "id": "inspect_blocking_issue",
+                "label": "检查阻塞详情",
+                "kind": "navigate",
+                "target": "/config#system-data",
+                "enabled": True,
+            }
+        )
+    elif not actions:
         actions.append(
             {
                 "id": "continue_writing",

@@ -191,17 +191,19 @@ def generate_cover(pid: str, req: GenerateCoverRequest) -> Dict[str, str]:
     }
     
     try:
+        from web.outbound import model_httpx_transport
+
         client_kwargs: Dict[str, Any] = {
             "proxy": cfg.get("proxy") or None,
             "timeout": float(cfg.get("timeout", 120)),
         }
-        try:
-            from web.outbound import model_httpx_transport
-
-            transport = model_httpx_transport(safe_base, async_mode=False)
-        except Exception:
-            transport = None
+        transport = model_httpx_transport(safe_base, async_mode=False)
         if transport is not None:
+            if cfg.get("proxy"):
+                raise ValueError(
+                    "Model proxy cannot be combined with DNS pinning; "
+                    "remove proxy or use a trusted local endpoint"
+                )
             client_kwargs["transport"] = transport
         with httpx.Client(**client_kwargs) as client:
             resp = client.post(url, headers=headers, json=body)

@@ -1,4 +1,5 @@
 import { delimiter, resolve } from 'node:path'
+import { readdirSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -53,6 +54,19 @@ function findBuildPython() {
 
 function addData(source, destination) {
   return `${source}${delimiter}${destination}`
+}
+
+function removePythonCaches(rootPath) {
+  const entries = readdirSync(rootPath, { withFileTypes: true })
+  for (const entry of entries) {
+    const entryPath = resolve(rootPath, entry.name)
+    if (!entry.isDirectory()) continue
+    if (entry.name === '__pycache__') {
+      rmSync(entryPath, { recursive: true, force: true })
+      continue
+    }
+    removePythonCaches(entryPath)
+  }
 }
 
 const python = findBuildPython()
@@ -125,4 +139,8 @@ const sync = spawnSync(python.command, [...python.prefix, syncScript], {
 if (sync.status !== 0) {
   process.exit(sync.status ?? 1)
 }
+
+const runtimeRoot = resolve(root, 'build', 'python-runtime', 'novel-agent-backend')
+removePythonCaches(runtimeRoot)
+console.log('Removed Python bytecode caches from the desktop runtime.')
 

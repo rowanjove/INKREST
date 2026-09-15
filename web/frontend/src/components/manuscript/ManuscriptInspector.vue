@@ -100,6 +100,16 @@ defineExpose({ showAiTab })
           <small>采纳前不会修改正文</small>
         </div>
         <div v-if="aiSuggestion" class="suggestion-card">
+          <div class="patch-header-row">
+            <span class="patch-title">📝 山山修改提议</span>
+            <small v-if="aiSuggestion.patchId">可撤销 Patch</small>
+          </div>
+          <div v-if="aiSuggestion.chips && aiSuggestion.chips.length" class="inspector-chips">
+            <small>参考：</small>
+            <span v-for="(chip, cIdx) in aiSuggestion.chips" :key="cIdx" class="chip-item">
+              {{ chip.label }}
+            </span>
+          </div>
           <div>
             <small>原文</small>
             <p>{{ aiSuggestion.selection.text || '光标位置' }}</p>
@@ -107,6 +117,13 @@ defineExpose({ showAiTab })
           <div class="suggested">
             <small>{{ aiSuggestion.label }}建议</small>
             <p>{{ aiSuggestion.replacement }}</p>
+          </div>
+          <div v-if="aiSuggestion.citations && aiSuggestion.citations.length" class="inspector-citations">
+            <small>依据出处：</small>
+            <div v-for="(c, cIdx) in aiSuggestion.citations" :key="cIdx" class="citation-row">
+              <strong>{{ c.title }}</strong>
+              <span v-if="c.snippet"> - {{ c.snippet }}</span>
+            </div>
           </div>
           <div class="suggestion-actions">
             <el-button @click="emit('cancelAi')">放弃</el-button>
@@ -400,4 +417,39 @@ defineExpose({ showAiTab })
   border-radius: 50%;
 }
 .inspector-section label { display: grid; gap: 8px; color: var(--color-text); font-size: 12.5px; }
+.patch-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.patch-title {
+  font-weight: 700;
+  color: #27ae60;
+  font-size: 12.5px;
+}
+.inspector-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.chip-item {
+  font-size: 11px;
+  background: rgba(0, 122, 255, 0.1);
+  color: #007aff;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.inspector-citations {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-border);
+  font-size: 11.5px;
+}
+.citation-row {
+  margin-top: 3px;
+  color: var(--color-text-subtle);
+}
 </style>

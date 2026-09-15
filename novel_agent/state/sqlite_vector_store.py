@@ -76,6 +76,7 @@ class SQLiteEmbeddingVectorStore(VectorStore):
             "capped": False,
         }
         self._client: Optional[httpx.Client] = None
+        self._client_base_url = ""
 
         self._init_db()
 
@@ -93,13 +94,38 @@ class SQLiteEmbeddingVectorStore(VectorStore):
             except Exception as e:
                 logger.error("Failed to initialize ChromaDB: %s. Fallback to SQLite.", e)
 
-    def _get_client(self) -> httpx.Client:
-        if self._client is not None and not self._client.is_closed:
+    def _get_client(self, base_url: str) -> httpx.Client:
+        """Build the client from the already validated, pinned endpoint.
+
+        HTTPX chooses its proxy mounts before selecting a custom transport.  A
+        ``proxy=`` argument would therefore bypass ``PinnedIPTransport`` for
+        the real request.  Refuse that unsafe combination instead of silently
+        falling back to a DNS-resolving client.
+        """
+        normalized_base = str(base_url or "").strip().rstrip("/")
+        if (
+            self._client is not None
+            and not self._client.is_closed
+            and self._client_base_url == normalized_base
+        ):
             return self._client
         client_kwargs = {"timeout": self.timeout}
-        if self.proxy:
+        from web.outbound import model_httpx_transport
+
+        transport = model_httpx_transport(normalized_base, async_mode=False)
+        if transport is not None:
+            if self.proxy:
+                raise ValueError(
+                    "Embedding proxy cannot be combined with DNS pinning; "
+                    "remove proxy or use a trusted local endpoint"
+                )
+            client_kwargs["transport"] = transport
+        elif self.proxy:
             client_kwargs["proxy"] = self.proxy
+        if self._client is not None and not self._client.is_closed:
+            self._client.close()
         self._client = httpx.Client(**client_kwargs)
+        self._client_base_url = normalized_base
         return self._client
 
     def _init_db(self) -> None:
@@ -265,7 +291,7 @@ class SQLiteEmbeddingVectorStore(VectorStore):
         last_error = None
         for attempt in range(self.max_retries):
             try:
-                resp = self._get_client().post(url, headers=headers, json=payload)
+                resp = self._get_client(safe_base).post(url, headers=headers, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
                 vectors = [item["embedding"] for item in data["data"]]

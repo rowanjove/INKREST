@@ -1,4 +1,4 @@
-import { APIRequestContext, Page, expect } from '@playwright/test'
+import { APIRequestContext, Page, expect, test } from '@playwright/test'
 
 export type MaintenanceSeed = {
   project_id: string
@@ -9,6 +9,8 @@ export type MaintenanceSeed = {
   pending_chapter_ids: string[]
   pending_total: number
 }
+
+const fixtureProjectIds = new Set<string>()
 
 async function fetchAccessToken(request: APIRequestContext): Promise<string> {
   const setupRes = await request.get('/api/auth/local-setup', {
@@ -41,8 +43,39 @@ export async function seedMaintenanceScenario(
     headers: authHeaders(token),
   })
   expect(res.ok()).toBeTruthy()
-  return (await res.json()) as MaintenanceSeed
+  const seed = (await res.json()) as MaintenanceSeed
+  if (seed.project_id) fixtureProjectIds.add(seed.project_id)
+  return seed
 }
+
+async function cleanupFixtureProjects(request: APIRequestContext): Promise<void> {
+  const projectIds = [...fixtureProjectIds]
+  if (!projectIds.length) return
+
+  const token = await fetchAccessToken(request)
+  const headers = authHeaders(token)
+  for (const projectId of projectIds) {
+    const tasksResponse = await request.get('/api/chapters/tasks', { headers })
+    if (tasksResponse.ok()) {
+      const tasks = (await tasksResponse.json()) as Array<{ project_id?: string; task_id?: string; status?: string }>
+      for (const task of tasks) {
+        if (
+          task.project_id === projectId &&
+          task.task_id &&
+          ['pending', 'queued', 'claimed', 'running'].includes(String(task.status))
+        ) {
+          await request.post(`/api/chapters/tasks/${encodeURIComponent(task.task_id)}/abort`, { headers })
+        }
+      }
+    }
+    const deleteResponse = await request.delete(`/api/projects/${encodeURIComponent(projectId)}`, { headers })
+    if (deleteResponse.ok()) fixtureProjectIds.delete(projectId)
+    else expect(deleteResponse.ok()).toBeTruthy()
+  }
+}
+
+test.afterEach(async ({ request }) => cleanupFixtureProjects(request))
+test.afterAll(async ({ request }) => cleanupFixtureProjects(request))
 
 function projectNav(page: Page) {
   return page.getByRole('navigation', { name: '项目导航' })

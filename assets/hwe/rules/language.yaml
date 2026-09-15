@@ -1,0 +1,123 @@
+# HWE Rules: Language (套话与翻译腔)
+rules:
+  - id: "HWE.LANGUAGE.FILLER_TRANSITION"
+    version: 1
+    title: "高频填充过渡词"
+    family: "language"
+    scope: ["sentence"]
+    detector_type: "phrase"
+    patterns:
+      - "与此同时"
+      - "毋庸置疑"
+      - "显而易见的是"
+      - "话虽如此"
+      - "不得不承认的是"
+      - "值得一提的是"
+    severity: "low"
+    confidence: 0.90
+    thresholds:
+      single_hit: "report"
+      per_1000_chars: 2
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: true
+    why: "公文与学术论文中的死板过渡连词，在快节奏小说叙述中极易造成行文滞塞。"
+    suggestion: "直接承接动作或场景镜头切换，删去空泛过渡词。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["petergyang/no-ai-slop", "MrGeDiao/shuorenhua"]
+
+  - id: "HWE.LANGUAGE.TRANSLATIONESE"
+    version: 1
+    title: "机械翻译腔结构"
+    family: "language"
+    scope: ["sentence"]
+    detector_type: "regex"
+    patterns:
+      - "在某种程度上[，,]"
+      - "作为一个.{2,10}来说[，,]"
+      - "被.{2,12}所深深(?:震撼|吸引|打动)"
+      - "随着时间的推移[，,]"
+    severity: "medium"
+    confidence: 0.86
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: true
+    why: "源自英文大语言模型多语言对齐中的直译欧化语法，严重违背地道中文小说表意习惯。"
+    suggestion: "使用纯正地道的中文语序与主谓宾结构重构句子。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["blader/humanizer", "op7418/Humanizer-zh"]
+
+  - id: "HWE.LANGUAGE.ABSTRACT_NOUN_OVERUSE"
+    version: 1
+    title: "过度抽象概念堆砌"
+    family: "language"
+    scope: ["sentence"]
+    detector_type: "regex"
+    patterns:
+      - "这种(?:压迫感|窒息感|紧迫感|无力感|确定性|不确定性|荒诞感)"
+      - "充满了不可言说的(?:复杂性|矛盾性)"
+    severity: "low"
+    confidence: 0.85
+    thresholds:
+      per_1000_chars: 3
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: false
+    why: "用一连串‘……感’‘……性’代替具象感受描写，是语言匮乏时模型的偷懒惯性。"
+    suggestion: "用具象的环境变化、生理反应或触觉视觉描写替代空洞的抽象概念词。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["stop-slop", "KKKKhazix/human-writing"]
+
+  - id: "HWE.LANGUAGE.BUZZWORD"
+    version: 1
+    title: "非当代语境出戏词汇"
+    family: "language"
+    scope: ["sentence"]
+    detector_type: "phrase"
+    patterns:
+      - "降维打击"
+      - "内卷"
+      - "信息差"
+      - "底层逻辑"
+      - "闭环"
+      - "抓手"
+    severity: "medium"
+    confidence: 0.95
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: true
+    why: "互联网运营黑话或当代热词，混入历史、奇幻或严肃小说叙事中会产生严重违和感与出戏感。"
+    suggestion: "换用符合小说世界观设定的文学语言。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["MrGeDiao/shuorenhua"]
+
+  - id: "HWE.LANGUAGE.VAGUE_ATTRIBUTION"
+    version: 1
+    title: "虚空归因"
+    family: "language"
+    scope: ["sentence"]
+    detector_type: "regex"
+    patterns:
+      - "有人曾经说过[，,]"
+      - "俗话说得好[，,]"
+      - "正所谓[，,]"
+    severity: "low"
+    confidence: 0.88
+    thresholds:
+      single_hit: "report"
+    fiction_policy:
+      auto_block: false
+      allow_if_dialogue: true
+    why: "虚构一个不可考的名人名言或俗语充当道理支柱，典型 AI 自作聪明句式。"
+    suggestion: "删除伪名言，直接用主角自己的思考或生活经验表达。"
+    source:
+      origin: "internal-derived"
+      inspirations: ["petergyang/no-ai-slop"]

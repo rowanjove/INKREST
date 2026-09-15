@@ -1,0 +1,31 @@
+{
+  "manifest_version": "0.2.0",
+  "id": "script_murder",
+  "name": "script_murder",
+  "display_name": "墨局 · 剧本杀工坊",
+  "version": "0.1.0",
+  "description": "面向严肃本格与变格创作的独立剧本杀工坊，支持 Truth Canon 事实库、人物四象限视界、物证链网与确定性逻辑审计。",
+  "author": "Inkrest Community",
+  "plugin_type": "web_extension",
+  "entry": "plugin:ScriptMurderPlugin",
+  "capabilities": [
+    "model_access",
+    "file_export",
+    "web_routes",
+    "ui_embed"
+  ],
+  "contributes": {
+    "navigation": [
+      {
+        "id": "studio",
+        "title": "剧本工坊",
+        "surface": "library_sidebar",
+        "icon": "collection",
+        "view": "studio",
+        "html": "ui/index.html",
+        "order": 10,
+        "requires": ["ui_embed"]
+      }
+    ]
+  }
+}
