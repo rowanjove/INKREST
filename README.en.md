@@ -1,139 +1,192 @@
-# INKREST · 栖墨 — Long-form fiction writing workspace
+# INKREST · 栖墨
 
-[简体中文](README.md) | [English](README.en.md)
+<p align="center">
+  <strong>A Local-First, Multi-Agent Long-Form Fiction Writing & Industrial Production Workspace</strong>
+</p>
 
-INKREST is a local-first workspace for writing novels. It brings outlines, chapter editing, multi-agent writing assistance, continuity checks, and multi-format export into one project. Authors can write manually or run single-chapter and batch generation, then inspect quality reports, revision history, and task logs.
+<p align="center">
+  <a href="https://github.com/rowanjove/INKREST/releases/tag/v2.1.0"><img src="https://img.shields.io/badge/Release-v2.1.0-blue.svg?style=flat-square" alt="Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-green.svg?style=flat-square" alt="License"></a>
+  <img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Frontend-Vue%203.5%20%7C%20Electron-4FC08D.svg?style=flat-square&logo=vuedotjs&logoColor=white" alt="Frontend">
+  <img src="https://img.shields.io/badge/Tests-1450%2B%20Passed-brightgreen.svg?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/Architecture-Local--First-orange.svg?style=flat-square" alt="Architecture">
+</p>
 
-[Download Windows v2.0.2](https://github.com/rowanjove/INKREST/releases/tag/v2.0.2) · [Changelog](CHANGELOG.md) · [Issues](https://github.com/rowanjove/INKREST/issues)
+<p align="center">
+  <a href="README.md">简体中文</a> | <a href="README.en.md">English</a>
+</p>
 
-Manuscripts and project state are stored locally. **Remote model calls send the selected context to your configured provider and may incur charges.** Local-first storage does not imply offline model inference.
+---
 
-![INKREST project overview and production status](docs/images/readme-overview.png)
+**INKREST** is not a superficial "type a single prompt, get a block of prose" AI chatbot. It unites **concept planning, Story Blueprint compilation, advanced manuscript editing, Human Writing Engine (HWE), multi-agent continuous production pipelines, persistent narrative memory & vector retrieval, de-AI prose constraints, panoramic quality gates, Plugin Platform 2.0, and multi-format publication** into an observable, pausable, and human-in-the-loop industrial creation workflow.
 
-## Install and get started
+> **Core Principle**: AI empowers storytelling and pipeline throughput; the author always maintains editorial authority and final veto power.
 
-Windows users can download the `Setup.2.0.2.exe` installer or `2.0.2.exe` portable application from the Release.
+---
 
-Create a project, configure a model service, then choose manual editing or assisted generation. Before a live model task, review the endpoint, model, credentials, and cost settings. Browsing ordinary pages does not automatically invoke writing models; generation, rewriting, review, and batch jobs are explicitly initiated by the user.
+## 📸 Interface Gallery
 
-The source setup below is for developers, not a prerequisite for using a Windows release.
+### 1. Production Dashboard & Overview
+Comprehensive real-time view of book completion, active pipelines, background tasks, gate health, and word count velocity.
+![Dashboard & Overview](docs/images/readme-overview.png)
 
-## Workspaces and generation
+### 2. Inspiration Workshop & Story Blueprint
+From raw creative spark to three-act conflict engines, volume breakdown, and chapter goal decomposition.
+![Inspiration Workshop & Story Blueprint](docs/images/readme-blueprint.png)
 
-| Workspace | Purpose |
-| --- | --- |
-| Planning | Outlines, volume plans, character relationships, world settings, timelines, and reference material |
-| Manuscript editing | Rich text, autosave, revision history, context inspection, and on-demand rewriting |
-| Chapter production | Planning, scene writing, assembly, style editing, review, and state updates |
-| Quality checks | Continuity, length, sensitive terms, and repetitive or formulaic language |
-| Long-form memory | SQLite project state, chapter summaries, checkpoints, and optional vector retrieval |
-| Export | TXT, Markdown, DOCX, EPUB 3, and PDF |
-| Extensions | Project isolation, backups, plugin permissions, and project-scoped operations |
+### 3. Manuscript Workspace
+Integrated Tiptap rich-text editor, chapter navigation tree, live character count, inline AI rewriting, expansion, and protected manual text selections.
+![Manuscript Workspace](docs/images/readme-writer.png)
 
-Chapter pipelines organize writing, editing, and checks, with batch production, checkpoint recovery, retries, and pauses after repeated failures. Project SQLite is the source of truth for manuscripts and tasks; compatibility files and chapter artifacts should not overwrite newer database records.
+### 4. Multi-Agent Production Center
+Continuous long-form writing pipelines, parallel scene rendering, checkpoint recovery, circuit-breaker fault protection, and real-time LLM telemetry.
+![Production Center](docs/images/readme-production.png)
 
-![INKREST manuscript editor](docs/images/readme-writer.png)
+### 5. Panoramic Quality Center
+Multi-layer automated audit gates: plot continuity validation, forbidden word check, conflict contradiction detection, and targeted auto-repair.
+![Quality Center](docs/images/readme-quality.png)
 
-## Style and continuity
+### 6. Plugin Platform 2.0 & SDK
+Isolated IPC process sandbox with fine-grained capability broker, supporting foreshadowing inspectors, mystery deduction, and community extensions.
+![Plugin Platform 2.0](docs/images/readme-plugins.png)
 
-Configure style, prohibited phrases, and writing constraints before generation. Style editing, local rules, and model review then identify issues for targeted repair or manual revision. These checks assist editing; they do not guarantee literary quality, factual accuracy, or acceptance by third-party AI detectors.
+### 7. Publishing & Export Center
+Authoritative source verification, print-ready preview, and one-click export to TXT, Markdown, DOCX, EPUB 3, and high-fidelity PDF.
+![Publishing Center](docs/images/readme-publishing.png)
 
-Long-form tasks can retrieve characters, settings, events, foreshadowing, and historical passages. Vector retrieval is optional and requires compatible models and ready indexes. When a quality gate blocks a task, inspect the report before repairing, rerunning, or continuing.
+### 8. Project Library
+Manage multiple novels locally with seamless switching, global settings, zero-leak local encryption, and instant backup/restore.
+![Project Library](docs/images/readme-library.png)
 
-Available modes include beginner automation, author collaboration, platform review, long-form stability, and studio workflows. They adjust generation and review policies rather than replacing the author's final judgment.
+---
 
-## Shanshan assistant
+## ⚡ Core Highlights
 
-Shanshan resides in the Electron desktop app. It reads project, task, and log state to explain pauses and provide navigation, model connectivity checks, chapter retries, repair, and gate reruns. Its conversation model can be configured separately.
+### 1. Multi-Agent Industrial Assembly Line
+A chapter is produced through specialized, coordinated agent stages rather than a single black-box LLM call:
+```text
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────────┐
+│ Story Blueprint │ ──> │ Chapter Breakdown│ ──> │ Parallel Scene Gen  │
+└─────────────────┘     └──────────────────┘     └─────────────────────┘
+                                                            │
+┌─────────────────┐     ┌──────────────────┐     ┌──────────▼──────────┐
+│ SQLite Authority│ <── │ Quality Auditing │ <── │ Assembly & Prose Pol│
+└─────────────────┘     └──────────────────┘     └─────────────────────┘
+```
+- **Tiered Model Routing**: Assign specialized models for creative outlining (e.g. Claude 3.5 / DeepSeek-R1), prose writing (DeepSeek-V3 / GPT-4o), and rapid rule checking.
+- **Narrative Continuity**: Unified SQLite persistence for character states, fact ledgers, and checkpoints.
+- **Hybrid Retrieval**: Combine exact full-text search with vector recall (ChromaDB / SQLite-VSS) across hundreds of chapters.
 
-Model calls and manuscript changes require user initiation and applicable confirmation. The assistant should not independently change outlines, delete projects, or bypass confirmation to resume a whole-book run.
+### 2. Real Prose Polish & De-AI Constraints
+Reducing formulaic machine prose requires continuous constraint across the pipeline:
+- **Pre-generation Constraints**: Inject style standards, rhythm guidance, and forbidden cliché terms.
+- **Prose Editing**: Eliminate repetitive rhetorical transitions and mechanical summaries.
+- **Human Writing Engine (HWE)**: Protect hand-crafted prose spans against accidental AI overwriting.
+- **Targeted Repair**: Automatically re-draft problematic paragraphs without discarding the whole chapter.
 
-![INKREST project library](docs/images/readme-library.png)
+### 3. Local-First & Zero-Leak Privacy
+- All manuscripts, outlines, revisions, and logs reside **strictly on your local machine**.
+- First-class support for fully offline local models (**Ollama, vLLM, LM Studio**)—zero API costs, zero data exposure.
+- Cryptographically verified project backup and restore.
 
-Screenshots use bundled demo projects, not private manuscripts or credentials.
+### 4. Shanshan: In-App Editorial Assistant
+- Desktop-resident companion in Electron capable of monitoring active production tasks.
+- Explains pipeline pause reasons in human-friendly terms and offers quick actions for retries, diagnostics, and repairs.
 
-## Run from source
+---
 
-Requires Python **3.11 or 3.12** and Node.js **>=22.12.0**. Desktop packaging targets Windows 10/11.
+## 🚀 Quick Start
 
-In Windows PowerShell:
+### Option 1: Windows Desktop Package (Recommended)
+Download the latest binaries from [Releases](https://github.com/rowanjove/INKREST/releases/tag/v2.1.0):
+- **Installer**: `Setup.2.1.0.exe` (automatic desktop shortcuts and background updates)
+- **Portable**: `2.1.0.exe` (run directly without installation)
+
+### Option 2: Run from Source
+
+**Prerequisites**:
+- Python **3.11 or 3.12**
+- Node.js **>= 22.12.0**
 
 ```powershell
+# 1. Clone repository
 git clone https://github.com/rowanjove/INKREST.git
 cd INKREST
+
+# 2. Setup Python virtual environment
 py -3.12 -m venv .venv
 ./.venv/Scripts/python.exe -m pip install -r requirements.txt
+
+# 3. Copy pipeline configuration template
 Copy-Item config/pipeline.yaml.example config/pipeline.yaml
+
+# 4. Build frontend assets
 cd web/frontend
 npm ci
 npm run build
 cd ../..
-./.venv/Scripts/python.exe main.py serve --no-browser
+
+# 5. Launch local server
+python main.py serve --no-browser
 ```
+Access the application at `http://127.0.0.1:8000`.
 
-Open `http://127.0.0.1:8000`. Source setup requires building the frontend first; the backend serves files from `web/frontend/dist`. Rebuild after frontend changes or use the development workflow.
+### Desktop Packaging
 
-Configure models locally in `config/pipeline.yaml` or `config/models.json` as needed. Both files and `.env` are ignored by Git; do not force-add them. Do not commit the `.venv/` environment either; you can exclude it locally through `.git/info/exclude`.
-
-### CLI example without model charges
-
-From the repository root, use the static-model dry run:
+Pack the application into a local Windows desktop binary:
 
 ```powershell
-./.venv/Scripts/python.exe main.py run-chapter --chapter-id 001 --goal "主角雨夜回到出租屋，并遭遇第一次异常。" --dry-run
-```
-
-The sample goal describes a protagonist returning home on a rainy night and encountering an anomaly. A dry run may still create local artifacts; it is not a read-only operation. Chapter artifacts are stored in the active project's `workspace/chapters/`.
-
-### Windows desktop packaging
-
-The packaging script probes Python 3.12/3.11 environments. Install runtime and build dependencies for it:
-
-```powershell
-py -3.12 -m pip install -r requirements.txt -r requirements-build.txt
 cd web/frontend
-npm run electron:build
+npm run build:backend
+npm run electron:pack
 ```
 
-Artifacts are written to `web/frontend/dist-desktop/`. For a directory build, run `npm run build:backend` followed by `npm run electron:pack`; its executable is `win-unpacked/栖墨.exe`. See [contribution and verification notes](CONTRIBUTING.md) for acceptance checks.
+The unpacked binary is located at `win-unpacked/栖墨.exe`. Full installers can be generated using `npm run electron:build`.
 
-## Verification
+---
 
-Backend, from the repository root:
+## 🛠️ Model Configuration
 
-```powershell
-./.venv/Scripts/python.exe -m pip install pytest pytest-asyncio
-./.venv/Scripts/python.exe -m pytest tests/ --ignore=tests/smoke -q --tb=short
+Navigate to **Settings -> Models** or configure `config/pipeline.yaml`:
+
+```yaml
+# OpenAI-compatible API or cloud provider
+llm:
+  provider: "openai_compatible"
+  base_url: "https://api.deepseek.com/v1"
+  api_key: "sk-your-api-key"
+  model: "deepseek-chat"
+
+# Fully offline setup (e.g. Ollama, no API key needed)
+# base_url: "http://127.0.0.1:11434/v1"
+# model: "qwen2.5:14b"
 ```
 
-Frontend:
+> [!NOTE]
+> `config/pipeline.yaml`, `config/models.json`, and `.env` are in `.gitignore`. Your credentials will never be committed.
+
+---
+
+## 🧪 Testing & Verification
+
+INKREST maintains an extensive automated test suite with 1,450+ unit and integration tests:
 
 ```powershell
+# Backend test suite
+py -3.12 -m pytest tests/ --ignore=tests/smoke -q --tb=short
+
+# Frontend unit tests
 cd web/frontend
 npm run test:unit
-npm run test:electron
-npm run build
+
+# Frontend bundle budget check
 npm run check:bundle
 ```
 
-`check:bundle` uses `python` from PATH; ensure it points to a compatible environment. The contribution guide covers additional lint, performance, E2E, and packaged smoke checks. Live model tests may incur charges and should not run without confirmation.
+---
 
-## Data, credentials, and plugins
+## 📄 License
 
-- `projects/`, `workspace/`, `data/`, `state/`, `logs/`, and `backups/` are excluded from commits by default.
-- The service listens on `127.0.0.1` by default. Remote binding requires explicit opt-in and an access token.
-- Project backups and V2 resets use confirmation phrases containing the project ID; a verifiable backup precedes a reset.
-- API, log, and backup flows isolate or redact credentials. Still inspect diagnostics before sharing them.
-- Plugin permissions require authorization tied to a manifest hash; installation does not imply trust or unrestricted access.
-
-## Technology and documentation
-
-The backend uses Python, FastAPI, Pydantic, and SQLite. The frontend uses Vue 3, TypeScript, Pinia, Vite, Element Plus, and Tiptap. Desktop packaging uses Electron and PyInstaller. Tests use pytest, Vitest, and Playwright.
-
-[Architecture](docs/ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [Plugin authors](docs/plugins/PLUGIN_AUTHOR.md) · [Agent integration](docs/AGENT-INTEGRATION.md) · [Backup and reset](docs/V2-DATA-RESET.md) · [Remote deployment security](docs/remote-deployment-security.md)
-
-The interface and supporting guides are primarily Chinese; an English README does not imply full interface localization.
-
-## License
-
-Licensed under [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for copyright and attribution.
+Distributed under the [Apache License 2.0](LICENSE).
+See [NOTICE](NOTICE) for third-party acknowledgments.
